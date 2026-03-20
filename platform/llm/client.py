@@ -180,7 +180,8 @@ class LLMClient:
             except Exception as exc:
                 log.error("llm_non_retryable_error", model=model, error=str(exc))
                 raise LLMError(
-                    f"Non-retryable LLM error (model={model!r}): {exc}", cause=exc
+                    f"Non-retryable LLM error (model={model!r}): {exc}",
+                    cause=exc,
                 ) from exc
 
             # Success path — extract the tool_use block
