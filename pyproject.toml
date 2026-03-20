@@ -141,7 +141,6 @@ module = [
     "faiss.*",
     "datasketch.*",
     "docling.*",
-    "docling_core.*",
     "unstructured.*",
     "magic.*",
     "spacy.*",
@@ -155,6 +154,18 @@ module = [
     "langgraph.*",
 ]
 ignore_missing_imports = true
+
+# docling_core ships partial stubs that don't re-export all symbols via __all__
+# (e.g. DocItemLabel in docling_core.types.doc).  The [attr-defined] false
+# positive originates at the call site in docling_parser.py, so we suppress it
+# there rather than globally.
+[[tool.mypy.overrides]]
+module = ["docling_core.*"]
+ignore_errors = true
+
+[[tool.mypy.overrides]]
+module = ["platform.parsers.docling_parser"]
+disable_error_code = ["attr-defined"]
 
 # ---------------------------------------------------------------------------
 # coverage
