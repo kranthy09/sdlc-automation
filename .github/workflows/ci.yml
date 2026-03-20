@@ -6,10 +6,15 @@ on:
   pull_request:
     branches: [main, develop]
 
+# ---------------------------------------------------------------------------
+# Layer 0 CI — runs fast with no service containers.
+# Each layer unlocks the next block:
+#   Layer 0: lint + contracts + unit tests         (this file, no services)
+#   Layer 2: add service containers + integration tests when platform/ is built
+#   Layer 3: add golden fixture replay when modules/dynafit/ is built
+# ---------------------------------------------------------------------------
+
 env:
-  POSTGRES_URL: postgresql+asyncpg://platform:test_password@localhost:5432/ai_platform_test
-  REDIS_URL: redis://localhost:6379/0
-  QDRANT_URL: http://localhost:6333
   ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
 
 jobs:
@@ -17,44 +22,9 @@ jobs:
     name: Lint + Contracts + Tests
     runs-on: ubuntu-latest
 
-    services:
-      postgres:
-        image: pgvector/pgvector:pg16
-        env:
-          POSTGRES_DB: ai_platform_test
-          POSTGRES_USER: platform
-          POSTGRES_PASSWORD: test_password
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-
-      redis:
-        image: redis:7-alpine
-        ports:
-          - 6379:6379
-        options: >-
-          --health-cmd "redis-cli ping"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-
-      qdrant:
-        image: qdrant/qdrant:v1.9.2
-        ports:
-          - 6333:6333
-          - 6334:6334
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
-      - name: Wait for Qdrant
-        run: |
-          timeout 60 bash -c 'until curl -sf http://localhost:6333/healthz; do sleep 2; done'
 
       - name: Set up uv
         uses: astral-sh/setup-uv@v3
@@ -66,7 +36,8 @@ jobs:
         run: uv python install 3.12
 
       - name: Install dependencies
-        run: uv sync --all-extras
+        # core + dev only — no heavy ML stack (ml extra added in Layer 2)
+        run: uv sync --extra dev
 
       - name: Lint (ruff + mypy)
         run: make lint
@@ -75,18 +46,7 @@ jobs:
         run: make validate-contracts
 
       - name: Unit tests
-        run: uv run pytest -m "unit or not integration" --cov=platform --cov=modules --cov=agents -v --tb=short
-        env:
-          POSTGRES_URL: ${{ env.POSTGRES_URL }}
-          REDIS_URL: ${{ env.REDIS_URL }}
-          QDRANT_URL: ${{ env.QDRANT_URL }}
-
-      - name: Integration tests
-        run: uv run pytest -m integration --cov=platform --cov=modules --cov=agents -v --tb=short
-        env:
-          POSTGRES_URL: ${{ env.POSTGRES_URL }}
-          REDIS_URL: ${{ env.REDIS_URL }}
-          QDRANT_URL: ${{ env.QDRANT_URL }}
+        run: uv run pytest -m unit -v --tb=short
 
       - name: Upload coverage
         uses: codecov/codecov-action@v4

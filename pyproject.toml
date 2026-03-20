@@ -4,37 +4,17 @@ version = "0.1.0"
 description = "Enterprise AI agent platform for automating ERP implementation workflows"
 requires-python = ">=3.12"
 dependencies = [
-    # Orchestration
+    # Orchestration — framework core, needed from Layer 3 onward
     "langgraph>=0.2",
     "langchain-core>=0.3",
     "langchain-anthropic>=0.3",
     "langsmith>=0.1",
 
-    # Schemas / validation
+    # Schemas / validation — needed from Layer 1 onward
     "pydantic>=2.6",
     "pydantic-settings>=2.2",
 
-    # Document parsing
-    "docling>=2.0",
-    "openpyxl>=3.1",
-    "python-magic>=0.4",
-    "unstructured[all-docs]>=0.13",
-
-    # NLP
-    "spacy>=3.7",
-    "rapidfuzz>=3.6",
-
-    # Translation (offline)
-    "argostranslate>=1.9",
-
-    # Vector / retrieval
-    "qdrant-client>=1.8",
-    "sentence-transformers>=3.0",
-    "rank-bm25>=0.2",
-    "faiss-cpu>=1.8",
-    "datasketch>=1.6",
-
-    # Storage
+    # Storage — lightweight async clients
     "sqlalchemy[asyncio]>=2.0",
     "asyncpg>=0.29",
     "redis>=5.0",
@@ -59,9 +39,33 @@ dependencies = [
     "networkx>=3.2",
     "numpy>=1.26",
     "pyyaml>=6.0",
+    "openpyxl>=3.1",
 ]
 
 [project.optional-dependencies]
+# Heavy ML/parsing stack — installed from Layer 2 onward (make setup installs this)
+ml = [
+    # Document parsing
+    "docling>=2.0",
+    "python-magic>=0.4",
+    "unstructured[all-docs]>=0.13",
+
+    # NLP
+    "spacy>=3.7",
+    "rapidfuzz>=3.6",
+
+    # Translation (offline ML models)
+    "argostranslate>=1.9",
+
+    # Vector / retrieval (sentence-transformers pulls torch ~500 MB)
+    "qdrant-client>=1.8",
+    "sentence-transformers>=3.0",
+    "rank-bm25>=0.2",
+    "faiss-cpu>=1.8",
+    "datasketch>=1.6",
+]
+
+# Dev tooling only — what CI installs for Layer 0/1
 dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.23",

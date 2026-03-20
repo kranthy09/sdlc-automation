@@ -25,7 +25,6 @@ ENV/
 env/
 
 # uv
-uv.lock
 .uv/
 
 # Secrets

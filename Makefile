@@ -5,7 +5,7 @@
 # Setup
 # ---------------------------------------------------------------------------
 setup:
-	uv sync --all-extras
+	uv sync --extra dev --extra ml
 	uv run pre-commit install
 	uv run python -m spacy download en_core_web_lg
 

@@ -83,7 +83,8 @@ EXPECTED_DIRECTORIES = [
     "tests/unit",
     "tests/integration",
     ".github/workflows",
-    # knowledge_bases/, tests/fixtures/golden, docs/ — added in Layer 3
+    # knowledge_bases/,
+    #  tests/fixtures/golden, docs/ — added in Layer 3
 ]
 
 
