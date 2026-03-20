@@ -1,0 +1,154 @@
+"""
+Embedding utility — wraps sentence-transformers for dense vector generation.
+
+Produces float vectors using any sentence-transformers compatible model
+(default: BAAI/bge-large-en-v1.5, 1024-dim per the retrieval schema).
+
+Every encode call is wrapped in record_call("embedder", "encode") for Prometheus.
+
+Usage:
+    from platform.retrieval.embedder import embed
+
+    vec: list[float] = embed("AP invoice matching", "BAAI/bge-large-en-v1.5")
+
+Or instantiate directly (preferred when the model is reused across many calls):
+
+    from platform.retrieval.embedder import Embedder
+
+    embedder = Embedder(config.embedding_model)
+    vec = embedder.embed(text)
+"""
+
+from __future__ import annotations
+
+from typing import Any
+
+from prometheus_client import CollectorRegistry
+
+from platform.observability.logger import get_logger
+from platform.observability.metrics import MetricsRecorder
+
+log = get_logger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Custom exception
+# ---------------------------------------------------------------------------
+
+
+class EmbedderError(Exception):
+    """Raised when embedding fails — model load error or encode failure."""
+
+    def __init__(self, message: str, *, cause: Exception | None = None) -> None:
+        self.cause = cause
+        super().__init__(message)
+
+
+# ---------------------------------------------------------------------------
+# Embedder
+# ---------------------------------------------------------------------------
+
+
+class Embedder:
+    """Dense vector embedder backed by sentence-transformers.
+
+    The underlying model is loaded lazily on the first encode call so that
+    importing this module never triggers the ~500 MB model download.
+
+    Args:
+        model_name: HuggingFace model ID (e.g. "BAAI/bge-large-en-v1.5").
+        registry:   Prometheus CollectorRegistry for metric isolation in tests.
+        _model:     Pre-loaded model instance — for testing only; skips lazy load.
+    """
+
+    def __init__(
+        self,
+        model_name: str,
+        *,
+        registry: CollectorRegistry | None = None,
+        _model: Any = None,
+    ) -> None:
+        self._model_name = model_name
+        self._recorder = MetricsRecorder(registry)
+        self._model: Any = _model
+
+    def _get_model(self) -> Any:
+        if self._model is None:
+            import sentence_transformers  # noqa: PLC0415
+
+            log.info("embedder_load_model", model=self._model_name)
+            self._model = sentence_transformers.SentenceTransformer(self._model_name)
+        return self._model
+
+    def embed(self, text: str) -> list[float]:
+        """Embed a single text string into a dense float vector.
+
+        Args:
+            text: The text to embed.
+
+        Returns:
+            Float vector as list[float].
+
+        Raises:
+            EmbedderError: If the model fails to load or encode.
+        """
+        try:
+            with self._recorder.record_call("embedder", "encode"):
+                vec: Any = self._get_model().encode(text)
+            log.debug("embedder_encode", model=self._model_name, dim=len(vec))
+            result: list[float] = vec.tolist()
+            return result
+        except EmbedderError:
+            raise
+        except Exception as exc:
+            raise EmbedderError(
+                f"embed failed (model={self._model_name!r}): {exc}", cause=exc
+            ) from exc
+
+    def embed_batch(self, texts: list[str]) -> list[list[float]]:
+        """Embed a batch of texts into dense float vectors.
+
+        Args:
+            texts: Texts to embed.
+
+        Returns:
+            List of float vectors, one per input text.
+
+        Raises:
+            EmbedderError: If the model fails to load or encode.
+        """
+        try:
+            with self._recorder.record_call("embedder", "encode"):
+                matrix: Any = self._get_model().encode(texts)
+            log.debug("embedder_encode_batch", model=self._model_name, n=len(texts))
+            result: list[list[float]] = matrix.tolist()
+            return result
+        except EmbedderError:
+            raise
+        except Exception as exc:
+            raise EmbedderError(
+                f"embed_batch failed (model={self._model_name!r}): {exc}", cause=exc
+            ) from exc
+
+
+# ---------------------------------------------------------------------------
+# Module-level convenience (lazy cache by model name)
+# ---------------------------------------------------------------------------
+
+_embedders: dict[str, Embedder] = {}
+
+
+def _get_embedder(model_name: str) -> Embedder:
+    if model_name not in _embedders:
+        _embedders[model_name] = Embedder(model_name)
+    return _embedders[model_name]
+
+
+def embed(text: str, model_name: str) -> list[float]:
+    """Embed a single text. Delegates to a cached Embedder instance."""
+    return _get_embedder(model_name).embed(text)
+
+
+def embed_batch(texts: list[str], model_name: str) -> list[list[float]]:
+    """Embed a batch of texts. Delegates to a cached Embedder instance."""
+    return _get_embedder(model_name).embed_batch(texts)
