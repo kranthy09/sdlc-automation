@@ -1,0 +1,96 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+env:
+  POSTGRES_URL: postgresql+asyncpg://platform:test_password@localhost:5432/ai_platform_test
+  REDIS_URL: redis://localhost:6379/0
+  QDRANT_URL: http://localhost:6333
+  ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+
+jobs:
+  quality:
+    name: Lint + Contracts + Tests
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_DB: ai_platform_test
+          POSTGRES_USER: platform
+          POSTGRES_PASSWORD: test_password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      qdrant:
+        image: qdrant/qdrant:latest
+        ports:
+          - 6333:6333
+          - 6334:6334
+        options: >-
+          --health-cmd "curl -f http://localhost:6333/healthz || exit 1"
+          --health-interval 15s
+          --health-timeout 10s
+          --health-retries 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          version: "latest"
+          enable-cache: true
+
+      - name: Set up Python 3.12
+        run: uv python install 3.12
+
+      - name: Install dependencies
+        run: uv sync --all-extras
+
+      - name: Lint (ruff + mypy)
+        run: make lint
+
+      - name: Validate import contracts
+        run: make validate-contracts
+
+      - name: Unit tests
+        run: uv run pytest -m "unit or not integration" --cov=platform --cov=modules --cov=agents -v --tb=short
+        env:
+          POSTGRES_URL: ${{ env.POSTGRES_URL }}
+          REDIS_URL: ${{ env.REDIS_URL }}
+          QDRANT_URL: ${{ env.QDRANT_URL }}
+
+      - name: Integration tests
+        run: uv run pytest -m integration --cov=platform --cov=modules --cov=agents -v --tb=short
+        env:
+          POSTGRES_URL: ${{ env.POSTGRES_URL }}
+          REDIS_URL: ${{ env.REDIS_URL }}
+          QDRANT_URL: ${{ env.QDRANT_URL }}
+
+      - name: Upload coverage
+        uses: codecov/codecov-action@v4
+        if: always()
+        with:
+          fail_ci_if_error: false

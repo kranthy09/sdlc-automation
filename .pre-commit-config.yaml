@@ -1,0 +1,38 @@
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.4.4
+    hooks:
+      - id: ruff
+        args: [--fix]
+      - id: ruff-format
+
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.6.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-toml
+      - id: check-merge-conflict
+      - id: check-added-large-files
+        args: ["--maxkb=10240"]  # 10 MB — JSONL knowledge bases can be large
+      - id: debug-statements
+
+  - repo: local
+    hooks:
+      - id: mypy
+        name: mypy (strict)
+        entry: uv run mypy
+        language: system
+        types: [python]
+        args: [--strict, --ignore-missing-imports]
+        pass_filenames: false
+        always_run: false
+        files: ^(platform|agents|modules|api)/
+
+      - id: validate-contracts
+        name: validate import contracts
+        entry: uv run python infra/scripts/validate_contracts.py
+        language: system
+        pass_filenames: false
+        always_run: true

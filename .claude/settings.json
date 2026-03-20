@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(pip install:*)",
+      "Bash(uv --version)",
+      "Bash(uv sync:*)",
+      "Bash(uv run:*)",
+      "Bash(make ci:*)",
+      "Bash(uv python:*)",
+      "Read(//home/kranthi/.local/bin/**)",
+      "Read(//home/kranthi/.cargo/bin/**)"
+    ]
+  }
+}
