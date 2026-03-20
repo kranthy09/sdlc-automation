@@ -23,7 +23,6 @@ from pydantic import BaseModel
 
 from platform.schemas.product import ProductConfig
 
-
 # ---------------------------------------------------------------------------
 # Shared fixtures
 # ---------------------------------------------------------------------------

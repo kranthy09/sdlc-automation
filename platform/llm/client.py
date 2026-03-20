@@ -26,8 +26,8 @@ import time
 from typing import Any, TypeVar
 
 import anthropic
-from prometheus_client import CollectorRegistry, Counter
 from prometheus_client import REGISTRY as _DEFAULT_REGISTRY
+from prometheus_client import CollectorRegistry, Counter
 from pydantic import BaseModel
 
 from platform.config.settings import get_settings
@@ -238,7 +238,7 @@ def _get_default_client() -> LLMClient:
     return _default_client
 
 
-def complete(
+def complete[T: BaseModel](
     prompt: str,
     output_schema: type[T],
     config: ProductConfig,

@@ -11,7 +11,6 @@ from __future__ import annotations
 import pytest
 from prometheus_client import CollectorRegistry
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -151,7 +150,7 @@ def test_record_call_records_duration_even_on_exception() -> None:
 
     with pytest.raises(IOError):
         with recorder.record_call("qdrant", "upsert"):
-            raise IOError("timeout")
+            raise OSError("timeout")
 
     count = _sample(
         registry,

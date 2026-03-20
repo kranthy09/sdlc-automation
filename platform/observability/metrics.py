@@ -25,11 +25,11 @@ Usage:
 from __future__ import annotations
 
 import time
+from collections.abc import Generator
 from contextlib import contextmanager
-from typing import Generator
 
-from prometheus_client import CollectorRegistry, Counter, Histogram
 from prometheus_client import REGISTRY as _DEFAULT_REGISTRY
+from prometheus_client import CollectorRegistry, Counter, Histogram
 
 
 class MetricsRecorder:
