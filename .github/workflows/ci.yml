@@ -7,19 +7,29 @@ on:
     branches: [main, develop]
 
 # ---------------------------------------------------------------------------
-# Layer 0 CI — runs fast with no service containers.
-# Each layer unlocks the next block:
-#   Layer 0: lint + contracts + unit tests         (this file, no services)
-#   Layer 2: add service containers + integration tests when platform/ is built
-#   Layer 3: add golden fixture replay when modules/dynafit/ is built
+# Two-job pipeline — each job unlocks when its layer is ready:
+#
+#   quality     Lint + contracts + unit tests   (no services, always fast)
+#   integration Integration tests               (Postgres, Redis, Qdrant)
+#               Runs after quality passes.
+#               Handles "no tests collected yet" (exit 5) gracefully so
+#               the job doesn't block PRs while Layer 2 is being built.
+#               When the first integration test is committed, it runs for real.
+#
+# Layer gate (update this comment as layers complete):
+#   Layer 0  DONE — scaffold + CI
+#   Layer 1  DONE — all schemas
+#   Layer 2  IN PROGRESS — platform utilities (unit: settings, logger done)
+#   Layer 3  pending — DYNAFIT module (golden fixtures replayed here)
+#   Layer 4  pending — API + workers + UI
 # ---------------------------------------------------------------------------
 
-env:
-  ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-
+# ---------------------------------------------------------------------------
+# Job 1 — fast, no services
+# ---------------------------------------------------------------------------
 jobs:
   quality:
-    name: Lint + Contracts + Tests
+    name: Lint + Contracts + Unit Tests
     runs-on: ubuntu-latest
 
     steps:
@@ -33,10 +43,10 @@ jobs:
           enable-cache: true
 
       - name: Set up Python 3.12
-        run: uv python install 3.12
+        run: uv python install 3.12 && uv python pin 3.12
 
       - name: Install dependencies
-        # core + dev only — no heavy ML stack (ml extra added in Layer 2)
+        # core + dev only — no heavy ML stack (added in integration job)
         run: uv sync --extra dev
 
       - name: Lint (ruff + mypy)
@@ -46,7 +56,100 @@ jobs:
         run: make validate-contracts
 
       - name: Unit tests
-        run: uv run pytest -m unit -v --tb=short
+        run: |
+          uv run pytest -m unit -v --tb=short \
+            --cov=platform --cov=modules --cov=agents \
+            --cov-report=xml --cov-report=term-missing
+
+      - name: Upload coverage
+        uses: codecov/codecov-action@v4
+        if: always()
+        with:
+          fail_ci_if_error: false
+
+  # ---------------------------------------------------------------------------
+  # Job 2 — integration tests with real infrastructure
+  # ---------------------------------------------------------------------------
+  integration:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+    needs: quality
+
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_DB: ai_platform_test
+          POSTGRES_USER: platform
+          POSTGRES_PASSWORD: test_password
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U platform -d ai_platform_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      qdrant:
+        image: qdrant/qdrant:latest
+        ports: ["6333:6333"]
+        options: >-
+          --health-cmd "wget -q -O - http://localhost:6333/healthz || exit 1"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      POSTGRES_URL: postgresql+asyncpg://platform:test_password@localhost/ai_platform_test
+      REDIS_URL: redis://localhost:6379/0
+      QDRANT_URL: http://localhost:6333
+      # ANTHROPIC_API_KEY intentionally omitted:
+      #   - unit tests monkeypatch it
+      #   - @pytest.mark.llm tests are skipped in CI
+      # Add it here (from secrets) when Layer 3 golden fixture tests are built.
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          version: "latest"
+          enable-cache: true
+
+      - name: Set up Python 3.12
+        run: uv python install 3.12 && uv python pin 3.12
+
+      - name: Install dependencies (core + dev + ML extras)
+        # ML extras required for retrieval integration tests (qdrant-client,
+        # sentence-transformers). Cached by uv after first run.
+        run: uv sync --extra dev --extra ml
+
+      - name: Integration tests
+        # Exit code 5 = "no tests collected" — expected while Layer 2 is in
+        # progress. Any other non-zero exit is a real failure.
+        run: |
+          if uv run pytest -m integration -v --tb=short \
+              --cov=platform --cov=modules --cov=agents \
+              --cov-report=xml; then
+            echo "Integration tests passed."
+          else
+            code=$?
+            if [ "$code" -eq 5 ]; then
+              echo "No integration tests collected yet — Layer 2 in progress."
+            else
+              exit "$code"
+            fi
+          fi
 
       - name: Upload coverage
         uses: codecov/codecov-action@v4
