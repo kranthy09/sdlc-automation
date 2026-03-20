@@ -184,7 +184,7 @@ def _extract_prose(doc: Any) -> list[ProseChunk]:
        prepended to chunk N+1 for retrieval context continuity.
     6. Flush remaining buffer at end of document and at every section change.
     """
-    from docling_core.types.doc import DocItemLabel  # type: ignore[attr-defined]  # noqa: PLC0415
+    from docling_core.types.doc import DocItemLabel  # noqa: PLC0415
 
     PROSE: frozenset[Any] = frozenset(
         {DocItemLabel.TEXT, DocItemLabel.PARAGRAPH, DocItemLabel.LIST_ITEM}
