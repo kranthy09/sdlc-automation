@@ -86,7 +86,6 @@ class RequirementAtom(PlatformModel):
 
     # Source provenance
     source_row: int | None = None
-    source_sheet: str | None = None
     source_document: str = ""
     source_ref: str | None = None  # e.g. "page_3_image_1"
 

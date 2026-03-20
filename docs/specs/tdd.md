@@ -191,8 +191,7 @@ dependencies = [
     
     # Parsing
     "docling>=2.0",
-    "openpyxl>=3.1",
-    
+
     # NLP
     "spacy>=3.7",
     "rapidfuzz>=3.6",
@@ -219,8 +218,6 @@ dependencies = [
     # Templating
     "jinja2>=3.1",
     
-    # Reports
-    "openpyxl>=3.1",
 ]
 
 [project.optional-dependencies]
@@ -469,7 +466,6 @@ platform/llm/client.py             → tests/unit/test_llm_client.py (mocked)
 platform/retrieval/embedder.py     → tests/unit/test_embedder.py (mocked model)
 platform/retrieval/vector_store.py → tests/integration/test_vector_store.py (real Qdrant)
 platform/parsers/format_detector.py → tests/unit/test_format_detector.py
-platform/parsers/excel_parser.py   → tests/unit/test_excel_parser.py (real xlsx fixtures)
 platform/parsers/docling_parser.py → tests/unit/test_docling_parser.py
 platform/parsers/image_extractor.py → tests/unit/test_image_extractor.py (mocked vision LLM)
 platform/storage/postgres.py       → tests/integration/test_postgres.py (real DB)
@@ -500,7 +496,7 @@ auto_approve_with_history: true
 
 fdd_template_path: knowledge_bases/d365_fo/fdd_templates/fit_template.j2
 code_language: xpp
-code_review_rules: knowledge_bases/d365_fo/code_rules/xpp_rules.xlsx
+code_review_rules: knowledge_bases/d365_fo/code_rules/xpp_rules.yaml
 
 embedding_model: BAAI/bge-large-en-v1.5
 llm_model: claude-sonnet-4-20250514
@@ -634,15 +630,6 @@ from pathlib import Path
 
 class TestFormatDetector:
     """TDD for Phase 1 · Step 1 · Sub-step A: Format Detector."""
-
-    def test_detects_excel(self, tmp_path):
-        from platform.parsers.format_detector import detect_format, DocumentFormat
-        
-        xlsx = tmp_path / "reqs.xlsx"
-        xlsx.write_bytes(b"PK\x03\x04")  # ZIP magic bytes (Excel is ZIP)
-        
-        result = detect_format(xlsx)
-        assert result.format == DocumentFormat.EXCEL
 
     def test_detects_pdf(self, tmp_path):
         from platform.parsers.format_detector import detect_format, DocumentFormat
@@ -874,7 +861,6 @@ Build each utility TDD-first. Observability components come before LLM client.
 - [ ] `platform/retrieval/bm25.py` + test
 - [ ] `platform/retrieval/reranker.py` + test (mocked model)
 - [ ] `platform/parsers/format_detector.py` + test
-- [ ] `platform/parsers/excel_parser.py` + test (real xlsx fixtures)
 - [ ] `platform/parsers/docling_parser.py` + test
 - [ ] `platform/storage/postgres.py` + integration test (real DB)
 - [ ] `platform/storage/redis_pub.py` + integration test (real Redis)
@@ -898,7 +884,7 @@ Read `DYNAFIT_IMPLEMENTATION_SPEC.md` Phases 3–5 and LangGraph wiring sections
 
 - [ ] Phase 3 nodes: Multi-Signal Scorer → Composite Scorer + Router → Candidate Ranker
 - [ ] Phase 4 nodes: Short-Circuit Check → Prompt Builder → LLM Reasoning Engine (FAST_TRACK/DEEP_REASON/GAP_CONFIRM) → Response Parser → Sanity Check
-- [ ] Phase 5 nodes: Dependency Graph → Country Overrides → Confidence Filter → Human Review (HITL interrupt) → Excel Report Builder → Audit Trail → Prometheus Metrics
+- [ ] Phase 5 nodes: Dependency Graph → Country Overrides → Confidence Filter → Human Review (HITL interrupt) → CSV Report Builder → Audit Trail → Prometheus Metrics
 - [ ] `modules/dynafit/graph.py` — `build_dynafit_graph()` with PostgresSaver checkpoint
 - [ ] `modules/dynafit/prompts/` — all Jinja2 templates
 - [ ] End-to-end golden fixture test through all 5 phases

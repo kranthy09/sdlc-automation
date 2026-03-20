@@ -15,7 +15,7 @@
 
 ## PHASE 1 — INGESTION AGENT
 
-**Problem:** Raw docs (Excel/Word/PDF/transcripts) → structured RequirementAtom[].
+**Problem:** Raw docs (Word/PDF/TXT) → structured RequirementAtom[].
 **No LLM calls in Step 1.** Steps 2-3 use LLM. Step 4 is pure validation.
 
 ### Step 1: Document Parser (pure data engineering)
@@ -23,16 +23,15 @@
 #### Sub-step A: Format Detector
 
 **Algorithm:** Three-layer cascade:
-1. Read first 8 bytes → match magic bytes (`%PDF` = PDF, `PK\x03\x04` = ZIP-based)
-2. If ZIP: inspect `[Content_Types].xml` inside archive → if contains `word/document.xml` = DOCX, if contains `xl/workbook.xml` = XLSX
-3. If neither: `python-magic` MIME detection as fallback
+1. Read first 8 bytes → match magic bytes (`%PDF` = PDF, `PK\x03\x04` = ZIP-based container)
+2. If ZIP: inspect `[Content_Types].xml` inside archive → if contains `word/document.xml` = DOCX; otherwise `UnsupportedFormatError`
+3. If neither: `python-magic` MIME detection → TXT/plain text
 4. If still unknown: `UnsupportedFormatError` — quarantine file
 
 **Input:** `RawUpload(filename: str, file_bytes: bytes, upload_id: str)`
-**Output:** `DetectedFormat(format: PDF|DOCX|XLSX|PPTX|TXT|CSV, confidence: float, encoding: str)`
+**Output:** `DetectedFormat(format: PDF|DOCX|TXT, confidence: float, encoding: str)`
 
 **Routing decision:**
-- XLSX/CSV → Table Extractor path (Sub-step B)
 - PDF/DOCX/TXT → Docling extraction → Table Extractor AND Prose Splitter AND Image Extractor (Sub-steps B, C, E run in parallel)
 - If Docling fails → Unstructured.partition_auto() as fallback; image extraction still runs on raw bytes
 
@@ -40,15 +39,7 @@
 
 #### Sub-step B: Table Extractor
 
-**For Excel (openpyxl path):**
-1. Iterate all visible sheets (skip hidden)
-2. For each sheet: detect header row (first row where >50% cells are non-empty strings, not numbers)
-3. Handle merged cells: propagate top-left value to all cells in merge range
-4. Handle multi-row headers: if row 1 has blanks but row 2 fills them, composite headers as "Row1_Row2"
-5. Filter noise rows: skip if >80% cells empty, skip if row matches patterns (totals, subtotals, page breaks)
-6. Each surviving row → `dict[str, str]` with header keys
-
-**For PDF/DOCX (Docling path):**
+**For PDF/DOCX/TXT (Docling path):**
 1. `DocumentConverter().convert(file_path)` → `DoclingDocument`
 2. Iterate `doc.tables` → each table has rows/cols extracted with layout awareness
 3. Docling preserves table structure even in complex PDFs (spanning cells, nested tables)
@@ -92,6 +83,8 @@ country:
 1. **Exact match:** Lowercase + strip whitespace → lookup in synonym dict → confidence 1.0
 2. **Fuzzy match:** `rapidfuzz.fuzz.token_set_ratio(header, synonym)` > 70 → confidence 0.7-0.9
 3. **Positional fallback:** Column 1 with short values (<30 chars avg) → likely req_id. Longest-text column → likely requirement_text. Confidence 0.4-0.6, flag for human review.
+
+**Note:** Applies to tables extracted from PDF/DOCX by Docling. Column headers from native document tables are matched to canonical fields using this map.
 
 **Critical rule:** `requirement_text` column MUST be found. If not → ParseError, doc rejected.
 
@@ -851,15 +844,15 @@ DE:
 
 ### Step 3: Report Generator
 
-#### A: Excel Builder (openpyxl)
+#### A: CSV Report Builder (stdlib csv)
 ```
 Fitment Matrix columns:
-  Req ID | Requirement | Module | Country | Wave | Classification | Confidence | 
+  Req ID | Requirement | Module | Country | Wave | Classification | Confidence |
   D365 Capability | Rationale | Config Steps | Gap Description | Reviewer | Override
 ```
-- Conditional formatting: FIT = green, PARTIAL_FIT = amber, GAP = red
-- Summary sheet: counts per classification, per module, per country
-- Audit trail sheet: full provenance for each classification
+- One row per validated atom
+- Summary section appended as comment rows: counts per classification, per module, per country
+- Audit trail written as a second CSV: full provenance per classification
 
 #### B: Audit Trail (PostgreSQL)
 Each classification record includes:
@@ -959,9 +952,9 @@ log.info("phase_complete",
 
 ## SAMPLE END-TO-END FLOW
 
-**Input:** Excel file from Germany team, 50 requirements for Wave 3 AP module.
+**Input:** DOCX file from Germany team, 50 requirements for Wave 3 AP module.
 
-1. **Phase 1:** Parse Excel (openpyxl) → detect "Geschäftsanforderung" column → map to `requirement_text` via synonym dict → extract 50 rows → atomize (LLM splits 3 compound reqs) → 53 atoms → normalize (2 deduped) → validate (1 rejected as too vague) → **50 ValidatedAtoms**
+1. **Phase 1:** Parse DOCX (Docling) → detect "Geschäftsanforderung" column in embedded table → map to `requirement_text` via synonym dict → extract 50 rows → atomize (LLM splits 3 compound reqs) → 53 atoms → normalize (2 deduped) → validate (1 rejected as too vague) → **50 ValidatedAtoms**
 
 2. **Phase 2:** For each atom → embed with bge-large → parallel search Qdrant (20 caps) + MS Learn (10 docs) + pgvector (0-3 history) → RRF fuse → cross-encoder rerank to top-5 → assemble context → **50 AssembledContexts**
 
@@ -969,7 +962,7 @@ log.info("phase_complete",
 
 4. **Phase 4:** FAST_TRACK: 30 single LLM calls → 28 FIT, 2 PARTIAL_FIT. DEEP_REASON: 15 × 3 LLM calls (45 total) → 8 FIT, 5 PARTIAL_FIT, 2 GAP. GAP_CONFIRM: 5 single calls → 5 GAP. **Total: 36 FIT, 7 PARTIAL_FIT, 7 GAP**
 
-5. **Phase 5:** Consistency check → 2 conflicts flagged → country override: 1 FIT → PARTIAL_FIT (German regulatory) → human review queue: 5 items (2 conflicts + 3 low confidence) → consultant approves 4, overrides 1 GAP → FIT → **Final: 37 FIT, 7 PARTIAL_FIT, 6 GAP** → Excel report generated → feeds Modules 2 & 3
+5. **Phase 5:** Consistency check → 2 conflicts flagged → country override: 1 FIT → PARTIAL_FIT (German regulatory) → human review queue: 5 items (2 conflicts + 3 low confidence) → consultant approves 4, overrides 1 GAP → FIT → **Final: 37 FIT, 7 PARTIAL_FIT, 6 GAP** → CSV report generated → feeds Modules 2 & 3
 
 **Total LLM calls:** 80 (30 + 45 + 5). At ~$0.003/call (Sonnet) = ~$0.24 per batch.
 **Total latency:** ~120 seconds for 50 requirements (parallelized across phases).

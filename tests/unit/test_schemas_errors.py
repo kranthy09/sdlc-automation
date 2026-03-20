@@ -47,35 +47,35 @@ class TestUnsupportedFormatError:
 @pytest.mark.unit
 class TestParseError:
     def test_is_exception(self) -> None:
-        err = ParseError(filename="reqs.xlsx", reason="requirement_text column not found")
+        err = ParseError(filename="reqs.pdf", reason="requirement_text column not found")
         assert isinstance(err, Exception)
 
     def test_carries_filename(self) -> None:
-        err = ParseError(filename="reqs.xlsx", reason="no header row")
-        assert err.filename == "reqs.xlsx"
+        err = ParseError(filename="reqs.pdf", reason="no header row")
+        assert err.filename == "reqs.pdf"
 
     def test_carries_reason(self) -> None:
-        err = ParseError(filename="reqs.xlsx", reason="requirement_text column not found")
+        err = ParseError(filename="reqs.pdf", reason="requirement_text column not found")
         assert err.reason == "requirement_text column not found"
 
     def test_column_attempted_optional(self) -> None:
-        err = ParseError(filename="f.xlsx", reason="missing column", column_attempted=None)
+        err = ParseError(filename="f.pdf", reason="missing column", column_attempted=None)
         assert err.column_attempted is None
 
     def test_column_attempted_stored(self) -> None:
         err = ParseError(
-            filename="f.xlsx", reason="fuzzy match failed", column_attempted="Req Desc"
+            filename="f.pdf", reason="fuzzy match failed", column_attempted="Req Desc"
         )
         assert err.column_attempted == "Req Desc"
 
     def test_str_contains_filename_and_reason(self) -> None:
-        err = ParseError(filename="data.xlsx", reason="no requirement_text")
-        assert "data.xlsx" in str(err)
+        err = ParseError(filename="data.pdf", reason="no requirement_text")
+        assert "data.pdf" in str(err)
         assert "no requirement_text" in str(err)
 
     def test_can_be_raised_and_caught(self) -> None:
         with pytest.raises(ParseError) as exc_info:
-            raise ParseError(filename="f.xlsx", reason="bad header")
+            raise ParseError(filename="f.pdf", reason="bad header")
         assert exc_info.value.reason == "bad header"
 
 

@@ -26,24 +26,24 @@ class TestRawUpload:
     def test_creates_with_required_fields(self) -> None:
         r = RawUpload(
             upload_id="u-001",
-            filename="reqs.xlsx",
+            filename="reqs.pdf",
             file_bytes=b"PKcontent",
             product_id="d365_fo",
         )
         assert r.upload_id == "u-001"
-        assert r.filename == "reqs.xlsx"
+        assert r.filename == "reqs.pdf"
         assert r.file_bytes == b"PKcontent"
         assert r.product_id == "d365_fo"
 
     def test_defaults_applied(self) -> None:
-        r = RawUpload(upload_id="u-1", filename="f.xlsx", file_bytes=b"x", product_id="d365_fo")
+        r = RawUpload(upload_id="u-1", filename="f.pdf", file_bytes=b"x", product_id="d365_fo")
         assert r.country == ""
         assert r.wave == 1
 
     def test_wave_must_be_positive(self) -> None:
         with pytest.raises(ValidationError):
             RawUpload(
-                upload_id="u-1", filename="f.xlsx", file_bytes=b"x", product_id="d365_fo", wave=0
+                upload_id="u-1", filename="f.pdf", file_bytes=b"x", product_id="d365_fo", wave=0
             )
 
     def test_empty_filename_raises(self) -> None:
@@ -52,22 +52,22 @@ class TestRawUpload:
 
     def test_missing_file_bytes_raises(self) -> None:
         with pytest.raises(ValidationError):
-            RawUpload(upload_id="u-1", filename="f.xlsx", product_id="d365_fo")  # type: ignore[call-arg]
+            RawUpload(upload_id="u-1", filename="f.pdf", product_id="d365_fo")  # type: ignore[call-arg]
 
     def test_filename_whitespace_stripped(self) -> None:
         r = RawUpload(
-            upload_id="u-1", filename="  reqs.xlsx  ", file_bytes=b"x", product_id="d365_fo"
+            upload_id="u-1", filename="  reqs.pdf  ", file_bytes=b"x", product_id="d365_fo"
         )
-        assert r.filename == "reqs.xlsx"
+        assert r.filename == "reqs.pdf"
 
     def test_uploaded_at_auto_set(self) -> None:
-        r = RawUpload(upload_id="u-1", filename="f.xlsx", file_bytes=b"x", product_id="d365_fo")
+        r = RawUpload(upload_id="u-1", filename="f.pdf", file_bytes=b"x", product_id="d365_fo")
         assert r.uploaded_at is not None
 
     def test_frozen(self) -> None:
-        r = RawUpload(upload_id="u-1", filename="f.xlsx", file_bytes=b"x", product_id="d365_fo")
+        r = RawUpload(upload_id="u-1", filename="f.pdf", file_bytes=b"x", product_id="d365_fo")
         with pytest.raises(ValidationError):
-            r.filename = "other.xlsx"  # type: ignore[misc]
+            r.filename = "other.pdf"  # type: ignore[misc]
 
 
 # ---------------------------------------------------------------------------

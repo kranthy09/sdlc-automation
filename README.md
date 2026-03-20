@@ -34,7 +34,7 @@ Import boundaries are enforced by CI on every PR — violations block merges.
 | Sparse retrieval | rank_bm25 |
 | Reranker | cross-encoder/ms-marco-MiniLM |
 | Storage | PostgreSQL + pgvector, Redis |
-| Document parsing | Docling (primary), Unstructured (fallback), openpyxl |
+| Document parsing | Docling (primary), Unstructured (fallback) — PDF, DOCX, TXT |
 | API | FastAPI + Celery + WebSocket |
 | Observability | structlog + Prometheus + Grafana |
 | Package manager | uv |
