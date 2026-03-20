@@ -13,19 +13,19 @@ setup:
 # Testing
 # ---------------------------------------------------------------------------
 test:
-	uv run pytest -x --cov=platform --cov=modules --cov=agents -v
+	uv run python -m pytest -x --cov=platform --cov=modules --cov=agents -v
 
 test-unit:
-	uv run pytest -m unit -v
+	uv run python -m pytest -m unit -v
 
 test-integration:
-	uv run pytest -m integration -v
+	uv run python -m pytest -m integration -v
 
 test-module:
-	uv run pytest modules/$(M)/tests/ -v
+	uv run python -m pytest modules/$(M)/tests/ -v
 
 test-golden:
-	uv run pytest -m golden -v
+	uv run python -m pytest -m golden -v
 
 # ---------------------------------------------------------------------------
 # Quality

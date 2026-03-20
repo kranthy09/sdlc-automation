@@ -141,6 +141,7 @@ module = [
     "faiss.*",
     "datasketch.*",
     "docling.*",
+    "docling_core.*",
     "unstructured.*",
     "magic.*",
     "spacy.*",
