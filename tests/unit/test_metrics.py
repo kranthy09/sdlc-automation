@@ -208,5 +208,3 @@ def test_different_services_tracked_independently() -> None:
     )
     assert llm_ok == 1.0
     assert pg_error == 1.0
-
-

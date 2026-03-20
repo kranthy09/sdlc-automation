@@ -110,9 +110,7 @@ class LLMClient:
             registry=_registry,
         )
         settings = get_settings()
-        self._client = anthropic.Anthropic(
-            api_key=settings.anthropic_api_key.get_secret_value()
-        )
+        self._client = anthropic.Anthropic(api_key=settings.anthropic_api_key.get_secret_value())
 
     def complete(
         self,
@@ -191,21 +189,15 @@ class LLMClient:
                 None,
             )
             if tool_block is None:
-                raise LLMError(
-                    f"LLM response contained no tool_use block (model={model!r})"
-                )
+                raise LLMError(f"LLM response contained no tool_use block (model={model!r})")
 
             result: T = output_schema.model_validate(tool_block.input)
 
             # Emit cost metrics
             in_tokens: int = response.usage.input_tokens
             out_tokens: int = response.usage.output_tokens
-            in_cost = (
-                in_tokens * _INPUT_COST_PER_M.get(model, _DEFAULT_INPUT_COST) / 1_000_000
-            )
-            out_cost = (
-                out_tokens * _OUTPUT_COST_PER_M.get(model, _DEFAULT_OUTPUT_COST) / 1_000_000
-            )
+            in_cost = in_tokens * _INPUT_COST_PER_M.get(model, _DEFAULT_INPUT_COST) / 1_000_000
+            out_cost = out_tokens * _OUTPUT_COST_PER_M.get(model, _DEFAULT_OUTPUT_COST) / 1_000_000
             self._cost_counter.labels(model=model, direction="input").inc(in_cost)
             self._cost_counter.labels(model=model, direction="output").inc(out_cost)
 

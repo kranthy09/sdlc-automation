@@ -186,5 +186,3 @@ def test_configure_logging_is_idempotent(monkeypatch: pytest.MonkeyPatch) -> Non
         configure_logging()  # second call must not raise or corrupt state
     finally:
         get_settings.cache_clear()
-
-
