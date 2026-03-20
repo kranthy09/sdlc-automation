@@ -18,7 +18,6 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import MagicMock
 
-import pandas as pd
 import pytest
 from prometheus_client import CollectorRegistry
 
@@ -35,11 +34,21 @@ def _make_mock_doc(
     """Build a MagicMock docling document with controllable tables and texts."""
     doc = MagicMock()
 
-    # Tables — each entry in table_dfs becomes one TableItem mock
+    # Tables — each entry in table_dfs becomes one TableItem mock.
+    # We build a minimal DataFrame-like mock: the production code only calls
+    # .empty and .iterrows(), so no real pandas dependency is needed.
     mock_tables: list[MagicMock] = []
     for rows in table_dfs or []:
         t = MagicMock()
-        t.export_to_dataframe.return_value = pd.DataFrame(rows)
+        df = MagicMock()
+        df.empty = len(rows) == 0
+        mock_rows = []
+        for row in rows:
+            mock_row = MagicMock()
+            mock_row.items.return_value = list(row.items())
+            mock_rows.append(mock_row)
+        df.iterrows.return_value = iter(enumerate(mock_rows))
+        t.export_to_dataframe.return_value = df
         mock_tables.append(t)
     doc.tables = mock_tables
 
