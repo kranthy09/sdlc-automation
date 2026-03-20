@@ -63,9 +63,7 @@ class TestParseError:
         assert err.column_attempted is None
 
     def test_column_attempted_stored(self) -> None:
-        err = ParseError(
-            filename="f.pdf", reason="fuzzy match failed", column_attempted="Req Desc"
-        )
+        err = ParseError(filename="f.pdf", reason="fuzzy match failed", column_attempted="Req Desc")
         assert err.column_attempted == "Req Desc"
 
     def test_str_contains_filename_and_reason(self) -> None:
