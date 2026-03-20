@@ -8,31 +8,27 @@ dependencies = [
     "langgraph>=0.2",
     "langchain-core>=0.3",
     "langchain-anthropic>=0.3",
-    "langsmith>=0.1",
-
+    "langfuse>=2.0",             # MIT, self-hosted — replaces LangSmith (commercial BSL)
     # Schemas / validation — needed from Layer 1 onward
     "pydantic>=2.6",
     "pydantic-settings>=2.2",
-
     # Storage — lightweight async clients
     "sqlalchemy[asyncio]>=2.0",
     "asyncpg>=0.29",
     "redis>=5.0",
     "psycopg2-binary>=2.9",
-
     # API / workers
     "fastapi>=0.110",
     "uvicorn[standard]>=0.27",
     "celery[redis]>=5.3",
     "python-multipart>=0.0.9",
-
+    # LLM SDK (direct — also a transitive dep of langchain-anthropic)
+    "anthropic>=0.40",
     # Observability
     "structlog>=24.1",
     "prometheus-client>=0.20",
-
     # Templating
     "jinja2>=3.1",
-
     # Utilities
     "click>=8.1",
     "httpx>=0.27",
@@ -152,7 +148,7 @@ module = [
     "argostranslate.*",
     "celery.*",
     "networkx.*",
-    "langsmith.*",
+    "langfuse.*",
     "langchain_anthropic.*",
     "langchain_core.*",
     "langgraph.*",

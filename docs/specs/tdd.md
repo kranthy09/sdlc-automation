@@ -1,5 +1,31 @@
 # TDD Implementation Guide — Building DYNAFIT from Foundation
 
+## MVP Testing Philosophy
+
+**Goal: fast to market, high confidence in core value, low maintenance cost.**
+
+| Layer | Test type | What to test |
+|-------|-----------|--------------|
+| Platform schemas | Unit | One valid case + invalid enum/range/required — trust Pydantic for the rest |
+| Platform utilities | Unit | Complex logic only: error-path branching, counter accuracy, retry behaviour |
+| Module nodes | Unit (mocked) | Non-trivial algorithms; skip simple pass-through nodes |
+| End-to-end workflows | Integration | The critical user journeys (upload → classify → report) with real services |
+| LLM calls | Golden fixture | Capture once, replay in CI — never live in CI |
+
+**Do NOT write tests for:**
+- Object construction ("can I instantiate X") — trust the import
+- Simple defaults — they're in the schema definition, read it
+- Every valid enum value — one valid + one invalid covers the contract
+- Framework features: Pydantic `frozen`, `str_strip_whitespace`, SQLAlchemy sessions
+- Duplicate-pattern validation (e.g. testing each missing required field separately)
+
+**Write tests for:**
+- Business rules: score ranges, wave ≥ 1, non-empty required text
+- Error paths: exception re-raise, status="error" counter, transaction rollback
+- Core journeys: requirement upload → fitment CSV output (integration)
+
+---
+
 > **Read CLAUDE.md before this file.** The build order here maps directly to the Layer 0–4
 > sequence defined there. Do not skip layers. Do not start DYNAFIT before Layers 0–2 are done.
 >
@@ -188,36 +214,37 @@ dependencies = [
     "langgraph>=0.2",
     "langchain-core>=0.3",
     "langchain-anthropic>=0.3",
-    
-    # Parsing
+    "langfuse>=2.0",           # MIT, self-hosted — open-source LLM observability
+
+    # Parsing (PDF, DOCX, TXT only — see docs/lessons.md)
     "docling>=2.0",
 
     # NLP
     "spacy>=3.7",
     "rapidfuzz>=3.6",
-    
+
     # Vector / Retrieval
     "qdrant-client>=1.8",
     "sentence-transformers>=2.5",
     "rank-bm25>=0.2",
-    
+
     # Storage
     "sqlalchemy[asyncio]>=2.0",
     "asyncpg>=0.29",
     "redis>=5.0",
-    
+
     # API
     "fastapi>=0.110",
     "uvicorn[standard]>=0.27",
     "celery[redis]>=5.3",
-    
+
     # Observability
     "structlog>=24.1",
     "prometheus-client>=0.20",
-    
+
     # Templating
     "jinja2>=3.1",
-    
+
 ]
 
 [project.optional-dependencies]
@@ -586,6 +613,15 @@ services:
   redis:
     image: redis:7-alpine
     ports: ["6379:6379"]
+
+  langfuse:
+    image: langfuse/langfuse:latest
+    ports: ["3000:3000"]
+    environment:
+      DATABASE_URL: postgresql://platform:dev_password@postgres/langfuse
+      NEXTAUTH_SECRET: dev_secret_change_in_prod
+      NEXTAUTH_URL: http://localhost:3000
+    depends_on: [postgres]
 
   prometheus:
     image: prom/prometheus:latest

@@ -84,22 +84,6 @@ def test_settings_missing_api_key_raises(monkeypatch: pytest.MonkeyPatch) -> Non
         Settings()
 
 
-@pytest.mark.unit
-def test_settings_missing_postgres_url_raises(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Missing POSTGRES_URL raises a validation error."""
-    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test-key")
-    monkeypatch.delenv("POSTGRES_URL", raising=False)
-    monkeypatch.setenv("REDIS_URL", "redis://localhost:6379/0")
-    monkeypatch.setenv("QDRANT_URL", "http://localhost:6333")
-
-    from pydantic import ValidationError
-
-    from platform.config.settings import Settings
-
-    with pytest.raises(ValidationError):
-        Settings()
-
-
 # ---------------------------------------------------------------------------
 # Validation — allowed literal values
 # ---------------------------------------------------------------------------
@@ -113,23 +97,6 @@ def test_settings_invalid_environment_raises(monkeypatch: pytest.MonkeyPatch) ->
     monkeypatch.setenv("REDIS_URL", "redis://localhost:6379/0")
     monkeypatch.setenv("QDRANT_URL", "http://localhost:6333")
     monkeypatch.setenv("ENVIRONMENT", "local")  # not in allowed set
-
-    from pydantic import ValidationError
-
-    from platform.config.settings import Settings
-
-    with pytest.raises(ValidationError):
-        Settings()
-
-
-@pytest.mark.unit
-def test_settings_invalid_log_level_raises(monkeypatch: pytest.MonkeyPatch) -> None:
-    """An unrecognised LOG_LEVEL value raises a validation error."""
-    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test-key")
-    monkeypatch.setenv("POSTGRES_URL", "postgresql+asyncpg://user:pw@localhost/testdb")
-    monkeypatch.setenv("REDIS_URL", "redis://localhost:6379/0")
-    monkeypatch.setenv("QDRANT_URL", "http://localhost:6333")
-    monkeypatch.setenv("LOG_LEVEL", "TRACE")  # not in allowed set
 
     from pydantic import ValidationError
 

@@ -6,7 +6,7 @@
 - **Only build what is explicitly requested** for the current phase. No anticipatory features.
 - **Confirm scope** before starting. If the request is vague, ask. Don't infer and over-build.
 - **Layer order is strict.** Layer 2 utility before any Layer 3 node. No exceptions.
-- **RED → GREEN → REFACTOR.** Write the test first. It must fail before implementation starts.
+- **MVP Testing:** Integration tests for core business workflows first. Unit tests only for complex business logic (validation rules, algorithms, error-path branching). Never test constructors, simple defaults, Pydantic built-ins (frozen, whitespace stripping), or every enum value — one valid + one invalid case is enough.
 
 ## Import Boundaries (CI-enforced)
 

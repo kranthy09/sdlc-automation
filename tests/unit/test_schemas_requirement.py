@@ -35,11 +35,6 @@ class TestRawUpload:
         assert r.file_bytes == b"PKcontent"
         assert r.product_id == "d365_fo"
 
-    def test_defaults_applied(self) -> None:
-        r = RawUpload(upload_id="u-1", filename="f.pdf", file_bytes=b"x", product_id="d365_fo")
-        assert r.country == ""
-        assert r.wave == 1
-
     def test_wave_must_be_positive(self) -> None:
         with pytest.raises(ValidationError):
             RawUpload(
@@ -52,22 +47,9 @@ class TestRawUpload:
 
     def test_missing_file_bytes_raises(self) -> None:
         with pytest.raises(ValidationError):
-            RawUpload(upload_id="u-1", filename="f.pdf", product_id="d365_fo")  # type: ignore[call-arg]
-
-    def test_filename_whitespace_stripped(self) -> None:
-        r = RawUpload(
-            upload_id="u-1", filename="  reqs.pdf  ", file_bytes=b"x", product_id="d365_fo"
-        )
-        assert r.filename == "reqs.pdf"
-
-    def test_uploaded_at_auto_set(self) -> None:
-        r = RawUpload(upload_id="u-1", filename="f.pdf", file_bytes=b"x", product_id="d365_fo")
-        assert r.uploaded_at is not None
-
-    def test_frozen(self) -> None:
-        r = RawUpload(upload_id="u-1", filename="f.pdf", file_bytes=b"x", product_id="d365_fo")
-        with pytest.raises(ValidationError):
-            r.filename = "other.pdf"  # type: ignore[misc]
+            RawUpload(  # type: ignore[call-arg]
+                upload_id="u-1", filename="f.pdf", product_id="d365_fo"
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -86,14 +68,6 @@ class TestRequirementAtom:
         assert a.atom_id == "a-001"
         assert a.requirement_text == "The system shall process invoices."
 
-    def test_defaults(self) -> None:
-        a = RequirementAtom(atom_id="a-1", upload_id="u-1", requirement_text="Something.")
-        assert a.content_type == "text"
-        assert a.image_components == []
-        assert a.d365_modules_implied == []
-        assert a.source_row is None
-        assert a.raw_module_hint is None
-
     def test_empty_requirement_text_raises(self) -> None:
         with pytest.raises(ValidationError):
             RequirementAtom(atom_id="a-1", upload_id="u-1", requirement_text="")
@@ -106,38 +80,6 @@ class TestRequirementAtom:
                 requirement_text="text",
                 content_type="video",  # type: ignore[arg-type]
             )
-
-    def test_valid_content_types(self) -> None:
-        for ct in ("text", "image_derived", "prose"):
-            a = RequirementAtom(
-                atom_id="a-1",
-                upload_id="u-1",
-                requirement_text="req",
-                content_type=ct,  # type: ignore[arg-type]
-            )
-            assert a.content_type == ct
-
-    def test_image_components_stored(self) -> None:
-        a = RequirementAtom(
-            atom_id="a-1",
-            upload_id="u-1",
-            requirement_text="arch req",
-            image_components=["SystemA", "SystemB"],
-        )
-        assert a.image_components == ["SystemA", "SystemB"]
-
-    def test_whitespace_stripped_on_text(self) -> None:
-        a = RequirementAtom(
-            atom_id="a-1",
-            upload_id="u-1",
-            requirement_text="  The system shall process invoices.  ",
-        )
-        assert a.requirement_text == "The system shall process invoices."
-
-    def test_frozen(self) -> None:
-        a = RequirementAtom(atom_id="a-1", upload_id="u-1", requirement_text="req")
-        with pytest.raises(ValidationError):
-            a.atom_id = "other"  # type: ignore[misc]
 
 
 # ---------------------------------------------------------------------------
@@ -164,40 +106,9 @@ class TestValidatedAtom:
         assert a.atom_id == "a-001"
         assert a.module == "AccountsPayable"
 
-    def test_defaults(self) -> None:
-        a = ValidatedAtom(**self._VALID)
-        assert a.priority == "SHOULD"
-        assert a.content_type == "text"
-        assert a.entity_hints == []
-        assert a.source_refs == []
-
     def test_invalid_module_raises(self) -> None:
         with pytest.raises(ValidationError):
             ValidatedAtom(**{**self._VALID, "module": "FakeModule"})
-
-    def test_all_valid_modules_accepted(self) -> None:
-        valid_modules = [
-            "AccountsPayable",
-            "AccountsReceivable",
-            "GeneralLedger",
-            "FixedAssets",
-            "Budgeting",
-            "CashAndBankManagement",
-            "ProcurementAndSourcing",
-            "InventoryManagement",
-            "ProductionControl",
-            "SalesAndMarketing",
-            "ProjectManagement",
-            "HumanResources",
-            "Warehouse",
-            "Transportation",
-            "MasterPlanning",
-            "OrganizationAdministration",
-            "SystemAdministration",
-        ]
-        for mod in valid_modules:
-            a = ValidatedAtom(**{**self._VALID, "module": mod})
-            assert a.module == mod
 
     def test_specificity_score_out_of_range_raises(self) -> None:
         with pytest.raises(ValidationError):
@@ -223,11 +134,6 @@ class TestValidatedAtom:
         with pytest.raises(ValidationError):
             ValidatedAtom(**{**self._VALID, "wave": 0})
 
-    def test_frozen(self) -> None:
-        a = ValidatedAtom(**self._VALID)
-        with pytest.raises(ValidationError):
-            a.module = "GeneralLedger"  # type: ignore[misc]
-
 
 # ---------------------------------------------------------------------------
 # FlaggedAtom
@@ -250,18 +156,11 @@ class TestFlaggedAtom:
         assert f.flag_reason == "TOO_VAGUE"
         assert f.flag_detail == "specificity_score=0.18, below threshold 0.30"
 
-    def test_all_flag_reasons_accepted(self) -> None:
-        for reason in ("TOO_VAGUE", "SCHEMA_MISMATCH", "POTENTIAL_DUPLICATE", "INCOMPLETE"):
-            f = FlaggedAtom(**{**self._VALID, "flag_reason": reason})
-            assert f.flag_reason == reason
-
     def test_invalid_flag_reason_raises(self) -> None:
         with pytest.raises(ValidationError):
-            FlaggedAtom(**{**self._VALID, "flag_reason": "WRONG_REASON"})  # type: ignore[arg-type]
-
-    def test_specificity_score_optional(self) -> None:
-        f = FlaggedAtom(**{**self._VALID, "specificity_score": None})
-        assert f.specificity_score is None
+            FlaggedAtom(  # type: ignore[arg-type]
+                **{**self._VALID, "flag_reason": "WRONG_REASON"}
+            )
 
     def test_specificity_score_out_of_range_raises(self) -> None:
         with pytest.raises(ValidationError):
@@ -270,8 +169,3 @@ class TestFlaggedAtom:
     def test_empty_requirement_text_raises(self) -> None:
         with pytest.raises(ValidationError):
             FlaggedAtom(**{**self._VALID, "requirement_text": ""})
-
-    def test_frozen(self) -> None:
-        f = FlaggedAtom(**self._VALID)
-        with pytest.raises(ValidationError):
-            f.flag_reason = "INCOMPLETE"  # type: ignore[misc]

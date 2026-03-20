@@ -23,25 +23,6 @@ def clear_ctx() -> None:
 
 
 # ---------------------------------------------------------------------------
-# get_logger
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.unit
-def test_get_logger_returns_a_logger() -> None:
-    """get_logger() returns something that looks like a BoundLogger."""
-    from platform.observability.logger import get_logger
-
-    log = get_logger("test.module")
-    assert log is not None
-    # structlog loggers expose these methods regardless of configuration
-    assert callable(getattr(log, "info", None))
-    assert callable(getattr(log, "debug", None))
-    assert callable(getattr(log, "warning", None))
-    assert callable(getattr(log, "error", None))
-
-
-# ---------------------------------------------------------------------------
 # Capturing log events
 # ---------------------------------------------------------------------------
 
@@ -207,20 +188,3 @@ def test_configure_logging_is_idempotent(monkeypatch: pytest.MonkeyPatch) -> Non
         get_settings.cache_clear()
 
 
-@pytest.mark.unit
-def test_configure_logging_accepts_level_override(monkeypatch: pytest.MonkeyPatch) -> None:
-    """configure_logging(log_level=...) accepts an explicit level without error."""
-    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test")
-    monkeypatch.setenv("POSTGRES_URL", "postgresql+asyncpg://u:p@localhost/db")
-    monkeypatch.setenv("REDIS_URL", "redis://localhost:6379/0")
-    monkeypatch.setenv("QDRANT_URL", "http://localhost:6333")
-
-    from platform.config.settings import get_settings
-
-    get_settings.cache_clear()
-    try:
-        from platform.observability.logger import configure_logging
-
-        configure_logging(log_level="DEBUG", environment="production")
-    finally:
-        get_settings.cache_clear()

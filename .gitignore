@@ -77,6 +77,5 @@ ui/.vite/
 logs/
 
 # custom ignores
-docs/
 .VSCODE_CLAUDE_CODE_SETUP.md
 .CLAUDE.md

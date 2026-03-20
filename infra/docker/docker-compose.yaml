@@ -48,6 +48,27 @@ services:
       timeout: 5s
       retries: 5
 
+  langfuse:
+    image: langfuse/langfuse:latest
+    container_name: platform_langfuse
+    ports:
+      - "3000:3000"
+    environment:
+      DATABASE_URL: postgresql://platform:dev_password@postgres/langfuse
+      NEXTAUTH_SECRET: dev_secret_change_in_prod
+      NEXTAUTH_URL: http://localhost:3000
+      TELEMETRY_ENABLED: "false"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/api/public/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
   prometheus:
     image: prom/prometheus:latest
     container_name: platform_prometheus
@@ -82,3 +103,4 @@ volumes:
   redis_data:
   prometheus_data:
   grafana_data:
+  langfuse_data:

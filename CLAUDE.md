@@ -50,7 +50,7 @@ CI rejects violations on every PR via `make validate-contracts`.
 | Mistakes made and the rules they produced | `docs/lessons.md` |
 | DYNAFIT 5-phase algorithms + prompts | `docs/specs/dynafit.md` (Layer 3 only) |
 | API endpoints, WebSocket, DB schema, React | `docs/specs/api.md` (Layer 4 only) |
-| TDD patterns, Docker setup, golden fixtures | `docs/specs/tdd.md` |
+| MVP testing philosophy, patterns, golden fixtures | `docs/specs/tdd.md` |
 
 **Read `docs/rules.md` before writing any code in this project.**
 

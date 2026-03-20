@@ -9,3 +9,12 @@ BEGIN
     END IF;
 END
 $$;
+
+-- Create Langfuse database (LLM observability — open-source, self-hosted)
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT FROM pg_database WHERE datname = 'langfuse') THEN
+        PERFORM dblink_exec('dbname=postgres', 'CREATE DATABASE langfuse OWNER platform');
+    END IF;
+END
+$$;
