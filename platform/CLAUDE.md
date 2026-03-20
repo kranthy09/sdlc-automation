@@ -13,20 +13,26 @@ platform/schemas/events.py      WebSocket message types
 platform/schemas/errors.py      UnsupportedFormatError, ParseError, RetrievalError
 ```
 
-**Layer 2 (utilities) — build one component at a time in this order:**
-- [ ] `platform/config/settings.py` ← start here
-- [ ] `platform/observability/logger.py`
-- [ ] `platform/observability/metrics.py`
-- [ ] `platform/llm/client.py`
-- [ ] `platform/retrieval/embedder.py`
-- [ ] `platform/retrieval/vector_store.py`
-- [ ] `platform/retrieval/bm25.py`
-- [ ] `platform/retrieval/reranker.py`
-- [ ] `platform/parsers/format_detector.py` — detects PDF|DOCX|TXT only (no XLSX/ZIP)
-- [ ] `platform/parsers/docling_parser.py`
-- [ ] `platform/storage/postgres.py`
-- [ ] `platform/storage/redis_pub.py`
-- [ ] `platform/testing/factories.py`
+**Layer 2 (utilities) — COMPLETE (13/13)**
+- [x] `platform/config/settings.py`
+- [x] `platform/observability/logger.py`
+- [x] `platform/observability/metrics.py`
+- [x] `platform/llm/client.py`
+- [x] `platform/retrieval/embedder.py`
+- [x] `platform/retrieval/vector_store.py`
+- [x] `platform/retrieval/bm25.py`
+- [x] `platform/retrieval/reranker.py`
+- [x] `platform/parsers/format_detector.py` — detects PDF|DOCX|TXT only (no XLSX/ZIP)
+- [x] `platform/parsers/docling_parser.py`
+- [x] `platform/storage/postgres.py`
+- [x] `platform/storage/redis_pub.py`
+- [x] `platform/testing/factories.py`
+
+**Layer 2 Extension — Guardrail Utilities (Session A, build before Layer 3 phase nodes)**
+- [ ] `platform/schemas/guardrails.py` + `platform/guardrails/file_validator.py` → tests/unit/test_file_validator.py
+- [ ] `platform/guardrails/injection_scanner.py` → tests/unit/test_injection_scanner.py
+
+See `docs/specs/guardrails.md` for full design. These are reusable across all future products.
 
 ## Platform Rules
 

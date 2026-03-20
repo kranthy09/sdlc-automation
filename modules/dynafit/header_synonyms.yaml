@@ -1,0 +1,134 @@
+# Header synonym map for Phase 1 column resolution.
+# Structure: canonical_field → { lang_code: [synonyms...] }
+# Language codes: en, de, fr
+# All comparison is done case-insensitively after strip().
+# Three-tier resolution in phase1_ingestion.py:
+#   1. Exact match      → confidence 1.0
+#   2. Fuzzy match >70  → confidence 0.7-0.9  (rapidfuzz token_set_ratio)
+#   3. No match         → (None, 0.0)
+# CRITICAL: requirement_text MUST be found or the document is rejected.
+
+requirement_text:
+  en:
+    - "Business Requirement"
+    - "Req Description"
+    - "Requirement"
+    - "Requirements"
+    - "User Need"
+    - "Functional Requirement"
+    - "Functional Requirements"
+    - "Req Desc"
+    - "Requirement Description"
+    - "Description"
+    - "Requirement Text"
+    - "Requirement Detail"
+    - "Business Need"
+    - "User Story"
+    - "Feature Request"
+    - "Specification"
+  de:
+    - "Geschäftsanforderung"
+    - "Anforderungsbeschreibung"
+    - "Fachliche Anforderung"
+    - "Anforderung"
+    - "Anforderungstext"
+    - "Beschreibung"
+    - "Benutzeranforderung"
+  fr:
+    - "Exigence métier"
+    - "Description exigence"
+    - "Exigence"
+    - "Description"
+    - "Besoin"
+    - "Exigence fonctionnelle"
+
+req_id:
+  en:
+    - "Requirement ID"
+    - "Req ID"
+    - "Req No"
+    - "Req #"
+    - "ID"
+    - "Ref"
+    - "No."
+    - "Number"
+    - "Ref #"
+    - "Reference"
+    - "Item"
+    - "Item No"
+    - "Req Number"
+    - "Requirement No"
+    - "#"
+  de:
+    - "Anforderung Nr."
+    - "Anf-Nr"
+    - "Nr."
+    - "Lfd. Nr."
+    - "ID"
+  fr:
+    - "Réf"
+    - "N° Exigence"
+    - "No"
+    - "Référence"
+
+module:
+  en:
+    - "Module"
+    - "D365 Module"
+    - "Functional Area"
+    - "Process Area"
+    - "Area"
+    - "System Area"
+    - "Application Area"
+    - "Domain"
+    - "Workstream"
+    - "Work Stream"
+    - "Finance Area"
+    - "F&O Module"
+  de:
+    - "Modul"
+    - "Funktionsbereich"
+    - "Bereich"
+    - "Prozessbereich"
+  fr:
+    - "Module"
+    - "Domaine"
+    - "Périmètre"
+
+priority:
+  en:
+    - "Priority"
+    - "MoSCoW"
+    - "Importance"
+    - "Must/Should/Could"
+    - "Prio"
+    - "Criticality"
+    - "Must Have"
+    - "Urgency"
+    - "Rank"
+  de:
+    - "Priorität"
+    - "Wichtigkeit"
+    - "Dringlichkeit"
+  fr:
+    - "Priorité"
+    - "Importance"
+
+country:
+  en:
+    - "Country"
+    - "Legal Entity"
+    - "Region"
+    - "Country/Region"
+    - "Locale"
+    - "Country Code"
+    - "Location"
+  de:
+    - "Land"
+    - "Buchungskreis"
+    - "Region"
+    - "Ländercode"
+  fr:
+    - "Pays"
+    - "Région"
+    - "Entité légale"

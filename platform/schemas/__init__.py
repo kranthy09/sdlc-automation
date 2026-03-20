@@ -7,6 +7,7 @@ Never import directly from sub-modules outside of platform/schemas/ itself.
 
 from .base import PlatformModel
 from .errors import ParseError, RetrievalError, UnsupportedFormatError
+from .guardrails import FileValidationResult, InjectionScanResult
 from .events import (
     ClassificationEvent,
     CompleteEvent,
@@ -45,6 +46,9 @@ __all__ = [
     "ParseError",
     "RetrievalError",
     "UnsupportedFormatError",
+    # guardrails
+    "FileValidationResult",
+    "InjectionScanResult",
     # events
     "ClassificationEvent",
     "CompleteEvent",

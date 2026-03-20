@@ -28,3 +28,18 @@ modules/{name}/
 - Zero direct infra instantiation — use mock factories for Qdrant, Postgres, Redis
 - All LLM-dependent tests use golden fixtures from `tests/fixtures/golden/`
 - `make test-module M={name}` must pass fully before the module is considered Layer 3 complete
+
+## Guardrails — Built Alongside Each Phase Node
+
+**Read `docs/specs/guardrails.md` before building any DYNAFIT phase node.**
+
+Guardrails are not a separate layer. Each phase node owns its guardrail and they are built in the same session.
+
+| Phase | Node file | Guardrail |
+|-------|-----------|-----------|
+| Pre-Layer 3 (Session A) | `platform/guardrails/file_validator.py` + `injection_scanner.py` | G1-lite + G3-lite — built first, called by Phase 1 |
+| Phase 1 — Ingestion | `nodes/phase1_ingestion.py` | Calls G1-lite and G3-lite (already built) |
+| Phase 4 — Classification | `nodes/phase4_classification.py` | G8 (Jinja2 template pattern) + G9 (Pydantic strict — built-in) |
+| Phase 5 — Validation | `nodes/phase5_validation.py` + `guardrails.py` | G10-lite sanity gate + HITL via LangGraph `interrupt()` |
+
+HITL is mandatory at Phase 5. The node MUST call `interrupt()` when `flagged_for_review` is non-empty. Batch completion is blocked until a human resolves every flagged item.

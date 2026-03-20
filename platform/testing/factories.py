@@ -49,6 +49,7 @@ from typing import Any, cast
 from unittest.mock import AsyncMock, MagicMock
 
 import numpy as np
+from prometheus_client import CollectorRegistry
 from pydantic import BaseModel
 
 from platform.llm.client import LLMClient
@@ -141,7 +142,7 @@ def make_embedder(*, dim: int = 1024) -> Embedder:
         return np.zeros(dim, dtype=np.float32)
 
     mock_model.encode.side_effect = _encode
-    return Embedder("test-model", _model=mock_model)
+    return Embedder("test-model", _model=mock_model, registry=CollectorRegistry())
 
 
 def make_vector_store(hits: list[SearchHit] | None = None) -> VectorStore:
@@ -176,7 +177,7 @@ def make_vector_store(hits: list[SearchHit] | None = None) -> VectorStore:
     mock_response.points = mock_points
     mock_client.query_points.return_value = mock_response
 
-    return VectorStore("http://localhost:6333", _client=mock_client)
+    return VectorStore("http://localhost:6333", _client=mock_client, registry=CollectorRegistry())
 
 
 def make_postgres_store(

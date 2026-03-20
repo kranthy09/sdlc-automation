@@ -27,6 +27,9 @@ test-module:
 test-golden:
 	uv run python -m pytest -m golden -v
 
+test-phase3:
+	uv run python -m pytest tests/integration/test_phase3.py -v
+
 # ---------------------------------------------------------------------------
 # Quality
 # ---------------------------------------------------------------------------

@@ -19,13 +19,19 @@ on:
 # Layer gate (update this comment as layers complete):
 #   Layer 0  DONE — scaffold + CI
 #   Layer 1  DONE — all schemas
-#   Layer 2  IN PROGRESS — platform utilities
-#              done:    2.1 settings, 2.2 logger, 2.3 metrics, 2.4 llm_client,
-#                       2.5 embedder, 2.6 vector_store, 2.7 bm25, 2.8 reranker
-#              pending: 2.9 format_detector, 2.10 docling_parser,
-#                       2.11 postgres, 2.12 redis_pub, 2.13 factories
-#   Layer 3  pending — DYNAFIT module (golden fixtures replayed here)
-#   Layer 4  pending — API + workers + UI
+#   Layer 2  DONE — all 13 platform utilities + guardrail utilities (Session A)
+#              2.1 settings, 2.2 logger, 2.3 metrics, 2.4 llm_client,
+#              2.5 embedder, 2.6 vector_store, 2.7 bm25, 2.8 reranker,
+#              2.9 format_detector, 2.10 docling_parser, 2.11 postgres,
+#              2.12 redis_pub, 2.13 factories
+#              2.A file_validator (G1-lite), 2.B injection_scanner (G3-lite)
+#   Layer 3  IN PROGRESS — DYNAFIT 5-phase LangGraph pipeline
+#              done:    Session A (guardrail utils), Session B (state + graph scaffold),
+#                       Session C (Phase 1 ingestion), Session D (Phase 2 RAG),
+#                       Session E (Phase 3 semantic matching)
+#              pending: Session F (Phase 4 LLM classification + G8/G9),
+#                       Session G (Phase 5 validation + HITL + G10-lite)
+#   Layer 4  pending — FastAPI + Celery workers + React UI
 # ---------------------------------------------------------------------------
 
 # ---------------------------------------------------------------------------
@@ -152,8 +158,9 @@ jobs:
           echo "Qdrant is ready."
 
       - name: Integration tests
-        # Exit code 5 = "no tests collected" — expected while Layer 2 is in
-        # progress. Any other non-zero exit is a real failure.
+        # Exit code 5 = "no tests collected" — only real-infra tests are marked
+        # @pytest.mark.integration; Layer 3 phase tests use @pytest.mark.unit.
+        # Exit 5 is still acceptable until Session F/G add live-infra integration tests.
         run: |
           if uv run pytest -m integration -v --tb=short \
               --cov=platform --cov=modules --cov=agents \

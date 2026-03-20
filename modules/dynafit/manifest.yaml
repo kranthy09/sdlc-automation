@@ -1,0 +1,58 @@
+id: dynafit
+version: "0.1.0"
+display_name: "DYNAFIT — D365 F&O Requirement Fitment Engine"
+description: >
+  5-phase LangGraph pipeline: Ingestion → RAG → Matching → Classification → Validation.
+  Classifies client requirements as FIT / PARTIAL_FIT / GAP against standard D365 F&O.
+
+product_id: d365_fo
+input_schema: "platform.schemas.requirement.RawUpload"
+output_schema: "platform.schemas.fitment.ValidatedFitmentBatch"
+
+phases:
+  - id: 1
+    name: ingestion
+    node: ingest
+    description: "Parse document → atomize → validate requirements"
+  - id: 2
+    name: rag
+    node: retrieve
+    description: "Retrieve D365 capabilities + MS Learn docs + historical fitments"
+  - id: 3
+    name: matching
+    node: match
+    description: "Multi-signal composite scoring + routing tier assignment"
+  - id: 4
+    name: classification
+    node: classify
+    description: "LLM reasoning → FIT / PARTIAL_FIT / GAP verdict"
+  - id: 5
+    name: validation
+    node: validate
+    description: "Sanity gate + HITL checkpoint + report generation"
+
+hitl_required: true
+hitl_phase: 5
+hitl_mechanism: langgraph_interrupt
+
+guardrails:
+  - id: G1-lite
+    phase: 1
+    location: "platform/guardrails/file_validator.py"
+    triggers: pre-parse
+  - id: G3-lite
+    phase: 1
+    location: "platform/guardrails/injection_scanner.py"
+    triggers: post-extract
+  - id: G8
+    phase: 4
+    location: "structural_jinja2_pattern"
+    triggers: pre-llm
+  - id: G9
+    phase: 4
+    location: "pydantic_strict_validation"
+    triggers: post-llm
+  - id: G10-lite
+    phase: 5
+    location: "modules/dynafit/guardrails.py"
+    triggers: pre-hitl
