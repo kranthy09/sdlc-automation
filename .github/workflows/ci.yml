@@ -20,9 +20,9 @@ on:
 #   Layer 0  DONE — scaffold + CI
 #   Layer 1  DONE — all schemas
 #   Layer 2  IN PROGRESS — platform utilities
-#              done:    2.1 settings, 2.2 logger, 2.3 metrics, 2.4 llm_client
-#              pending: 2.5 embedder, 2.6 vector_store, 2.7 bm25, 2.8 reranker,
-#                       2.9 format_detector, 2.10 docling_parser,
+#              done:    2.1 settings, 2.2 logger, 2.3 metrics, 2.4 llm_client,
+#                       2.5 embedder, 2.6 vector_store, 2.7 bm25, 2.8 reranker
+#              pending: 2.9 format_detector, 2.10 docling_parser,
 #                       2.11 postgres, 2.12 redis_pub, 2.13 factories
 #   Layer 3  pending — DYNAFIT module (golden fixtures replayed here)
 #   Layer 4  pending — API + workers + UI
