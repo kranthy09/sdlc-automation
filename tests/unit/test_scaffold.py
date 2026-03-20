@@ -56,6 +56,7 @@ def test_package_is_importable(package: str) -> None:
 ROOT = Path(__file__).resolve().parent.parent.parent
 
 EXPECTED_DIRECTORIES = [
+    # Layer 0: platform packages
     "platform/schemas",
     "platform/llm",
     "platform/retrieval",
@@ -64,26 +65,25 @@ EXPECTED_DIRECTORIES = [
     "platform/observability",
     "platform/config",
     "platform/testing",
-    "knowledge_bases/d365_fo/seed_data",
-    "knowledge_bases/d365_fo/country_rules",
-    "knowledge_bases/d365_fo/fdd_templates",
+    # Layer 0: agent stubs
     "agents/ingestion",
     "agents/rag",
     "agents/classifier",
     "agents/validator",
+    # Layer 0: module stubs
     "modules/dynafit/prompts",
     "modules/dynafit/tests",
+    # Layer 0: API stubs
     "api/routes",
     "api/workers",
     "api/websocket",
+    # Layer 0: infra and CI
     "infra/docker",
     "infra/scripts",
     "tests/unit",
     "tests/integration",
-    "tests/fixtures/golden",
-    "docs/adr",
-    "docs/runbooks",
     ".github/workflows",
+    # knowledge_bases/, tests/fixtures/golden, docs/ — added in Layer 3
 ]
 
 
