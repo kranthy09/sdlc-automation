@@ -1,5 +1,9 @@
 .PHONY: setup test test-unit test-integration test-module test-golden \
-        lint validate-contracts dev dev-down seed-kb seed-corpus run ui ci
+        lint validate-contracts \
+        services services-down services-logs services-ps \
+        dev dev-down dev-logs dev-ps \
+        seed-kb seed-corpus run \
+        ui ui-install test-ui test-ui-coverage type-check-ui ci
 
 # ---------------------------------------------------------------------------
 # Setup
@@ -54,6 +58,20 @@ validate-contracts:
 # ---------------------------------------------------------------------------
 # Infrastructure
 # ---------------------------------------------------------------------------
+services:
+	docker compose -f infra/docker/docker-compose.services.yaml up -d
+	@echo "Services ready: Postgres :5432  Redis :6379  Qdrant :6333"
+
+services-down:
+	docker compose -f infra/docker/docker-compose.services.yaml down
+
+services-logs:
+	docker compose -f infra/docker/docker-compose.services.yaml logs -f
+
+services-ps:
+	docker compose -f infra/docker/docker-compose.services.yaml ps
+
+# Full stack (services + observability)
 dev:
 	docker compose -f infra/docker/docker-compose.yaml up -d
 	@echo "Services starting: Qdrant :6333, Postgres :5432, Redis :6379, Prometheus :9090, Grafana :3001"
@@ -82,8 +100,20 @@ seed-corpus:
 run:
 	uv run uvicorn api.main:app --reload --port 8000
 
+ui-install:
+	cd ui && npm install
+
 ui:
 	cd ui && npm run dev
+
+test-ui:
+	cd ui && npm test
+
+test-ui-coverage:
+	cd ui && npm run test:coverage
+
+type-check-ui:
+	cd ui && npm run type-check
 
 # ---------------------------------------------------------------------------
 # CI gate (runs all quality checks)
