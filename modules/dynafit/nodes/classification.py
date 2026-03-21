@@ -79,8 +79,8 @@ class LLMClassificationOutput(BaseModel):
     confidence: float = Field(ge=0.0, le=1.0)
     rationale: str
     d365_capability_ref: str = ""
-    config_steps: str = ""      # populated by LLM when verdict=PARTIAL_FIT
-    gap_description: str = ""   # populated by LLM when verdict=GAP
+    config_steps: str = ""  # populated by LLM when verdict=PARTIAL_FIT
+    gap_description: str = ""  # populated by LLM when verdict=GAP
     caveats: str = ""
 
 
@@ -190,9 +190,7 @@ class ClassificationNode:
         ]
         elapsed_ms = (time.monotonic() - t0) * 1000
 
-        counts: Counter[FitLabel] = Counter(
-            r.classification for r in classifications
-        )
+        counts: Counter[FitLabel] = Counter(r.classification for r in classifications)
         log.info(
             "phase_complete",
             phase=4,
@@ -232,9 +230,7 @@ class ClassificationNode:
                 wave=atom.wave,
                 classification=FitLabel.GAP,
                 confidence=1.0,
-                rationale=(
-                    "No matching D365 capability found in knowledge base."
-                ),
+                rationale=("No matching D365 capability found in knowledge base."),
                 route_used=mr.route,
                 llm_calls_used=0,
             )
@@ -267,9 +263,7 @@ class ClassificationNode:
                 atom_id=mr.atom.atom_id,
                 error=str(exc),
             )
-            return self._make_review_required(
-                mr, f"LLM error on FAST_TRACK route: {exc}"
-            )
+            return self._make_review_required(mr, f"LLM error on FAST_TRACK route: {exc}")
         return self._assemble(out, mr, llm_calls=1)
 
     def _gap_confirm(
@@ -287,9 +281,7 @@ class ClassificationNode:
                 atom_id=mr.atom.atom_id,
                 error=str(exc),
             )
-            return self._make_review_required(
-                mr, f"LLM error on GAP_CONFIRM route: {exc}"
-            )
+            return self._make_review_required(mr, f"LLM error on GAP_CONFIRM route: {exc}")
         return self._assemble(out, mr, llm_calls=1)
 
     def _deep_reason(
@@ -314,8 +306,7 @@ class ClassificationNode:
         if len(outputs) < 2:
             return self._make_review_required(
                 mr,
-                f"DEEP_REASON: only {len(outputs)}/{_DEEP_REASON_CALLS} "
-                "LLM calls succeeded",
+                f"DEEP_REASON: only {len(outputs)}/{_DEEP_REASON_CALLS} LLM calls succeeded",
             )
 
         vote_counts: Counter[str] = Counter(o.verdict for o in outputs)

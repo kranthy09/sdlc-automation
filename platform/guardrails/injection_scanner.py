@@ -28,20 +28,19 @@ log = get_logger(__name__)
 # (name, pattern) — name appears in matched_patterns and log output
 _PATTERNS: list[tuple[str, str]] = [
     ("instruction_override", r"ignore\s+(?:previous|above|all)\s+instructions"),
-    ("role_switch",          r"\byou\s+are\s+now\b"),
-    ("act_as",               r"\bact\s+as\b"),
-    ("pretend",              r"\bpretend\s+to\s+be\b"),
-    ("system_tag",           r"</?system>"),
-    ("inst_tag",             r"\[INST\]"),
-    ("system_fence",         r"```\s*system"),
-    ("new_instructions",     r"new\s+instructions?\s*:"),
-    ("base64_payload",       r"[A-Za-z0-9+/]{40,}={0,2}"),
-    ("rtl_override",         "\u202e"),  # Unicode right-to-left override character
+    ("role_switch", r"\byou\s+are\s+now\b"),
+    ("act_as", r"\bact\s+as\b"),
+    ("pretend", r"\bpretend\s+to\s+be\b"),
+    ("system_tag", r"</?system>"),
+    ("inst_tag", r"\[INST\]"),
+    ("system_fence", r"```\s*system"),
+    ("new_instructions", r"new\s+instructions?\s*:"),
+    ("base64_payload", r"[A-Za-z0-9+/]{40,}={0,2}"),
+    ("rtl_override", "\u202e"),  # Unicode right-to-left override character
 ]
 
 _COMPILED: list[tuple[str, re.Pattern[str]]] = [
-    (name, re.compile(pattern, re.IGNORECASE | re.DOTALL))
-    for name, pattern in _PATTERNS
+    (name, re.compile(pattern, re.IGNORECASE | re.DOTALL)) for name, pattern in _PATTERNS
 ]
 
 _PASS_THRESHOLD: float = 0.15
@@ -57,9 +56,7 @@ def scan_for_injection(text: str) -> InjectionScanResult:
     Returns:
         InjectionScanResult with action, score, and matched pattern names.
     """
-    matched: list[str] = [
-        name for name, pattern in _COMPILED if pattern.search(text)
-    ]
+    matched: list[str] = [name for name, pattern in _COMPILED if pattern.search(text)]
     score = len(matched) / len(_PATTERNS)
 
     if score >= _BLOCK_THRESHOLD:

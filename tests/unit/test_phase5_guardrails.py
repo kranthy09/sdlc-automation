@@ -33,11 +33,10 @@ import pytest
 from modules.dynafit.guardrails import run_sanity_check
 from platform.schemas.fitment import FitLabel, RouteLabel
 from platform.testing.factories import (
+    make_classification_result,
     make_match_result,
     make_product_config,
-    make_classification_result,
 )
-
 
 # ---------------------------------------------------------------------------
 # Fixtures

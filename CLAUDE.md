@@ -63,3 +63,27 @@ CI rejects violations on every PR via `make validate-contracts`.
 - Layer 2: complete — 13 platform utilities + guardrail utilities (Session A)
 - Layer 3: complete — all 5 DYNAFIT phases built in `modules/dynafit/`
 - Layer 4: next — API + Workers + UI (`api/`, `workers/`, `ui/`)
+
+Layer 4 Build Plan
+The spec in docs/specs/api.md is fully written. It defines 4 pieces — each is its own session per project rules:
+
+Session A — FastAPI Routes + Middleware
+api/routes/dynafit.py — upload, run, results, review, report, batches (7 endpoints)
+api/middleware/ — CORS, error handler, request logging
+api/main.py — FastAPI app, router registration
+Session B — Celery Worker + WebSocket
+api/workers/tasks.py — run_dynafit_pipeline task, Redis pub/sub emit
+api/websocket/progress.py — WebSocket handler subscribing to Redis
+Session C — React Scaffold + API Layer
+ui/package.json, vite.config.ts, tailwind.config.ts, tsconfig.json
+ui/src/api/ — client.ts, dynafit.ts, websocket.ts, types.ts
+ui/src/lib/ — queryClient.ts, utils.ts
+ui/src/App.tsx, main.tsx
+Session D — UI Components + Pages
+One component group per session (5 groups × ~3–6 components each):
+
+Design system primitives (ui/ — Badge, Button, Card, Skeleton, Progress, Toast)
+Upload page (DropZone, UploadConfigForm, UploadPage)
+Progress page (PhaseTimeline, PhaseStatsCard, LiveClassTable, ReviewBanner)
+Results page (SummaryCards, DistributionChart, ResultsTable, ResultRow, EvidencePanel)
+Review page + Dashboard (ReviewCard, OverrideForm, BatchTable, AggregateMetrics)

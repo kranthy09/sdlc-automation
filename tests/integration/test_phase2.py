@@ -34,7 +34,6 @@ from platform.testing.factories import (
     make_vector_store,
 )
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -202,7 +201,9 @@ def test_provenance_hash_is_deterministic() -> None:
     r1 = node(state)
     r2 = node(state)
 
-    assert r1["retrieval_contexts"][0].provenance_hash == r2["retrieval_contexts"][0].provenance_hash
+    assert (
+        r1["retrieval_contexts"][0].provenance_hash == r2["retrieval_contexts"][0].provenance_hash
+    )
 
 
 @pytest.mark.unit
@@ -214,7 +215,9 @@ def test_provenance_hash_differs_for_different_atoms() -> None:
     r1 = node1(_make_state(atoms=[make_validated_atom(atom_id="REQ-001")]))
     r2 = node2(_make_state(atoms=[make_validated_atom(atom_id="REQ-002")]))
 
-    assert r1["retrieval_contexts"][0].provenance_hash != r2["retrieval_contexts"][0].provenance_hash
+    assert (
+        r1["retrieval_contexts"][0].provenance_hash != r2["retrieval_contexts"][0].provenance_hash
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -354,7 +357,6 @@ def test_history_boost_raises_calibrated_score() -> None:
 @pytest.mark.unit
 def test_image_derived_atom_requests_top_k_30() -> None:
     """image_derived atoms should request top_k=30 from Source A (wider net)."""
-    from unittest.mock import MagicMock, patch
 
     from modules.dynafit.nodes.retrieval import RetrievalNode
 
@@ -390,9 +392,8 @@ def test_image_derived_atom_requests_top_k_30() -> None:
 @pytest.mark.unit
 def test_adaptive_k_finds_largest_gap() -> None:
     """_adaptive_k cuts after the largest score drop in the search range."""
-    from platform.retrieval.reranker import RerankResult
-
     from modules.dynafit.nodes.retrieval import _adaptive_k
+    from platform.retrieval.reranker import RerankResult
 
     results = [
         RerankResult(id="a", score=0.95),
@@ -409,9 +410,8 @@ def test_adaptive_k_finds_largest_gap() -> None:
 @pytest.mark.unit
 def test_adaptive_k_returns_all_when_fewer_than_gap_lo() -> None:
     """Fewer than _GAP_LO results → return all of them."""
-    from platform.retrieval.reranker import RerankResult
-
     from modules.dynafit.nodes.retrieval import _adaptive_k
+    from platform.retrieval.reranker import RerankResult
 
     results = [RerankResult(id="a", score=0.9), RerankResult(id="b", score=0.8)]
     assert _adaptive_k(results) == 2
@@ -424,9 +424,8 @@ def test_adaptive_k_returns_all_when_fewer_than_gap_lo() -> None:
 
 @pytest.mark.unit
 def test_retrieval_quality_high_all_conditions_met() -> None:
-    from platform.retrieval.reranker import RerankResult
-
     from modules.dynafit.nodes.retrieval import _retrieval_quality
+    from platform.retrieval.reranker import RerankResult
 
     results = [
         RerankResult(id="a", score=0.95),
@@ -495,7 +494,7 @@ def test_ms_learn_refs_included_from_source_b() -> None:
 @pytest.mark.unit
 def test_retrieval_node_function_accepts_state_dict() -> None:
     """Module-level retrieval_node() runs without errors on a minimal state."""
-    from unittest.mock import MagicMock, patch
+    from unittest.mock import MagicMock
 
     from modules.dynafit.nodes import retrieval as retrieval_mod
 

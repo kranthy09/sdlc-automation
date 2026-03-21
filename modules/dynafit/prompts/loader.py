@@ -51,7 +51,7 @@ _PROMPTS_DIR: Path = Path(__file__).parent
 
 _env: jinja2.Environment = jinja2.Environment(
     loader=jinja2.FileSystemLoader(str(_PROMPTS_DIR)),
-    autoescape=True,              # G8 rule 1: all {{ }} outputs are HTML-escaped
+    autoescape=True,  # G8 rule 1: all {{ }} outputs are HTML-escaped
     undefined=jinja2.StrictUndefined,  # G8 rule 2: missing vars → UndefinedError
     keep_trailing_newline=True,
 )

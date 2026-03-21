@@ -27,9 +27,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from platform.testing.factories import make_embedder, make_llm_client, make_raw_upload
 from platform.schemas.requirement import RawUpload
-
+from platform.testing.factories import make_embedder, make_llm_client, make_raw_upload
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -169,11 +168,7 @@ def test_injection_flag_proceeds_with_error_annotation() -> None:
     mock_parser = MagicMock()
     mock_parser.parse.return_value = ParseResult(
         tables=[],
-        prose=[
-            ProseChunk(
-                text=mild_text, section="", page=1, char_offset=0, has_overlap=False
-            )
-        ],
+        prose=[ProseChunk(text=mild_text, section="", page=1, char_offset=0, has_overlap=False)],
     )
     llm = make_llm_client(
         _atomize_response(
@@ -187,9 +182,7 @@ def test_injection_flag_proceeds_with_error_annotation() -> None:
         embedder=make_embedder(),
     )
     state = {
-        "upload": make_raw_upload(
-            filename="requirements.txt", file_bytes=mild_text.encode()
-        ),
+        "upload": make_raw_upload(filename="requirements.txt", file_bytes=mild_text.encode()),
         "batch_id": "test-004",
         "errors": [],
     }
@@ -219,16 +212,10 @@ def test_valid_txt_produces_validated_atoms() -> None:
     mock_parser = MagicMock()
     mock_parser.parse.return_value = ParseResult(
         tables=[],
-        prose=[
-            ProseChunk(
-                text=req_text, section="", page=1, char_offset=0, has_overlap=False
-            )
-        ],
+        prose=[ProseChunk(text=req_text, section="", page=1, char_offset=0, has_overlap=False)],
     )
     llm = make_llm_client(
-        _atomize_response(
-            [{"text": req_text, "intent": "FUNCTIONAL", "module": "AccountsPayable"}]
-        )
+        _atomize_response([{"text": req_text, "intent": "FUNCTIONAL", "module": "AccountsPayable"}])
     )
 
     node = IngestionNode(
@@ -262,7 +249,7 @@ def test_valid_txt_produces_validated_atoms() -> None:
 def test_table_row_extraction_uses_header_map() -> None:
     """Table with 'Business Requirement' column is resolved to requirement_text."""
     from modules.dynafit.nodes.ingestion import IngestionNode
-    from platform.parsers.docling_parser import ParseResult, ProseChunk
+    from platform.parsers.docling_parser import ParseResult
 
     req_text = "The system shall calculate tax amounts per vendor invoice automatically."
     mock_parser = MagicMock()
@@ -271,9 +258,7 @@ def test_table_row_extraction_uses_header_map() -> None:
         prose=[],
     )
     llm = make_llm_client(
-        _atomize_response(
-            [{"text": req_text, "intent": "FUNCTIONAL", "module": "AccountsPayable"}]
-        )
+        _atomize_response([{"text": req_text, "intent": "FUNCTIONAL", "module": "AccountsPayable"}])
     )
 
     node = IngestionNode(
@@ -345,8 +330,7 @@ def test_priority_inference(text: str, expected: str) -> None:
         ),
         # Very specific
         (
-            "The system must post journal entries to the general ledger with "
-            "dimension allocation.",
+            "The system must post journal entries to the general ledger with dimension allocation.",
             0.30,
         ),
     ],
@@ -424,16 +408,10 @@ def test_vague_requirement_is_flagged_not_validated() -> None:
     mock_parser = MagicMock()
     mock_parser.parse.return_value = ParseResult(
         tables=[],
-        prose=[
-            ProseChunk(
-                text=vague_text, section="", page=1, char_offset=0, has_overlap=False
-            )
-        ],
+        prose=[ProseChunk(text=vague_text, section="", page=1, char_offset=0, has_overlap=False)],
     )
     llm = make_llm_client(
-        _atomize_response(
-            [{"text": vague_text, "intent": "FUNCTIONAL", "module": "GeneralLedger"}]
-        )
+        _atomize_response([{"text": vague_text, "intent": "FUNCTIONAL", "module": "GeneralLedger"}])
     )
 
     node = IngestionNode(
@@ -442,9 +420,7 @@ def test_vague_requirement_is_flagged_not_validated() -> None:
         embedder=make_embedder(),
     )
     state = {
-        "upload": make_raw_upload(
-            filename="requirements.txt", file_bytes=vague_text.encode()
-        ),
+        "upload": make_raw_upload(filename="requirements.txt", file_bytes=vague_text.encode()),
         "batch_id": "test-007",
         "errors": [],
     }
@@ -463,28 +439,20 @@ def test_vague_requirement_is_flagged_not_validated() -> None:
 @pytest.mark.unit
 def test_ingestion_node_function_is_callable_with_state() -> None:
     """ingestion_node() accepts a DynafitState dict and returns the expected keys."""
-    from modules.dynafit.nodes.ingestion import IngestionNode, ingestion_node
     import modules.dynafit.nodes.ingestion as ingestion_mod
+    from modules.dynafit.nodes.ingestion import IngestionNode, ingestion_node
 
     # Inject a mock node so no real infra is created
-    req_text = (
-        "The system must validate vendor invoice matching against purchase orders."
-    )
+    req_text = "The system must validate vendor invoice matching against purchase orders."
     from platform.parsers.docling_parser import ParseResult, ProseChunk
 
     mock_parser = MagicMock()
     mock_parser.parse.return_value = ParseResult(
         tables=[],
-        prose=[
-            ProseChunk(
-                text=req_text, section="", page=1, char_offset=0, has_overlap=False
-            )
-        ],
+        prose=[ProseChunk(text=req_text, section="", page=1, char_offset=0, has_overlap=False)],
     )
     llm = make_llm_client(
-        _atomize_response(
-            [{"text": req_text, "intent": "FUNCTIONAL", "module": "AccountsPayable"}]
-        )
+        _atomize_response([{"text": req_text, "intent": "FUNCTIONAL", "module": "AccountsPayable"}])
     )
     ingestion_mod._node = IngestionNode(
         llm_client=llm,
@@ -493,9 +461,7 @@ def test_ingestion_node_function_is_callable_with_state() -> None:
     )
 
     state = {
-        "upload": make_raw_upload(
-            filename="requirements.txt", file_bytes=req_text.encode()
-        ),
+        "upload": make_raw_upload(filename="requirements.txt", file_bytes=req_text.encode()),
         "batch_id": "smoke-ingestion-001",
         "errors": [],
     }

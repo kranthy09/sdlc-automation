@@ -79,10 +79,7 @@ _PARTIAL_OUTPUT = LLMClassificationOutput(
 _GAP_OUTPUT = LLMClassificationOutput(
     verdict="GAP",
     confidence=0.88,
-    rationale=(
-        "D365 does not support this out-of-the-box. "
-        "Custom X++ development is required."
-    ),
+    rationale=("D365 does not support this out-of-the-box. Custom X++ development is required."),
     gap_description="Develop X++ extension for custom approval workflow.",
 )
 
@@ -178,9 +175,7 @@ def test_fast_track_partial_fit_single_call() -> None:
 def test_fast_track_llm_error_returns_review_required() -> None:
     llm = make_llm_client()
     llm.complete.side_effect = LLMError("API timeout after 3 retries")
-    node = ClassificationNode(
-        llm_client=llm, product_config=make_product_config()
-    )
+    node = ClassificationNode(llm_client=llm, product_config=make_product_config())
     mr = make_match_result(route=RouteLabel.FAST_TRACK, top_composite_score=0.90)
     [c] = node(_make_state([mr]))["classifications"]
 
@@ -213,9 +208,7 @@ def test_gap_confirm_gap_single_call() -> None:
 def test_gap_confirm_llm_error_returns_review_required() -> None:
     llm = make_llm_client()
     llm.complete.side_effect = LLMError("rate limit")
-    node = ClassificationNode(
-        llm_client=llm, product_config=make_product_config()
-    )
+    node = ClassificationNode(llm_client=llm, product_config=make_product_config())
     mr = make_match_result(route=RouteLabel.GAP_CONFIRM, top_composite_score=0.35)
     [c] = node(_make_state([mr]))["classifications"]
 
@@ -261,9 +254,7 @@ def test_deep_reason_unanimous_gap_three_out_of_three() -> None:
 def test_deep_reason_all_disagree_returns_review_required() -> None:
     """FIT + PARTIAL_FIT + GAP → no majority → REVIEW_REQUIRED."""
     node = ClassificationNode(
-        llm_client=make_llm_client(
-            _FIT_OUTPUT, _PARTIAL_OUTPUT, _GAP_OUTPUT
-        ),
+        llm_client=make_llm_client(_FIT_OUTPUT, _PARTIAL_OUTPUT, _GAP_OUTPUT),
         product_config=make_product_config(),
     )
     mr = make_match_result(route=RouteLabel.DEEP_REASON, top_composite_score=0.68)
@@ -284,9 +275,7 @@ def test_deep_reason_only_one_llm_success_returns_review_required() -> None:
         LLMError("fail"),
         LLMError("fail"),
     ]
-    node = ClassificationNode(
-        llm_client=llm, product_config=make_product_config()
-    )
+    node = ClassificationNode(llm_client=llm, product_config=make_product_config())
     mr = make_match_result(route=RouteLabel.DEEP_REASON, top_composite_score=0.70)
     [c] = node(_make_state([mr]))["classifications"]
 
@@ -307,9 +296,7 @@ def test_prior_fitments_from_retrieval_contexts_reach_prompt() -> None:
     atom = make_validated_atom(atom_id="REQ-AP-001")
     pf = make_prior_fitment(wave=2, country="FR", classification="FIT")
     ctx = make_assembled_context(atom=atom, prior_fitments=[pf])
-    mr = make_match_result(
-        atom=atom, route=RouteLabel.FAST_TRACK, top_composite_score=0.91
-    )
+    mr = make_match_result(atom=atom, route=RouteLabel.FAST_TRACK, top_composite_score=0.91)
 
     node = ClassificationNode(
         llm_client=make_llm_client(_FIT_OUTPUT),
@@ -344,9 +331,7 @@ def test_prior_fitments_from_retrieval_contexts_reach_prompt() -> None:
 def test_batch_three_atoms_processed_independently() -> None:
     """Each match_result gets its own LLM call; results appear in same order."""
     node = ClassificationNode(
-        llm_client=make_llm_client(
-            _FIT_OUTPUT, _PARTIAL_OUTPUT, _GAP_OUTPUT
-        ),
+        llm_client=make_llm_client(_FIT_OUTPUT, _PARTIAL_OUTPUT, _GAP_OUTPUT),
         product_config=make_product_config(),
     )
 
@@ -388,9 +373,7 @@ def test_sanity_fit_with_low_composite_demoted_to_partial_fit() -> None:
         product_config=make_product_config(),
     )
     # composite below _FIT_SANITY_MIN (0.50)
-    mr = make_match_result(
-        route=RouteLabel.FAST_TRACK, top_composite_score=0.40
-    )
+    mr = make_match_result(route=RouteLabel.FAST_TRACK, top_composite_score=0.40)
     [c] = node(_make_state([mr]))["classifications"]
 
     assert c.classification == FitLabel.PARTIAL_FIT
@@ -407,9 +390,7 @@ def test_sanity_gap_with_high_composite_flagged_for_review() -> None:
         product_config=cfg,
     )
     # composite above fit_confidence_threshold (0.85)
-    mr = make_match_result(
-        route=RouteLabel.GAP_CONFIRM, top_composite_score=0.91
-    )
+    mr = make_match_result(route=RouteLabel.GAP_CONFIRM, top_composite_score=0.91)
     [c] = node(_make_state([mr]))["classifications"]
 
     assert c.classification == FitLabel.REVIEW_REQUIRED
@@ -424,9 +405,7 @@ def test_sanity_gap_with_moderate_composite_not_flagged() -> None:
         llm_client=make_llm_client(_GAP_OUTPUT),
         product_config=make_product_config(),
     )
-    mr = make_match_result(
-        route=RouteLabel.GAP_CONFIRM, top_composite_score=0.55
-    )
+    mr = make_match_result(route=RouteLabel.GAP_CONFIRM, top_composite_score=0.55)
     [c] = node(_make_state([mr]))["classifications"]
 
     assert c.classification == FitLabel.GAP
@@ -440,9 +419,7 @@ def test_sanity_fit_with_adequate_composite_not_demoted() -> None:
         llm_client=make_llm_client(_FIT_OUTPUT),
         product_config=make_product_config(),
     )
-    mr = make_match_result(
-        route=RouteLabel.FAST_TRACK, top_composite_score=0.75
-    )
+    mr = make_match_result(route=RouteLabel.FAST_TRACK, top_composite_score=0.75)
     [c] = node(_make_state([mr]))["classifications"]
 
     assert c.classification == FitLabel.FIT
@@ -466,9 +443,7 @@ def test_atom_fields_preserved_in_classification_result() -> None:
         llm_client=make_llm_client(_FIT_OUTPUT),
         product_config=make_product_config(),
     )
-    mr = make_match_result(
-        atom=atom, route=RouteLabel.FAST_TRACK, top_composite_score=0.91
-    )
+    mr = make_match_result(atom=atom, route=RouteLabel.FAST_TRACK, top_composite_score=0.91)
     [c] = node(_make_state([mr]))["classifications"]
 
     assert c.atom_id == "REQ-GL-007"
@@ -498,9 +473,7 @@ def test_module_level_classification_node_smoke() -> None:
         "modules.dynafit.nodes.classification.LLMClient",
         return_value=mock_client,
     ):
-        mr = make_match_result(
-            route=RouteLabel.FAST_TRACK, top_composite_score=0.91
-        )
+        mr = make_match_result(route=RouteLabel.FAST_TRACK, top_composite_score=0.91)
         result = _cls_module.classification_node(_make_state([mr]))
 
     assert len(result["classifications"]) == 1

@@ -7,7 +7,6 @@ Never import directly from sub-modules outside of platform/schemas/ itself.
 
 from .base import PlatformModel
 from .errors import ParseError, RetrievalError, UnsupportedFormatError
-from .guardrails import FileValidationResult, InjectionScanResult
 from .events import (
     ClassificationEvent,
     CompleteEvent,
@@ -23,6 +22,7 @@ from .fitment import (
     RouteLabel,
     ValidatedFitmentBatch,
 )
+from .guardrails import FileValidationResult, InjectionScanResult
 from .product import ProductConfig
 from .requirement import (
     D365Module,

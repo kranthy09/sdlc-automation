@@ -51,14 +51,14 @@ _WEIGHTS: dict[str, float] = {
     "rerank_score": 0.15,
 }
 
-_FAST_TRACK_THRESHOLD: float = 0.85   # composite > this AND history → FAST_TRACK
+_FAST_TRACK_THRESHOLD: float = 0.85  # composite > this AND history → FAST_TRACK
 _GAP_CONFIRM_THRESHOLD: float = 0.60  # composite < this → GAP_CONFIRM
 
-_ANOMALY_COSINE_MIN: float = 0.85     # above which entity absence is suspicious
-_ANOMALY_ENTITY_MAX: float = 0.20     # below which anomaly is raised
+_ANOMALY_COSINE_MIN: float = 0.85  # above which entity absence is suspicious
+_ANOMALY_ENTITY_MAX: float = 0.20  # below which anomaly is raised
 
-_HISTORY_BOOST: float = 0.10          # added to composite when a FIT prior exists
-_DEDUP_THRESHOLD: float = 0.95        # cosine above which two caps are duplicates
+_HISTORY_BOOST: float = 0.10  # added to composite when a FIT prior exists
+_DEDUP_THRESHOLD: float = 0.95  # cosine above which two caps are duplicates
 
 
 # ---------------------------------------------------------------------------
@@ -210,8 +210,8 @@ class MatchingNode:
         all_texts = [atom.requirement_text] + [c.description for c in caps]
         raw_vecs = np.array(self._get_embedder().embed_batch(all_texts), dtype=np.float32)
         normed = _normalise(raw_vecs)
-        atom_norm: np.ndarray = normed[0]    # (d,)  # type: ignore[type-arg]
-        cap_norms: np.ndarray = normed[1:]   # (n, d)  # type: ignore[type-arg]
+        atom_norm: np.ndarray = normed[0]  # (d,)  # type: ignore[type-arg]
+        cap_norms: np.ndarray = normed[1:]  # (n, d)  # type: ignore[type-arg]
 
         # Cosines: dot product of atom with each cap (already L2-normalised)
         cosines: list[float] = (cap_norms @ atom_norm).tolist()

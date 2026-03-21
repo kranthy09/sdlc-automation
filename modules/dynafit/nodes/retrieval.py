@@ -35,7 +35,7 @@ from platform.config.settings import get_settings
 from platform.observability.logger import get_logger
 from platform.retrieval.bm25 import BM25Retriever
 from platform.retrieval.embedder import Embedder
-from platform.retrieval.reranker import RerankResult, Reranker
+from platform.retrieval.reranker import Reranker, RerankResult
 from platform.retrieval.vector_store import SearchHit, VectorStore
 from platform.schemas.product import ProductConfig
 from platform.schemas.requirement import ValidatedAtom
@@ -56,11 +56,11 @@ log = get_logger(__name__)
 # ---------------------------------------------------------------------------
 
 _RERANKER_MODEL = "cross-encoder/ms-marco-MiniLM-L-12-v2"
-_SOURCE_TIMEOUT = 5.0   # per-source asyncio.wait_for timeout (seconds)
-_DOC_BOOST = 0.05       # fixed score boost when a doc chunk confirms a capability
-_CE_THRESHOLD = 0.5     # top-1 score threshold used in retrieval quality classification
-_GAP_LO = 3             # adaptive-K: search for largest score gap starting at rank 3
-_GAP_HI = 7             # adaptive-K: stop searching after rank 7
+_SOURCE_TIMEOUT = 5.0  # per-source asyncio.wait_for timeout (seconds)
+_DOC_BOOST = 0.05  # fixed score boost when a doc chunk confirms a capability
+_CE_THRESHOLD = 0.5  # top-1 score threshold used in retrieval quality classification
+_GAP_LO = 3  # adaptive-K: search for largest score gap starting at rank 3
+_GAP_HI = 7  # adaptive-K: stop searching after rank 7
 
 # ---------------------------------------------------------------------------
 # ProductConfig helper  (MVP: d365_fo only)
@@ -211,9 +211,7 @@ def _rrf_boost(
         feature = hit.payload.get("feature", "").lower().strip()
         score = hit.score
         if feature and any(
-            feature in mention or mention in feature
-            for mention in doc_mentions
-            if mention
+            feature in mention or mention in feature for mention in doc_mentions if mention
         ):
             score = min(1.0, score + _DOC_BOOST)
         boosted.append(SearchHit(id=hit.id, score=score, payload=hit.payload))
@@ -475,8 +473,7 @@ class RetrievalNode:
 
         # ── Step 4: Cross-encoder rerank ─────────────────────────────────────
         candidates = [
-            (h.id, h.payload.get("description", "") or h.payload.get("feature", ""))
-            for h in fused
+            (h.id, h.payload.get("description", "") or h.payload.get("feature", "")) for h in fused
         ]
         reranked = reranker.rerank(atom.requirement_text, candidates, top_k=len(candidates))
 

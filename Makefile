@@ -33,6 +33,9 @@ test-phase3:
 test-phase4:
 	uv run python -m pytest tests/unit/test_phase4_prompts.py tests/integration/test_phase4.py -v
 
+test-api:
+	uv run python -m pytest tests/unit/test_api_dynafit.py tests/unit/test_api_workers.py -v
+
 # ---------------------------------------------------------------------------
 # Quality
 # ---------------------------------------------------------------------------

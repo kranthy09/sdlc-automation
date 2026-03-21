@@ -44,7 +44,6 @@ from platform.testing.factories import (
     make_validated_atom,
 )
 
-
 # ---------------------------------------------------------------------------
 # Embedder helpers
 # ---------------------------------------------------------------------------
@@ -128,7 +127,7 @@ def test_compute_composite_partial_signals() -> None:
         "entity_overlap": 0.0,
         "token_ratio": 0.0,
         "historical_alignment": 1.0,  # contributes 0.25
-        "rerank_score": 1.0,          # contributes 0.15
+        "rerank_score": 1.0,  # contributes 0.15
     }
     # expected = 0.25 + 0.15 = 0.40
     assert _compute_composite(signals) == pytest.approx(0.40)
@@ -139,8 +138,16 @@ def test_compute_composite_capped_at_one() -> None:
     """With all signals > 1.0 the result is capped at 1.0 (defence-in-depth)."""
     from modules.dynafit.nodes.matching import _compute_composite
 
-    signals = {k: 2.0 for k in ["embedding_cosine", "entity_overlap", "token_ratio",
-                                  "historical_alignment", "rerank_score"]}
+    signals = dict.fromkeys(
+        [
+            "embedding_cosine",
+            "entity_overlap",
+            "token_ratio",
+            "historical_alignment",
+            "rerank_score",
+        ],
+        2.0,
+    )
     assert _compute_composite(signals) == pytest.approx(1.0)
 
 
@@ -344,20 +351,18 @@ def test_fit_prior_boosts_composite() -> None:
     cap = make_ranked_capability(rerank_score=0.80)
     ctx_no_history = make_assembled_context(capabilities=[cap], prior_fitments=[])
     node_no = _build_node(embedder=embedder)
-    score_no_history = node_no(_make_state(contexts=[ctx_no_history]))[
-        "match_results"
-    ][0].top_composite_score
+    score_no_history = node_no(_make_state(contexts=[ctx_no_history]))["match_results"][
+        0
+    ].top_composite_score
 
     # With a FIT prior — rebuild node to get fresh embedder state
     embedder2 = make_embedder()
     fit_prior = make_prior_fitment(classification="FIT")
-    ctx_with_history = make_assembled_context(
-        capabilities=[cap], prior_fitments=[fit_prior]
-    )
+    ctx_with_history = make_assembled_context(capabilities=[cap], prior_fitments=[fit_prior])
     node_yes = _build_node(embedder=embedder2)
-    score_with_history = node_yes(_make_state(contexts=[ctx_with_history]))[
-        "match_results"
-    ][0].top_composite_score
+    score_with_history = node_yes(_make_state(contexts=[ctx_with_history]))["match_results"][
+        0
+    ].top_composite_score
 
     assert score_with_history == pytest.approx(score_no_history + _HISTORY_BOOST, abs=1e-6)
 
@@ -413,9 +418,7 @@ def test_composite_score_updated_on_ranked_capability() -> None:
 
     # Phase 3 recomputes composite; the value on the returned cap should match
     # the composite_score in the parallel list
-    assert mr.ranked_capabilities[0].composite_score == pytest.approx(
-        mr.composite_scores[0]
-    )
+    assert mr.ranked_capabilities[0].composite_score == pytest.approx(mr.composite_scores[0])
 
 
 @pytest.mark.unit
@@ -426,10 +429,8 @@ def test_dedup_removes_near_identical_capabilities() -> None:
 
     # Same description → cosine between them will be 1.0 > 0.95 threshold
     same_desc = "Three-way matching validates purchase orders and invoices."
-    cap_a = make_ranked_capability(capability_id="cap-a", rerank_score=0.90,
-                                    description=same_desc)
-    cap_b = make_ranked_capability(capability_id="cap-b", rerank_score=0.80,
-                                    description=same_desc)
+    cap_a = make_ranked_capability(capability_id="cap-a", rerank_score=0.90, description=same_desc)
+    cap_b = make_ranked_capability(capability_id="cap-b", rerank_score=0.80, description=same_desc)
     ctx = make_assembled_context(capabilities=[cap_a, cap_b])
 
     mr = node(_make_state(contexts=[ctx]))["match_results"][0]

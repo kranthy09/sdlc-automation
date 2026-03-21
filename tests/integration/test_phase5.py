@@ -208,7 +208,9 @@ def test_confidence_filter_flags_low_confidence_non_gap(tmp_path) -> None:
     )
     node = _make_node(tmp_path)
     # composite=0.72: rule 2 (low_score_fit) does NOT trigger (0.72 > 0.60)
-    state = _make_state([low_conf_fit], match_results=[_mr("REQ-LOW-001", top_composite_score=0.72)])
+    state = _make_state(
+        [low_conf_fit], match_results=[_mr("REQ-LOW-001", top_composite_score=0.72)]
+    )
 
     with patch.object(_v5_module, "interrupt", return_value={}) as mock_interrupt:
         node(state)
@@ -229,7 +231,9 @@ def test_confidence_filter_does_not_flag_gap_regardless_of_confidence(tmp_path) 
     )
     node = _make_node(tmp_path)
     # composite=0.40, confidence=0.45 < fit_threshold (0.85) → rule 1 NOT triggered
-    state = _make_state([low_conf_gap], match_results=[_mr("REQ-GAP-LOW", top_composite_score=0.40)])
+    state = _make_state(
+        [low_conf_gap], match_results=[_mr("REQ-GAP-LOW", top_composite_score=0.40)]
+    )
 
     with patch.object(_v5_module, "interrupt") as mock_interrupt:
         node(state)
@@ -534,9 +538,19 @@ def test_csv_has_correct_headers(tmp_path) -> None:
         headers = list(csv.DictReader(fh).fieldnames or [])
 
     expected = [
-        "req_id", "requirement", "module", "country", "wave",
-        "classification", "confidence", "d365_capability",
-        "rationale", "config_steps", "gap_description", "reviewer", "override",
+        "req_id",
+        "requirement",
+        "module",
+        "country",
+        "wave",
+        "classification",
+        "confidence",
+        "d365_capability",
+        "rationale",
+        "config_steps",
+        "gap_description",
+        "reviewer",
+        "override",
     ]
     assert headers == expected
 
@@ -560,9 +574,7 @@ def test_complete_event_published_with_correct_counts(tmp_path) -> None:
         node(state)
 
     complete_events = [
-        call[0][0]
-        for call in redis.publish.call_args_list
-        if isinstance(call[0][0], CompleteEvent)
+        call[0][0] for call in redis.publish.call_args_list if isinstance(call[0][0], CompleteEvent)
     ]
     assert len(complete_events) == 1
 
@@ -632,18 +644,22 @@ def test_module_level_validation_node_singleton_smoke(tmp_path) -> None:
     mock_redis = make_redis_pub_sub()
     mock_embedder = make_embedder()
 
-    with patch(
-        "modules.dynafit.nodes.phase5_validation.PostgresStore",
-        return_value=mock_postgres,
-    ), patch(
-        "modules.dynafit.nodes.phase5_validation.RedisPubSub",
-        return_value=mock_redis,
-    ), patch(
-        "modules.dynafit.nodes.phase5_validation.Embedder",
-        return_value=mock_embedder,
-    ), patch.object(
-        _v5_module.ValidationNode, "_write_csv", return_value=str(tmp_path)
-    ), patch.object(_v5_module, "interrupt"):
+    with (
+        patch(
+            "modules.dynafit.nodes.phase5_validation.PostgresStore",
+            return_value=mock_postgres,
+        ),
+        patch(
+            "modules.dynafit.nodes.phase5_validation.RedisPubSub",
+            return_value=mock_redis,
+        ),
+        patch(
+            "modules.dynafit.nodes.phase5_validation.Embedder",
+            return_value=mock_embedder,
+        ),
+        patch.object(_v5_module.ValidationNode, "_write_csv", return_value=str(tmp_path)),
+        patch.object(_v5_module, "interrupt"),
+    ):
         state = _make_state([_FIT], match_results=[_mr("REQ-AP-001", top_composite_score=0.92)])
         result = _v5_module.validation_node(state)
 

@@ -43,7 +43,7 @@ import os
 import time
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
 from langgraph.types import interrupt
@@ -56,7 +56,6 @@ from platform.schemas.fitment import (
     ClassificationResult,
     FitLabel,
     MatchResult,
-    RouteLabel,
     ValidatedFitmentBatch,
 )
 from platform.schemas.product import ProductConfig
@@ -346,9 +345,7 @@ class ValidationNode:
             input_hash=hashlib.sha256(repr(classifications).encode()).hexdigest()[:16],
         )
 
-        match_by_atom: dict[str, MatchResult] = {
-            mr.atom.atom_id: mr for mr in match_results
-        }
+        match_by_atom: dict[str, MatchResult] = {mr.atom.atom_id: mr for mr in match_results}
 
         # ----------------------------------------------------------------
         # Pass 1 (Sub-phase 5A): Sanity gate + confidence filter
@@ -494,13 +491,9 @@ class ValidationNode:
         os.makedirs(report_dir, exist_ok=True)
 
         fits = [
-            mr for mr in merged
-            if mr.result.classification in (FitLabel.FIT, FitLabel.PARTIAL_FIT)
+            mr for mr in merged if mr.result.classification in (FitLabel.FIT, FitLabel.PARTIAL_FIT)
         ]
-        gaps = [
-            mr for mr in merged
-            if mr.result.classification == FitLabel.GAP
-        ]
+        gaps = [mr for mr in merged if mr.result.classification == FitLabel.GAP]
 
         _write_fdd_csv(os.path.join(report_dir, f"fdd_fits_{batch_id}.csv"), fits)
         _write_fdd_csv(os.path.join(report_dir, f"fdd_gaps_{batch_id}.csv"), gaps)
@@ -537,9 +530,7 @@ class ValidationNode:
                 skipped += 1
                 continue
             try:
-                embedding: list[float] = embedder.embed(
-                    mr.result.requirement_text
-                ).tolist()
+                embedding: list[float] = embedder.embed(mr.result.requirement_text).tolist()
                 await postgres.save_fitment(
                     mr.result,
                     embedding,

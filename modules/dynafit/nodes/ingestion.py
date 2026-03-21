@@ -290,9 +290,7 @@ def _atomise_and_classify(
         )
         items: list[_ClassifiedAtom] = []
         for item in result.atoms:
-            module = (
-                item.module if item.module in _MODULE_SET else "OrganizationAdministration"
-            )
+            module = item.module if item.module in _MODULE_SET else "OrganizationAdministration"
             trimmed = item.text.strip()
             if trimmed:
                 items.append(_ClassifiedAtom(text=trimmed, intent=item.intent, module=module))
@@ -306,12 +304,8 @@ def _atomise_and_classify(
 # Priority enrichment — keyword MoSCoW, no LLM needed
 # ---------------------------------------------------------------------------
 
-_MUST_RE = re.compile(
-    r"\b(must|shall|required|mandatory|critical|compulsory)\b", re.IGNORECASE
-)
-_COULD_RE = re.compile(
-    r"\b(could|nice.to.have|optional|desirable|wish)\b", re.IGNORECASE
-)
+_MUST_RE = re.compile(r"\b(must|shall|required|mandatory|critical|compulsory)\b", re.IGNORECASE)
+_COULD_RE = re.compile(r"\b(could|nice.to.have|optional|desirable|wish)\b", re.IGNORECASE)
 
 
 def _infer_moscow_priority(text: str) -> Literal["MUST", "SHOULD", "COULD"]:
@@ -504,18 +498,12 @@ def _score_completeness(text: str, module: str) -> float:
 # Cross-field schema consistency check (spec §Phase1 Step 4A)
 # ---------------------------------------------------------------------------
 
-_CUSTOMER_CONTEXT_RE = re.compile(
-    r"\b(customer|sales order|revenue|receivable)\b", re.IGNORECASE
-)
-_VENDOR_CONTEXT_RE = re.compile(
-    r"\b(vendor|purchase order|payable|supplier)\b", re.IGNORECASE
-)
+_CUSTOMER_CONTEXT_RE = re.compile(r"\b(customer|sales order|revenue|receivable)\b", re.IGNORECASE)
+_VENDOR_CONTEXT_RE = re.compile(r"\b(vendor|purchase order|payable|supplier)\b", re.IGNORECASE)
 _GAAP_STANDARD_RE = re.compile(r"\bGAAP\b")
 
 
-def _check_cross_field_consistency(
-    text: str, module: str, country: str
-) -> str | None:
+def _check_cross_field_consistency(text: str, module: str, country: str) -> str | None:
     """Return a human-readable flag string if a cross-field inconsistency is
     detected, otherwise None."""
     if module == "AccountsPayable" and _CUSTOMER_CONTEXT_RE.search(text):
@@ -571,16 +559,10 @@ def _deduplicate_requirements(
             s = float(sim[i, j])
             if s > 0.92:
                 hard_merged.add(j)
-                existing_ref = (
-                    requirements[i].atom.source_ref or requirements[i].atom.atom_id
-                )
+                existing_ref = requirements[i].atom.source_ref or requirements[i].atom.atom_id
                 requirements[i] = _ClassifiedRequirement(
                     atom=requirements[i].atom.model_copy(
-                        update={
-                            "source_ref": (
-                                f"{existing_ref},{requirements[j].atom.atom_id}"
-                            )
-                        }
+                        update={"source_ref": (f"{existing_ref},{requirements[j].atom.atom_id}")}
                     ),
                     intent=requirements[i].intent,
                     module=requirements[i].module,
@@ -718,8 +700,7 @@ def _apply_quality_gates(
                 requirement_text=dup.atom.requirement_text,
                 flag_reason="POTENTIAL_DUPLICATE",
                 flag_detail=(
-                    "cosine similarity 0.80–0.92 with another atom; "
-                    "human review required"
+                    "cosine similarity 0.80–0.92 with another atom; human review required"
                 ),
             )
         )
@@ -754,9 +735,7 @@ def _apply_quality_gates(
                     upload_id=req.atom.upload_id,
                     requirement_text=text,
                     flag_reason="TOO_VAGUE",
-                    flag_detail=(
-                        f"specificity_score={specificity:.2f} below 0.30 threshold"
-                    ),
+                    flag_detail=(f"specificity_score={specificity:.2f} below 0.30 threshold"),
                     specificity_score=specificity,
                 )
             )
@@ -788,9 +767,7 @@ def _apply_quality_gates(
                     upload_id=req.atom.upload_id,
                     requirement_text=text[:2000],
                     flag_reason="SCHEMA_MISMATCH",
-                    flag_detail=(
-                        f"requirement_text length {len(text)} outside [10, 2000]"
-                    ),
+                    flag_detail=(f"requirement_text length {len(text)} outside [10, 2000]"),
                 )
             )
             continue
@@ -907,9 +884,7 @@ class IngestionNode:
                 batch_id=batch_id,
                 reason=file_check.rejection_reason,
             )
-            return _make_rejection_result(
-                f"file_validation_failed: {file_check.rejection_reason}"
-            )
+            return _make_rejection_result(f"file_validation_failed: {file_check.rejection_reason}")
 
         # 2. Document parsing
         parse_result = self._parse_document(upload, batch_id)
@@ -944,9 +919,7 @@ class IngestionNode:
         )
 
         # 5. Atomise + classify (LLM)
-        classified = _build_classified_requirements(
-            raw_texts, upload, self._get_llm(), config
-        )
+        classified = _build_classified_requirements(raw_texts, upload, self._get_llm(), config)
         if not classified:
             return _make_rejection_result("atomisation_produced_no_atoms")
 
@@ -968,9 +941,7 @@ class IngestionNode:
             atoms_in=len(raw_texts),
             atoms_out=len(validated),
             flagged=len(flagged),
-            guardrails_triggered=(
-                ["G3_injection_flagged"] if extra_errors else []
-            ),
+            guardrails_triggered=(["G3_injection_flagged"] if extra_errors else []),
             latency_ms=round(elapsed_ms, 1),
         )
 
