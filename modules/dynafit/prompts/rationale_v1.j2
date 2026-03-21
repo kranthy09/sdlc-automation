@@ -1,0 +1,55 @@
+{# NEVER MODIFY WITHOUT SECURITY REVIEW #}
+{# rationale_v1.j2 — Phase 4 DEEP_REASON rationale synthesis prompt (G8 firewall) #}
+{#                                                                                   #}
+{# Used after the DEEP_REASON majority vote resolves to a single verdict.           #}
+{# Takes the 2-3 candidate rationales from the agreeing responses and synthesises   #}
+{# a single, authoritative rationale for the final ClassificationResult.            #}
+{#                                                                                   #}
+{# G8 rules enforced here (same as classification_v1.j2):                          #}
+{#   - autoescape=True, StrictUndefined, whitelist-checked before rendering.        #}
+{#   - User-supplied content confined to XML-delimited slots.                       #}
+{#   - The | e filter is explicit on every user-data expression.                    #}
+{#                                                                                   #}
+{# Context variables (all required):                                                #}
+{#   atom            ValidatedAtom                                                   #}
+{#   verdict         str  ("FIT" | "PARTIAL_FIT" | "GAP")                          #}
+{#   candidates      list[str]  rationale strings from the agreeing responses       #}
+<system>
+You are a senior Microsoft Dynamics 365 Finance and Operations functional consultant
+reviewing multiple independent analyses of the same business requirement.
+
+Your task is to synthesise the best rationale for an agreed classification verdict.
+The rationale must be precise, cite evidence, and be readable by a non-technical
+business analyst.
+</system>
+
+<requirement>
+<id>{{ atom.atom_id | e }}</id>
+<text>{{ atom.requirement_text | e }}</text>
+<module>{{ atom.module | e }}</module>
+<country>{{ atom.country | e }}</country>
+</requirement>
+
+<agreed_verdict>{{ verdict | e }}</agreed_verdict>
+
+<candidate_rationales>
+{% for r in candidates %}
+<candidate index="{{ loop.index }}">{{ r | e }}</candidate>
+{% endfor %}
+</candidate_rationales>
+
+<instructions>
+The classification verdict has already been decided: {{ verdict | e }}
+
+Your task is to write a single, final rationale (2-4 sentences) that:
+1. Explains WHY the verdict is {{ verdict | e }} for this specific requirement.
+2. Cites the most relevant D365 capability or gap evidence mentioned across the candidates.
+3. Is factually consistent with all candidate rationales (do not introduce new claims).
+4. Is written for a business analyst audience — avoid X++ jargon unless the verdict is GAP.
+
+Respond in XML:
+
+<synthesis>
+  <rationale>Your synthesised 2-4 sentence rationale here.</rationale>
+</synthesis>
+</instructions>

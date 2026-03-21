@@ -60,4 +60,6 @@ CI rejects violations on every PR via `make validate-contracts`.
 
 - Layer 0: complete
 - Layer 1: complete — all schemas in `platform/schemas/`
-- Layer 2: not started — build one component at a time starting with `platform/config/settings.py`
+- Layer 2: complete — 13 platform utilities + guardrail utilities (Session A)
+- Layer 3: complete — all 5 DYNAFIT phases built in `modules/dynafit/`
+- Layer 4: next — API + Workers + UI (`api/`, `workers/`, `ui/`)

@@ -112,7 +112,7 @@ class ClassificationResult(PlatformModel):
     caveats: str | None = None
 
     route_used: RouteLabel
-    llm_calls_used: Annotated[int, Field(ge=1)] = 1
+    llm_calls_used: Annotated[int, Field(ge=0)] = 1
 
 
 # ---------------------------------------------------------------------------

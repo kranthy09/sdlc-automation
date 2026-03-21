@@ -30,6 +30,9 @@ test-golden:
 test-phase3:
 	uv run python -m pytest tests/integration/test_phase3.py -v
 
+test-phase4:
+	uv run python -m pytest tests/unit/test_phase4_prompts.py tests/integration/test_phase4.py -v
+
 # ---------------------------------------------------------------------------
 # Quality
 # ---------------------------------------------------------------------------
