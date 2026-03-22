@@ -1,13 +1,7 @@
 # DYNAFIT — Complete Implementation Specification
 
-> **When to read this file:** Layer 3 of the build order (Weeks 3–4 in TDD_IMPLEMENTATION_GUIDE.md).
-> Do not read this to scaffold the project. Read CLAUDE.md first, build Layers 0–2, then come here.
->
-> **This file is the brain for Module 1 only.** CLAUDE.md defines the platform architecture.
-> This file defines every algorithm, threshold, prompt, decision tree, and data transformation
-> for the DYNAFIT module. Without it, implementation will drift. With it, nodes build exactly as designed.
->
-> **Nodes in this module call `platform/` utilities. They do not own infrastructure.**
+> **Module 1 brain.** Every algorithm, threshold, prompt, decision tree, and data transformation
+> for the DYNAFIT module. Nodes call `platform/` utilities — they do not own infrastructure.
 > Every LLM call goes through `platform/llm/client.py`. Every vector search goes through
 > `platform/retrieval/vector_store.py`. Nodes never instantiate Anthropic or Qdrant clients directly.
 
@@ -966,3 +960,38 @@ log.info("phase_complete",
 
 **Total LLM calls:** 80 (30 + 45 + 5). At ~$0.003/call (Sonnet) = ~$0.24 per batch.
 **Total latency:** ~120 seconds for 50 requirements (parallelized across phases).
+
+---
+
+## LIBRARY RATIONALE
+
+Key architecture decisions with alternatives considered.
+
+| Decision | Choice | Alternative considered | Why |
+|----------|--------|----------------------|-----|
+| Orchestration | LangGraph | CrewAI, AutoGen | Graph-based state machine maps 1:1 to 5-phase pipeline. Built-in checkpointing, HITL, streaming. |
+| Document parsing | Docling (primary) + Unstructured (fallback) | PyPDF, Marker, MinerU | MIT license, best table extraction (TableFormer), native LangChain integration, fully local |
+| Input formats | PDF, DOCX, TXT only | xlsx, csv, pptx, email | Docling handles tables natively. Excel-specific parsing was complexity with no coverage gain. |
+| Vector DB | Qdrant (primary) + pgvector (historical) | Milvus, Chroma, FAISS-only | Qdrant: payload filtering before similarity, real-time updates. pgvector: historical fitments in same PostgreSQL as audit trail |
+| Embedding model | bge-small-en-v1.5 (local) | OpenAI ada-002, Cohere | Runs fully local (air-gapped enterprise), strong MTEB retrieval, 384-dim, small footprint |
+| Embedding library | fastembed (ONNX Runtime) | sentence-transformers (PyTorch) | ~50 MB vs ~500 MB. Same model weights (ONNX-converted). Cuts Docker build from 400s to ~60s |
+| LLM | Configurable (Claude / GPT-4 / Llama 3) | Single-vendor lock-in | LangChain abstraction lets you swap. Classification accuracy tested per model |
+| Reranker | fastembed TextCrossEncoder (ms-marco-MiniLM) | sentence-transformers CrossEncoder | ONNX backend, same accuracy, no PyTorch dependency |
+| Sparse retrieval | rank_bm25 + Qdrant sparse vectors | Elasticsearch | BM25 catches exact D365 terminology ("VendInvoiceInfoTable") that embeddings miss. No extra infra |
+| Report output | Python stdlib csv | openpyxl Excel | CSV is universally importable. Zero extra dependency |
+| Deduplication | FAISS (transient) + datasketch (at-scale) | All-pairs brute force | FAISS for <5K reqs (fast cosine). datasketch MinHash LSH for >10K (sub-linear time) |
+| NLP | spaCy (en_core_web_lg) | NLTK, Stanza | Fastest production NLP. EntityRuler for synonym dictionary. Enterprise-proven |
+| Fuzzy matching | RapidFuzz | python-Levenshtein | 10x faster Levenshtein + token sort ratio for header mapping |
+| Task queue | Celery + Redis | Dramatiq, ARQ | Battle-tested distributed processing. Redis as broker + result backend |
+
+### Handler Registry Pattern
+
+Document format routing uses a `DocumentHandler` protocol. Each handler implements `can_handle(mime, ext)` and `parse(file_path)`. Adding a new format requires only: (1) implement protocol, (2) add to `HANDLER_REGISTRY`, (3) update `DocumentFormat` enum. The rest of the pipeline sees only `DocumentChunk` objects.
+
+```python
+HANDLER_REGISTRY: list[DocumentHandler] = [
+    DoclingHandler(),        # primary for PDF/DOCX
+    TxtHandler(),            # plain text
+    UnstructuredHandler(),   # Docling fallback for PDF/DOCX
+]
+```

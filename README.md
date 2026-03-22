@@ -25,20 +25,20 @@ Import boundaries are enforced by CI on every PR — violations block merges.
 
 ## Stack
 
-| Concern | Technology |
-|---|---|
-| Orchestration | LangGraph (state machine, checkpointing, HITL) |
-| LLM | Claude Sonnet (Anthropic) |
-| Schemas | Pydantic v2 |
-| Vector DB | Qdrant + bge-small-en-v1.5 embeddings |
-| Sparse retrieval | rank_bm25 |
-| Reranker | Xenova/ms-marco-MiniLM (fastembed) |
-| Storage | PostgreSQL + pgvector, Redis |
+| Concern          | Technology                                                  |
+| ---------------- | ----------------------------------------------------------- |
+| Orchestration    | LangGraph (state machine, checkpointing, HITL)              |
+| LLM              | Claude Sonnet (Anthropic)                                   |
+| Schemas          | Pydantic v2                                                 |
+| Vector DB        | Qdrant + bge-small-en-v1.5 embeddings                       |
+| Sparse retrieval | rank_bm25                                                   |
+| Reranker         | Xenova/ms-marco-MiniLM (fastembed)                          |
+| Storage          | PostgreSQL + pgvector, Redis                                |
 | Document parsing | Docling (primary), Unstructured (fallback) — PDF, DOCX, TXT |
-| API | FastAPI + Celery + WebSocket |
-| Observability | structlog + Prometheus + Grafana |
-| Package manager | uv |
-| Testing | pytest + golden fixtures (zero live LLM calls in CI) |
+| API              | FastAPI + Celery + WebSocket                                |
+| Observability    | structlog + Prometheus + Grafana                            |
+| Package manager  | uv                                                          |
+| Testing          | pytest + golden fixtures (zero live LLM calls in CI)        |
 
 ---
 
@@ -49,6 +49,7 @@ Import boundaries are enforced by CI on every PR — violations block merges.
 - Docker + Docker Compose
 
 Install uv globally (if not already):
+
 ```bash
 curl -LsSf https://astral.sh/uv/install.sh | sh
 source ~/.bashrc
@@ -148,14 +149,14 @@ make ci                           # lint + validate-contracts + test
 
 ## Infrastructure Ports
 
-| Service | URL | Credentials |
-|---|---|---|
-| FastAPI | http://localhost:8000 | — |
-| Qdrant | http://localhost:6333 | — |
-| PostgreSQL | localhost:5432 | platform / dev_password |
-| Redis | localhost:6379 | — |
-| Prometheus | http://localhost:9090 | — |
-| Grafana | http://localhost:3001 | admin / admin |
+| Service    | URL                   | Credentials             |
+| ---------- | --------------------- | ----------------------- |
+| FastAPI    | http://localhost:8000 | —                       |
+| Qdrant     | http://localhost:6333 | —                       |
+| PostgreSQL | localhost:5432        | platform / dev_password |
+| Redis      | localhost:6379        | —                       |
+| Prometheus | http://localhost:9090 | —                       |
+| Grafana    | http://localhost:3001 | admin / admin           |
 
 ---
 
@@ -178,6 +179,7 @@ modules/<module_name>/tests/
 ```
 
 Then:
+
 ```bash
 make seed-kb PRODUCT=<product_id>
 make validate-contracts
@@ -210,11 +212,12 @@ All three must pass on every PR. Live LLM calls are never in CI — all LLM test
 
 ## Docs
 
-| File | Purpose |
-|---|---|
-| `CLAUDE.md` | Full architecture, build order, layer contracts |
-| `DYNAFIT_IMPLEMENTATION_SPEC.md` | DYNAFIT algorithms, thresholds, prompts |
-| `FRONTEND_BACKEND_SPEC.md` | API endpoints, WebSocket protocol, DB schema |
-| `TDD_IMPLEMENTATION_GUIDE.md` | TDD patterns, golden fixtures, week-by-week plan |
-| `docs/adr/` | Architecture decision records |
-| `docs/runbooks/` | Operational runbooks |
+| File                       | Purpose                                                     |
+| -------------------------- | ----------------------------------------------------------- |
+| `CLAUDE.md`                | Project pointer — build order, dependency rule, doc index    |
+| `docs/specs/rules.md`     | Architecture, import boundaries, code standards, lessons     |
+| `docs/specs/dynafit.md`   | DYNAFIT 5-phase algorithms, prompts, thresholds, library map |
+| `docs/specs/api.md`       | API endpoints, WebSocket protocol, DB schema, React UI       |
+| `docs/specs/guardrails.md`| MVP guardrails (7 active) + post-MVP roadmap (7 deferred)   |
+| `docs/specs/tdd.md`       | Testing philosophy, golden fixtures, build order             |
+| `docs/architecturalflows/`| SVG architecture diagrams                                   |

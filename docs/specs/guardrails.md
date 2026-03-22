@@ -4,8 +4,8 @@
 > Read alongside `docs/specs/dynafit.md`. Guardrails are not separate — they are
 > built in the same session as the phase node they protect.
 >
-> Full 14-guardrail enterprise spec lives in `docs/DYNAFIT_Guardrails_Implementation.md`.
-> This file is the MVP cut: 7 guardrails, no new heavy libraries, HITL mandatory.
+> This file covers MVP guardrails (7 active) and post-MVP roadmap (7 deferred).
+> No new heavy libraries in MVP. HITL mandatory.
 
 ---
 
@@ -266,19 +266,43 @@ log.info("phase_complete",
 
 ## Post-MVP Guardrails (do not build in MVP)
 
-| Guardrail | Reason deferred |
-|---|---|
-| G2 — PII Redactor | Presidio + spaCy en_core_web_lg is heavy; no PII in test data for MVP |
-| G4 — Scope fence | Single-tenant MVP; Qdrant payload filter already scopes by product_id |
-| G5 — KB integrity | Requires hash-at-seed-time infra; post-MVP |
-| G6 — Context token cap | tiktoken add; easy to add to Phase 2 later |
-| G7 — Score bounds validator | Range check absorbed into G10-lite for MVP |
-| G11 — Response PII scanner | Needs Presidio; deferred with G2 |
-| G12 — Context firewall | NetworkX conflict graph; batch-level, post-MVP |
-| G13 — Export sanitizer | Field stripping; add when report export is built in Layer 4 |
-| G14 — HMAC audit seal | Full Merkle chain; post-MVP compliance feature |
-| RBAC | JWT middleware; Layer 4 concern |
-| Rate limiter | Redis token bucket; Layer 4 concern |
-| Vault secrets | HashiCorp Vault; infra/deployment concern |
+| Guardrail | Purpose | Key libraries | Reason deferred |
+|---|---|---|---|
+| G2 — PII Redactor | Redact PII before LLM calls (Presidio + spaCy NER) | `presidio-analyzer`, `spacy en_core_web_lg` | Heavy deps; no PII in test data for MVP |
+| G4 — Scope fence | Qdrant metadata pre-filter (tenant, module, country, wave) | `qdrant-client` payload filters | Single-tenant MVP; Qdrant already scopes by product_id |
+| G5 — KB integrity | SHA-256 hash verification of retrieved chunks vs seed-time hash | `hashlib` (stdlib) | Requires hash-at-seed-time infra |
+| G6 — Context token cap | Enforce token budget before LLM prompt construction | `tiktoken` | Easy to add to Phase 2 later |
+| G7 — Score bounds validator | Z-score anomaly detection on match scores per batch | `numpy`, `scikit-learn` | Range check absorbed into G10-lite for MVP |
+| G11 — Response PII scanner | Scan LLM output for hallucinated/leaked PII | `presidio-analyzer` | Deferred with G2 |
+| G12 — Context firewall | NetworkX conflict graph across full batch classifications | `networkx`, `spacy`, `rapidfuzz` | Batch-level cross-req analysis; post-MVP |
+| G13 — Export sanitizer | Strip internal metadata, deanonymize PII for final CSV | custom | Add when report export is enhanced |
+| G14 — HMAC audit seal | Merkle chain + HMAC-SHA256 tamper-evident audit trail | `hmac` (stdlib) | Full compliance feature; post-MVP |
+| RBAC | JWT validation + tenant context via FastAPI dependency injection | `python-jose` | Layer 4 concern |
+| Rate limiter | Redis token bucket per tenant (LLM calls + API requests) | `redis` | Layer 4 concern |
+| Vault secrets | HashiCorp Vault for API keys, DB creds, audit signing key | `hvac` | Infra/deployment concern |
 
-Full design for all 14 in `docs/DYNAFIT_Guardrails_Implementation.md`.
+### OWASP LLM Top 10 Coverage
+
+| OWASP Risk | DYNAFIT Attack Surface | Guardrail(s) |
+|---|---|---|
+| LLM01: Prompt injection | Malicious text in uploaded docs | G3 (injection scan) + G8 (prompt firewall) |
+| LLM02: Sensitive data disclosure | PII in requirements leaks into LLM responses | G2 (PII redactor) + G11 (response scanner) + G13 (export sanitizer) |
+| LLM03: Supply chain | Poisoned KB documents in Qdrant | G5 (KB integrity) |
+| LLM04: Data/model poisoning | Corrupted historical fitments | G5 (KB integrity) + G10 (sanity gate) |
+| LLM06: Excessive agency | LLM attempts actions beyond classification | G8 (template-only prompts) + G9 (schema enforcement) |
+| LLM07: System prompt leakage | Attacker extracts classification logic | G8 (prompt firewall) + G11 (response scanner) |
+
+### Post-MVP Implementation Priority
+
+**Sprint 1 (Weeks 1-2):** G2 (PII redactor), G6 (context token cap), RBAC, Rate limiter
+**Sprint 2 (Weeks 3-4):** G4 (scope fence), G7 (score validator), G11 (response PII scanner)
+**Sprint 3 (Weeks 5-6):** G5 (KB integrity), G12 (context firewall), G13 (export sanitizer), G14 (audit seal)
+**Sprint 4 (Weeks 7-8):** Vault secrets, encryption at rest + mTLS, Grafana alert rules, red team testing
+
+### Cross-Cutting Concerns (post-MVP)
+
+**Observability metrics:** `dynafit_guardrail_triggered{guardrail, phase, action}`, `dynafit_pii_detected{phase, entity_type}`, `dynafit_injection_score{phase}`, `dynafit_classification_confidence{classification}`
+
+**Encryption:** PostgreSQL TDE (pgcrypto), Qdrant disk encryption, Redis in-memory only, API TLS 1.3, internal mTLS, LLM API HTTPS with certificate pinning.
+
+**Secret management:** All API keys, DB credentials, audit signing keys, JWT signing keys via HashiCorp Vault. Never in source code, Docker images, config files, or logs.
