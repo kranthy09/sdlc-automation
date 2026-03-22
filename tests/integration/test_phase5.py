@@ -127,13 +127,13 @@ def _make_state(
 
 def _make_node(tmp_path, **kwargs) -> ValidationNode:
     """Return a ValidationNode backed entirely by mock infrastructure."""
-    defaults = dict(
-        postgres=make_postgres_store(),
-        redis=make_redis_pub_sub(),
-        embedder=make_embedder(),
-        product_config=make_product_config(),
-        report_dir=str(tmp_path),
-    )
+    defaults = {
+        "postgres": make_postgres_store(),
+        "redis": make_redis_pub_sub(),
+        "embedder": make_embedder(),
+        "product_config": make_product_config(),
+        "report_dir": str(tmp_path),
+    }
     defaults.update(kwargs)
     return ValidationNode(**defaults)
 

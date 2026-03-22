@@ -17,7 +17,7 @@ from typing import Any, Literal
 
 from platform.schemas.requirement import FlaggedAtom, RawUpload, ValidatedAtom
 
-from .ingestion_atomiser import _ClassifiedRequirement, _MODULE_SET
+from .ingestion_atomiser import _MODULE_SET, _ClassifiedRequirement
 
 # ---------------------------------------------------------------------------
 # Priority enrichment — keyword MoSCoW, no LLM needed

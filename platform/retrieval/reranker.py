@@ -90,7 +90,9 @@ class Reranker:
 
     def _get_model(self) -> Any:
         if self._model is None:
-            from fastembed.rerank.cross_encoder.text_cross_encoder import TextCrossEncoder  # noqa: PLC0415, E501
+            from fastembed.rerank.cross_encoder.text_cross_encoder import (
+                TextCrossEncoder,  # noqa: PLC0415, E501
+            )
 
             log.info("reranker_load_model", model=self._model_name)
             self._model = TextCrossEncoder(self._model_name)

@@ -24,7 +24,6 @@ import sys
 import uuid
 from pathlib import Path
 
-
 # ---------------------------------------------------------------------------
 # Argument parsing
 # ---------------------------------------------------------------------------
@@ -203,7 +202,7 @@ def main() -> None:
     if state.get("validated_batch") is None:
         # Phase 5 called interrupt() — HITL needed; auto-approve all flagged items
         flagged_ids = [c.atom_id for c in classifications if c.classification != FitLabel.GAP]
-        overrides: dict[str, None] = {atom_id: None for atom_id in flagged_ids}
+        overrides: dict[str, None] = dict.fromkeys(flagged_ids)
         print(f"  [HITL] Auto-approving {len(overrides)} flagged item(s)...")
         state = graph.invoke(Command(resume=overrides), config)
 

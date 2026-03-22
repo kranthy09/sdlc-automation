@@ -59,7 +59,7 @@ def test_composite_weighted():
 @pytest.mark.unit
 def test_composite_history_boost_caps_at_one():
     # composite ≈ 0.95; adding _HISTORY_BOOST (0.10) must stay ≤ 1.0
-    signals = {k: 0.95 for k in _ONES}
+    signals = dict.fromkeys(_ONES, 0.95)
     composite = _compute_composite(signals)  # 0.95
     boosted = min(1.0, composite + _HISTORY_BOOST)
     assert boosted <= 1.0

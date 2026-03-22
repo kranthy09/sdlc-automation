@@ -26,7 +26,7 @@ CRITICAL: never flip result.classification inside this function.
 from __future__ import annotations
 
 from platform.observability.logger import get_logger
-from platform.schemas.fitment import ClassificationResult, FitLabel, MatchResult, RouteLabel
+from platform.schemas.fitment import ClassificationResult, FitLabel, MatchResult
 from platform.schemas.product import ProductConfig
 
 log = get_logger(__name__)

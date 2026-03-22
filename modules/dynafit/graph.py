@@ -38,8 +38,8 @@ from platform.observability.logger import get_logger
 from .nodes.classification import classification_node
 from .nodes.ingestion import ingestion_node
 from .nodes.matching import matching_node
-from .nodes.retrieval import retrieval_node
 from .nodes.phase5_validation import validation_node
+from .nodes.retrieval import retrieval_node
 from .state import DynafitState
 
 log = get_logger(__name__)

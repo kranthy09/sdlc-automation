@@ -66,9 +66,9 @@ from ..guardrails import run_sanity_check
 from ..product_config import get_product_config
 from ..state import DynafitState
 from .validation_output import (
-    _MergedResult,
     _build_batch,
     _merge_overrides,
+    _MergedResult,
     _write_fdd_csv,
 )
 

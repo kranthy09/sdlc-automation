@@ -1,15 +1,15 @@
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from typing import AsyncIterator
-
-from fastapi import FastAPI, WebSocket
 
 import structlog
+from fastapi import FastAPI, WebSocket
 
 from api.middleware.cors import add_cors
 from api.middleware.logging import RequestLoggingMiddleware
-from api.routes.dynafit import public_router, router as dynafit_router
+from api.routes.dynafit import public_router
+from api.routes.dynafit import router as dynafit_router
 from api.websocket.progress import progress_handler
 from platform.config.settings import get_settings
 from platform.storage.postgres import PostgresStore

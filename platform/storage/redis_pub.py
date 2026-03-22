@@ -224,7 +224,7 @@ class RedisPubSub:
     @staticmethod
     def persist_phase_state_sync(
         redis_url: str,
-        event: "PhaseStartEvent | StepProgressEvent | PhaseCompleteEvent",
+        event: PhaseStartEvent | StepProgressEvent | PhaseCompleteEvent,
     ) -> None:
         """Synchronously persist phase state to the batch Redis hash.
 

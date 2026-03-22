@@ -98,7 +98,7 @@ def test_task_auto_resumes_no_hitl(upload_file: Path) -> None:
     phase5_result = ("complete", final_state, set(), {})
 
     with (
-        patch.object(tasks_module, "_emit") as mock_emit,
+        patch.object(tasks_module, "_emit"),
         patch.object(tasks_module, "_write_batch_state") as mock_write,
         patch("api.workers.tasks.asyncio.run") as mock_run,
     ):

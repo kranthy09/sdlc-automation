@@ -38,7 +38,6 @@ from pydantic import BaseModel, Field
 
 from platform.llm.client import LLMClient, LLMError
 from platform.observability.logger import get_logger
-from platform.storage.redis_pub import RedisPubSub
 from platform.schemas.fitment import (
     ClassificationResult,
     FitLabel,
@@ -47,6 +46,7 @@ from platform.schemas.fitment import (
 )
 from platform.schemas.product import ProductConfig
 from platform.schemas.retrieval import PriorFitment
+from platform.storage.redis_pub import RedisPubSub
 
 from ..events import (
     publish_classification_event,

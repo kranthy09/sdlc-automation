@@ -32,17 +32,16 @@ import numpy as np
 
 from platform.observability.logger import get_logger
 from platform.retrieval.embedder import Embedder
-from platform.storage.redis_pub import RedisPubSub
-
-from ..product_config import get_product_config
 from platform.schemas.fitment import MatchResult, RouteLabel
 from platform.schemas.retrieval import AssembledContext, PriorFitment, RankedCapability
+from platform.storage.redis_pub import RedisPubSub
 
 from ..events import (
     publish_phase_complete,
     publish_phase_start,
     publish_step_progress,
 )
+from ..product_config import get_product_config
 from ..state import DynafitState
 
 log = get_logger(__name__)
@@ -323,7 +322,7 @@ class MatchingNode:
                 if float(cap_norms[orig_a] @ cap_norms[orig_b]) > _DEDUP_THRESHOLD:
                     keep[b_out] = False
 
-        final = [(s, f, c, sig) for (s, f, c, _, sig), ok in zip(scored, keep) if ok]
+        final = [(s, f, c, sig) for (s, f, c, _, sig), ok in zip(scored, keep, strict=True) if ok]
 
         final_scores = [s for s, _, _, _ in final]
         final_caps = [c for _, _, c, _ in final]

@@ -78,7 +78,7 @@ class _ClassifiedRequirement:
     ValidatedAtom / FlaggedAtom at the final quality-gate step.
     """
 
-    atom: "RequirementAtom"  # noqa: F821 — forward ref resolved at runtime
+    atom: RequirementAtom  # noqa: F821 — forward ref resolved at runtime
     intent: _IntentLiteral
     module: str  # validated D365 module string
 

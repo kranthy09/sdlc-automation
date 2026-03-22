@@ -168,6 +168,7 @@ def _persist_classification(
 ) -> None:
     """Append classification to durable Redis hash."""
     import json  # noqa: PLC0415
+
     import redis as sync_redis  # noqa: PLC0415
 
     hash_key = f"batch:{batch_id}"

@@ -34,6 +34,7 @@ from platform.retrieval.bm25 import BM25Retriever
 from platform.retrieval.embedder import Embedder
 from platform.retrieval.reranker import Reranker, RerankResult
 from platform.retrieval.vector_store import SearchHit, VectorStore
+from platform.schemas.product import ProductConfig
 from platform.schemas.requirement import ValidatedAtom
 from platform.schemas.retrieval import (
     AssembledContext,
@@ -391,12 +392,11 @@ class RetrievalNode:
     def _run(
         self,
         atoms: list[ValidatedAtom],
-        config: "ProductConfig",
+        config: ProductConfig,
         *,
         batch_id: str = "",
         redis: RedisPubSub | None = None,
     ) -> list[AssembledContext]:
-        from platform.schemas.product import ProductConfig  # noqa: PLC0415, F811
 
         embedder = self._get_embedder()
         store = self._get_store()

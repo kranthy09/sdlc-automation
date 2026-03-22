@@ -78,9 +78,9 @@ def test_stub_run_pauses_before_validate() -> None:
 @pytest.mark.unit
 def test_stub_resume_completes_phase5(monkeypatch, tmp_path) -> None:
     """Resuming after HITL pause runs Phase 5 and produces a ValidatedFitmentBatch."""
-    import modules.dynafit.nodes.phase5_validation as phase5_mod
     from langgraph.checkpoint.memory import MemorySaver
 
+    import modules.dynafit.nodes.phase5_validation as phase5_mod
     from modules.dynafit.graph import build_dynafit_graph
     from modules.dynafit.nodes.phase5_validation import ValidationNode
     from platform.schemas.fitment import ValidatedFitmentBatch

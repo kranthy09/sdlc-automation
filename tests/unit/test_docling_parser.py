@@ -23,7 +23,6 @@ from pathlib import Path
 import pytest
 from prometheus_client import CollectorRegistry
 
-
 # ---------------------------------------------------------------------------
 # File builders
 # ---------------------------------------------------------------------------

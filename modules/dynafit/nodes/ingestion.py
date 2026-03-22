@@ -48,12 +48,10 @@ from ..state import DynafitState
 
 # Sub-module imports — pipeline stages
 from .ingestion_atomiser import (
+    _atomise_and_classify_batch,
     _AtomizationResult,
     _ClassifiedAtom,
     _ClassifiedRequirement,
-    _MODULE_SET,
-    _atomise_and_classify,
-    _atomise_and_classify_batch,
 )
 from .ingestion_column_mapper import (
     _map_column_to_canonical,
@@ -155,7 +153,7 @@ def _build_classified_requirements(
     counter = 0
     id_prefix = upload.upload_id[:8].upper()
 
-    for atom_list, source_ref in zip(all_atom_lists, source_refs):
+    for atom_list, source_ref in zip(all_atom_lists, source_refs, strict=True):
         for atom in atom_list:
             if len(atom.text.strip()) < 10:
                 continue
