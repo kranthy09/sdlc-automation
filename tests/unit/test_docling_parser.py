@@ -87,9 +87,7 @@ def _write_pdf(tmp_path: Path, text: str, name: str = "reqs.pdf") -> Path:
         + f"{o5:010d} 00000 n\r\n".encode()
     )
     trailer = (
-        b"trailer\n<</Size 6 /Root 1 0 R>>\nstartxref\n"
-        + str(xref_pos).encode()
-        + b"\n%%EOF\n"
+        b"trailer\n<</Size 6 /Root 1 0 R>>\nstartxref\n" + str(xref_pos).encode() + b"\n%%EOF\n"
     )
 
     p = tmp_path / name

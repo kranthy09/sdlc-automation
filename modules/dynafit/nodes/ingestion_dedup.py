@@ -31,7 +31,7 @@ def _deduplicate_requirements(
     vecs = np.array(matrix, dtype=np.float32)
     norms = np.linalg.norm(vecs, axis=1, keepdims=True)
     norms = np.where(norms == 0, 1.0, norms)
-    vecs = vecs / norms
+    vecs = (vecs / norms).astype(np.float32)
     sim: Any = vecs @ vecs.T
 
     hard_merged: set[int] = set()

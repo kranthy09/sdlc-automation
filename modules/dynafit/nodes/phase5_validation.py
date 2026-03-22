@@ -134,8 +134,14 @@ class ValidationNode:
             self._embedder = Embedder(config.embedding_model)
         return self._embedder
 
-    def _get_config(self, product_id: str, overrides: dict[str, Any] | None = None) -> ProductConfig:
-        base = self._config_override if self._config_override is not None else get_product_config(product_id)
+    def _get_config(
+        self, product_id: str, overrides: dict[str, Any] | None = None
+    ) -> ProductConfig:
+        base = (
+            self._config_override
+            if self._config_override is not None
+            else get_product_config(product_id)
+        )
         if overrides:
             recognized = {k: v for k, v in overrides.items() if hasattr(base, k)}
             if recognized:
@@ -154,10 +160,8 @@ class ValidationNode:
           2. After interrupt() resume: interrupt() returns overrides, execution
              continues from the line after interrupt() in the same call frame.
         """
-        classifications: list[ClassificationResult] = state.get(  # type: ignore[assignment]
-            "classifications", []
-        )
-        match_results: list[MatchResult] = state.get("match_results", [])  # type: ignore[assignment]
+        classifications: list[ClassificationResult] = state.get("classifications", [])
+        match_results: list[MatchResult] = state.get("match_results", [])
         batch_id = state["batch_id"]
         config = self._get_config(state["upload"].product_id, state.get("config_overrides"))
 
@@ -190,8 +194,10 @@ class ValidationNode:
         overrides: dict[str, Any] = {}
         if flagged:
             publish_phase_start(
-                batch_id, self._get_redis(),
-                phase=5, phase_name="human_review",
+                batch_id,
+                self._get_redis(),
+                phase=5,
+                phase_name="human_review",
             )
             log.info(
                 "hitl_checkpoint",
@@ -236,8 +242,10 @@ class ValidationNode:
         # PhaseCompleteEvent MUST be published before CompleteEvent —
         # CompleteEvent is terminal and stops the Redis subscriber.
         publish_phase_complete(
-            batch_id, self._get_redis(),
-            phase=5, phase_name="Validation",
+            batch_id,
+            self._get_redis(),
+            phase=5,
+            phase_name="Validation",
             atoms_produced=final_batch.total_atoms,
             atoms_validated=final_batch.total_atoms - final_batch.review_count,
             atoms_flagged=len(flagged),
@@ -375,7 +383,7 @@ class ValidationNode:
                 skipped += 1
                 continue
             try:
-                embedding: list[float] = embedder.embed(mr.result.requirement_text).tolist()
+                embedding: list[float] = embedder.embed(mr.result.requirement_text)
                 await postgres.save_fitment(
                     mr.result,
                     embedding,

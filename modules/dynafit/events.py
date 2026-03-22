@@ -26,7 +26,8 @@ from platform.storage.redis_pub import RedisPubSub
 log = get_logger(__name__)
 
 REDIS_URL = os.getenv(
-    "REDIS_URL", "redis://localhost:6379/0",
+    "REDIS_URL",
+    "redis://localhost:6379/0",
 )
 
 # -----------------------------------------------------------
@@ -48,7 +49,8 @@ def run_async(coro: Any) -> Any:
             loop.close()
     except Exception as exc:
         log.warning(
-            "run_async_failed", error=str(exc),
+            "run_async_failed",
+            error=str(exc),
         )
 
 
@@ -146,12 +148,15 @@ def publish_classification_event(
 
 
 def _persist(
-    event: Any, batch_id: str, phase: int,
+    event: Any,
+    batch_id: str,
+    phase: int,
 ) -> None:
     """Sync durable write to Redis hash."""
     try:
         RedisPubSub.persist_phase_state_sync(
-            REDIS_URL, event,
+            REDIS_URL,
+            event,
         )
     except Exception as exc:
         log.warning(
@@ -181,16 +186,11 @@ def _persist_classification(
         r = sync_redis.from_url(REDIS_URL)
         try:
             raw = r.hget(hash_key, "classifications")
-            rows: list[dict[str, Any]] = (
-                json.loads(raw) if raw else []
-            )
+            rows: list[dict[str, Any]] = json.loads(raw) if raw else []
         except Exception:
             rows = []
         # Deduplicate by atom_id
-        if not any(
-            x["atom_id"] == event.atom_id
-            for x in rows
-        ):
+        if not any(x["atom_id"] == event.atom_id for x in rows):
             rows.append(entry)
             r.hset(
                 hash_key,
@@ -231,7 +231,8 @@ def _publish_async(
 
 
 async def _pubsub_only(
-    redis: RedisPubSub, event: Any,
+    redis: RedisPubSub,
+    event: Any,
 ) -> None:
     """Publish to pub/sub channel only.
 
@@ -243,9 +244,10 @@ async def _pubsub_only(
     channel = f"progress:{event.batch_id}"
     payload = event.model_dump_json()
     client = aioredis.from_url(
-        redis._url, decode_responses=True,
+        redis._url,
+        decode_responses=True,
     )
     try:
         await client.publish(channel, payload)
     finally:
-        await client.aclose()
+        await client.close()

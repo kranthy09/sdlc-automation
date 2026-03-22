@@ -187,9 +187,7 @@ def _try_batch_call(
     or None when the call fails or the response count mismatches input.
     Callers must fall back to individual _atomise_and_classify calls on None.
     """
-    chunks_str = "\n\n".join(
-        f"[{i + 1}] {text[:2000]}" for i, text in enumerate(texts)
-    )
+    chunks_str = "\n\n".join(f"[{i + 1}] {text[:2000]}" for i, text in enumerate(texts))
     prompt = _BATCH_ATOMISATION_PROMPT.format(
         module_list=_MODULE_LIST_STR,
         n_chunks=len(texts),
@@ -212,7 +210,9 @@ def _try_batch_call(
             for item in chunk_result.atoms:
                 trimmed = item.text.strip()
                 if trimmed:
-                    module = item.module if item.module in _MODULE_SET else "OrganizationAdministration"
+                    module = (
+                        item.module if item.module in _MODULE_SET else "OrganizationAdministration"
+                    )
                     items.append(_ClassifiedAtom(text=trimmed, intent=item.intent, module=module))
             out.append(items)
         return out

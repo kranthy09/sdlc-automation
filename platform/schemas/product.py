@@ -28,9 +28,7 @@ class ProductConfig(PlatformModel):
     # AI model configuration
     llm_model: str
     embedding_model: str
-    reranker_model: str = (
-        "Xenova/ms-marco-MiniLM-L-6-v2"
-    )
+    reranker_model: str = "Xenova/ms-marco-MiniLM-L-6-v2"
 
     # Knowledge base namespaces (Qdrant collections)
     capability_kb_namespace: str

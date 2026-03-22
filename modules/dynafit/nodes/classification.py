@@ -145,7 +145,11 @@ class ClassificationNode:
     def _get_config(
         self, product_id: str, overrides: dict[str, Any] | None = None
     ) -> ProductConfig:
-        base = self._config_override if self._config_override is not None else get_product_config(product_id)
+        base = (
+            self._config_override
+            if self._config_override is not None
+            else get_product_config(product_id)
+        )
         if overrides:
             recognized = {k: v for k, v in overrides.items() if hasattr(base, k)}
             if recognized:
@@ -157,9 +161,7 @@ class ClassificationNode:
     # ------------------------------------------------------------------
 
     def __call__(self, state: DynafitState) -> dict[str, Any]:
-        match_results: list[MatchResult] = (  # type: ignore[assignment]
-            state.get("match_results", [])
-        )
+        match_results: list[MatchResult] = state.get("match_results", [])
         if not match_results:
             log.debug(
                 "classification_skipped_no_match_results",
@@ -171,18 +173,17 @@ class ClassificationNode:
         config = self._get_config(state["upload"].product_id, state.get("config_overrides"))
 
         publish_phase_start(
-            batch_id, self._get_redis(),
-            phase=4, phase_name="Classification",
+            batch_id,
+            self._get_redis(),
+            phase=4,
+            phase_name="Classification",
         )
 
         # Build prior_fitments lookup from Phase 2 AssembledContexts.
         # Phase 3 (MatchResult) does not carry prior_fitments forward,
         # so we cross-reference state["retrieval_contexts"] by atom_id.
         priors_by_atom: dict[str, list[PriorFitment]] = {
-            ctx.atom.atom_id: ctx.prior_fitments
-            for ctx in state.get(  # type: ignore[call-overload]
-                "retrieval_contexts", []
-            )
+            ctx.atom.atom_id: ctx.prior_fitments for ctx in state.get("retrieval_contexts", [])
         }
 
         t0 = time.monotonic()
@@ -197,7 +198,8 @@ class ClassificationNode:
             publish_classification_event(batch_id, result, self._get_redis())
             classifications.append(result)
             publish_step_progress(
-                batch_id, self._get_redis(),
+                batch_id,
+                self._get_redis(),
                 phase=4,
                 step=f"Classifying requirements ({i + 1}/{n})",
                 completed=i + 1,
@@ -220,8 +222,10 @@ class ClassificationNode:
             latency_ms=round(elapsed_ms, 1),
         )
         publish_phase_complete(
-            batch_id, self._get_redis(),
-            phase=4, phase_name="Classification",
+            batch_id,
+            self._get_redis(),
+            phase=4,
+            phase_name="Classification",
             atoms_produced=len(classifications),
             atoms_validated=atoms_validated,
             atoms_flagged=atoms_flagged,
@@ -370,7 +374,7 @@ class ClassificationNode:
             capabilities=mr.ranked_capabilities,
             prior_fitments=priors,
         )
-        return self._get_llm().complete(  # type: ignore[return-value]
+        return self._get_llm().complete(
             prompt,
             LLMClassificationOutput,
             config,

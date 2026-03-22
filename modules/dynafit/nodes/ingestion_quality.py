@@ -352,7 +352,7 @@ def _apply_quality_gates(
                 atom_id=req.atom.atom_id,
                 upload_id=req.atom.upload_id,
                 requirement_text=text,
-                module=module,  # type: ignore[arg-type]
+                module=module,
                 country=upload.country,
                 wave=upload.wave,
                 priority=_infer_moscow_priority(text),

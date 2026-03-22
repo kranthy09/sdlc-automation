@@ -79,9 +79,7 @@ async def main() -> None:
             print(f"  [apply] {version} ...", end=" ", flush=True)
             sql = path.read_text()
             await conn.execute(sql)
-            await conn.execute(
-                "INSERT INTO schema_migrations (version) VALUES ($1)", version
-            )
+            await conn.execute("INSERT INTO schema_migrations (version) VALUES ($1)", version)
             print("done")
             any_applied = True
 

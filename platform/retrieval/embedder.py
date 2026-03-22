@@ -117,4 +117,3 @@ class Embedder:
             raise EmbedderError(
                 f"embed_batch failed (model={self._model_name!r}): {exc}", cause=exc
             ) from exc
-

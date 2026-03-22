@@ -300,9 +300,7 @@ class PostgresStore:
             "config_steps": result.config_steps,
             "gap_description": result.gap_description,
             "configuration_steps": (
-                json.dumps(result.configuration_steps)
-                if result.configuration_steps
-                else None
+                json.dumps(result.configuration_steps) if result.configuration_steps else None
             ),
             "dev_effort": result.dev_effort,
             "gap_type": result.gap_type,

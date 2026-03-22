@@ -214,9 +214,7 @@ class TestClassificationResult:
 
     def test_dev_effort_invalid_value_raises(self) -> None:
         with pytest.raises(ValidationError):
-            ClassificationResult(
-                **{**_VALID_RESULT_KWARGS, "dev_effort": "XL"}
-            )
+            ClassificationResult(**{**_VALID_RESULT_KWARGS, "dev_effort": "XL"})
 
     def test_llm_calls_default(self) -> None:
         r = ClassificationResult(**_VALID_RESULT_KWARGS)

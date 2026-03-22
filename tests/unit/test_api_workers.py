@@ -252,9 +252,7 @@ def test_task_resume_skips_phases14() -> None:
             "classifications": [],
             "errors": [],
         }
-        tasks_module.run_dynafit_pipeline.run(
-            "bat_resume01", "", {"_resume": True}
-        )
+        tasks_module.run_dynafit_pipeline.run("bat_resume01", "", {"_resume": True})
 
     # Resume path calls asyncio.run once (for _resume_phase5_hitl)
     mock_run.assert_called_once()

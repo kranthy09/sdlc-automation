@@ -58,7 +58,7 @@ def build_dynafit_graph(checkpointer: Any = None) -> Any:
         Compiled LangGraph graph. Entry point: "ingest".
         HITL interrupt point: before "validate" (Phase 5).
     """
-    graph: StateGraph = StateGraph(DynafitState)
+    graph: StateGraph[DynafitState] = StateGraph(DynafitState)
 
     # --- Phase nodes (linear pipeline, no conditional edges in MVP) ----------
     graph.add_node("ingest", ingestion_node)

@@ -19,6 +19,7 @@ subscription and exits.
 from __future__ import annotations
 
 import json
+from typing import Any
 
 import redis.asyncio as aioredis
 import structlog
@@ -54,7 +55,7 @@ async def _replay_phases(
         return
 
     try:
-        phases: dict[str, dict] = json.loads(raw_phases)
+        phases: dict[str, dict[str, Any]] = json.loads(raw_phases)
     except (json.JSONDecodeError, TypeError):
         return
 
@@ -129,14 +130,15 @@ async def _catch_up(
     """
     try:
         r = aioredis.from_url(
-            redis_url, decode_responses=True,
+            redis_url,
+            decode_responses=True,
         )
         try:
             batch: dict[str, str] = await r.hgetall(
                 f"batch:{batch_id}",
             )
         finally:
-            await r.aclose()
+            await r.close()
     except Exception:
         return False
 
@@ -174,19 +176,20 @@ async def _catch_up(
         reasons: dict[str, int] = {}
         for item in items:
             rr = item.get(
-                "review_reason", "low_confidence",
+                "review_reason",
+                "low_confidence",
             )
             reasons[rr] = reasons.get(rr, 0) + 1
         if not reasons:
             reasons = {"low_confidence": len(items)}
-        event = ReviewRequiredEvent(
+        review_event = ReviewRequiredEvent(
             batch_id=batch_id,
             review_items=len(items),
             reasons=reasons,
             review_url=f"/review/{batch_id}",
         )
         await websocket.send_text(
-            event.model_dump_json(),
+            review_event.model_dump_json(),
         )
         log.info(
             "ws_replayed_review_required",
@@ -198,7 +201,8 @@ async def _catch_up(
 
 
 async def progress_handler(
-    websocket: WebSocket, batch_id: str,
+    websocket: WebSocket,
+    batch_id: str,
 ) -> None:
     """Accept the WS and forward Redis events until done."""
     await websocket.accept()
@@ -207,7 +211,9 @@ async def progress_handler(
 
     # Catch-up: replay persisted phases + terminal state
     if await _catch_up(
-        websocket, batch_id, settings.redis_url,
+        websocket,
+        batch_id,
+        settings.redis_url,
     ):
         await websocket.close()
         return

@@ -20,9 +20,7 @@ _CONFIG = make_product_config()
 @pytest.mark.unit
 def test_high_confidence_gap_flagged():
     # confidence 0.92 > fit_confidence_threshold (0.85) + GAP → flag
-    result = make_classification_result(
-        classification=FitLabel.GAP, confidence=0.92
-    )
+    result = make_classification_result(classification=FitLabel.GAP, confidence=0.92)
     flags = run_sanity_check(result, make_match_result(), _CONFIG)
     assert "high_confidence_gap" in flags
 

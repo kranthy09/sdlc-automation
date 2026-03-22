@@ -152,6 +152,9 @@ class RedisPubSub:
         except Exception:
             phases = {}
 
+        if not isinstance(event, (PhaseStartEvent, StepProgressEvent, PhaseCompleteEvent)):
+            return  # not a phase lifecycle event
+
         key = str(event.phase)
 
         if isinstance(event, PhaseStartEvent):
@@ -182,9 +185,6 @@ class RedisPubSub:
                 "atoms_flagged": event.atoms_flagged,
                 "latency_ms": event.latency_ms,
             }
-        else:
-            return  # not a phase lifecycle event
-
         try:
             await client.hset(hash_key, "phases", json.dumps(phases))
         except Exception as exc:
@@ -212,7 +212,7 @@ class RedisPubSub:
             try:
                 raw = await r.hget(f"batch:{batch_id}", "phases")
             finally:
-                await r.aclose()
+                await r.close()
             return json.loads(raw) if raw else {}
         except Exception:
             return {}
@@ -243,9 +243,7 @@ class RedisPubSub:
             r = sync_redis.from_url(redis_url)
             try:
                 raw = r.hget(hash_key, "phases")
-                phases: dict[str, dict[str, Any]] = (
-                    json.loads(raw) if raw else {}
-                )
+                phases: dict[str, dict[str, Any]] = json.loads(raw) if raw else {}
             except Exception:
                 phases = {}
 
@@ -264,11 +262,7 @@ class RedisPubSub:
                 }
             elif isinstance(event, StepProgressEvent):
                 phase = phases.get(key, {})
-                pct = (
-                    round((event.completed / event.total) * 100)
-                    if event.total > 0
-                    else 0
-                )
+                pct = round((event.completed / event.total) * 100) if event.total > 0 else 0
                 phase["current_step"] = event.step
                 phase["progress_pct"] = pct
                 phases[key] = phase

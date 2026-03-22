@@ -49,9 +49,9 @@ log = structlog.get_logger(__name__)
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 
 # Strip the +asyncpg SQLAlchemy driver spec — psycopg3 uses plain postgresql://
-POSTGRES_CHECKPOINT_URL = os.getenv(
-    "POSTGRES_URL", "postgresql://localhost/dynafit"
-).replace("postgresql+asyncpg://", "postgresql://")
+POSTGRES_CHECKPOINT_URL = os.getenv("POSTGRES_URL", "postgresql://localhost/dynafit").replace(
+    "postgresql+asyncpg://", "postgresql://"
+)
 
 celery_app = Celery("dynafit", broker=REDIS_URL, backend=REDIS_URL)
 celery_app.conf.update(
@@ -87,7 +87,7 @@ def _write_batch_state(batch_id: str, **fields: str) -> None:
     r = redis.from_url(REDIS_URL)
     try:
         key = f"batch:{batch_id}"
-        r.hset(key, mapping=fields)
+        r.hset(key, mapping=fields)  # type: ignore[arg-type]
         r.expire(key, 86400)  # 24 h TTL
     finally:
         r.close()
@@ -169,11 +169,7 @@ def _build_journey_data(final_state: dict[str, Any]) -> list[dict[str, Any]]:
             "anomaly_flags": mr.anomaly_flags if mr else [],
         }
 
-        d365_nav = (
-            mr.ranked_capabilities[0].navigation
-            if mr and mr.ranked_capabilities
-            else ""
-        )
+        d365_nav = mr.ranked_capabilities[0].navigation if mr and mr.ranked_capabilities else ""
         classify = {
             "classification": str(cls.classification),
             "confidence": cls.confidence,
@@ -195,14 +191,16 @@ def _build_journey_data(final_state: dict[str, Any]) -> list[dict[str, Any]]:
             "reviewer_override": atom_id in reviewed_ids,
         }
 
-        journeys.append({
-            "atom_id": atom_id,
-            "ingest": ingest,
-            "retrieve": retrieve,
-            "match": match,
-            "classify": classify,
-            "output": output,
-        })
+        journeys.append(
+            {
+                "atom_id": atom_id,
+                "ingest": ingest,
+                "retrieve": retrieve,
+                "match": match,
+                "classify": classify,
+                "output": output,
+            }
+        )
 
     return journeys
 
@@ -220,13 +218,9 @@ def _finish_complete(batch_id: str, final_state: dict[str, Any]) -> None:
 
     # Build atom-keyed lookups from Phase 3 (MatchResult) and Phase 2
     # (AssembledContext) to populate evidence fields per result.
-    match_by_atom = {
-        mr.atom.atom_id: mr
-        for mr in (final_state.get("match_results") or [])
-    }
+    match_by_atom = {mr.atom.atom_id: mr for mr in (final_state.get("match_results") or [])}
     context_by_atom = {
-        ctx.atom.atom_id: ctx
-        for ctx in (final_state.get("retrieval_contexts") or [])
+        ctx.atom.atom_id: ctx for ctx in (final_state.get("retrieval_contexts") or [])
     }
 
     result_dicts = []
@@ -250,37 +244,35 @@ def _finish_complete(batch_id: str, final_state: dict[str, Any]) -> None:
         }
 
         d365_navigation = (
-            mr.ranked_capabilities[0].navigation
-            if mr and mr.ranked_capabilities
-            else ""
+            mr.ranked_capabilities[0].navigation if mr and mr.ranked_capabilities else ""
         )
 
-        result_dicts.append({
-            "atom_id": r.atom_id,
-            "requirement_text": r.requirement_text,
-            "classification": str(r.classification),
-            "confidence": r.confidence,
-            "module": r.module,
-            "country": r.country,
-            "wave": r.wave,
-            "rationale": r.rationale,
-            "reviewer_override": False,
-            "d365_capability": r.d365_capability_ref or "",
-            "d365_navigation": d365_navigation,
-            "evidence": evidence,
-            "config_steps": r.config_steps,
-            "gap_description": r.gap_description,
-            "configuration_steps": r.configuration_steps,
-            "dev_effort": r.dev_effort,
-            "gap_type": r.gap_type,
-        })
+        result_dicts.append(
+            {
+                "atom_id": r.atom_id,
+                "requirement_text": r.requirement_text,
+                "classification": str(r.classification),
+                "confidence": r.confidence,
+                "module": r.module,
+                "country": r.country,
+                "wave": r.wave,
+                "rationale": r.rationale,
+                "reviewer_override": False,
+                "d365_capability": r.d365_capability_ref or "",
+                "d365_navigation": d365_navigation,
+                "evidence": evidence,
+                "config_steps": r.config_steps,
+                "gap_description": r.gap_description,
+                "configuration_steps": r.configuration_steps,
+                "dev_effort": r.dev_effort,
+                "gap_type": r.gap_type,
+            }
+        )
 
         # Accumulate by_module counts (REVIEW_REQUIRED not counted)
         cls = str(r.classification)
         if cls in ("FIT", "PARTIAL_FIT", "GAP"):
-            mod = by_module.setdefault(
-                r.module, {"fit": 0, "partial_fit": 0, "gap": 0}
-            )
+            mod = by_module.setdefault(r.module, {"fit": 0, "partial_fit": 0, "gap": 0})
             if cls == "FIT":
                 mod["fit"] += 1
             elif cls == "PARTIAL_FIT":
@@ -312,12 +304,14 @@ def _finish_complete(batch_id: str, final_state: dict[str, Any]) -> None:
 
 # Flag strings produced by Phase 5 _check_flags() that indicate a structural
 # anomaly rather than simple low confidence. Mapped to "anomaly" in the UI.
-_ANOMALY_FLAG_NAMES = frozenset({
-    "phase3_anomaly",
-    "high_confidence_gap",
-    "low_score_fit",
-    "llm_schema_retry_exhausted",
-})
+_ANOMALY_FLAG_NAMES = frozenset(
+    {
+        "phase3_anomaly",
+        "high_confidence_gap",
+        "low_score_fit",
+        "llm_schema_retry_exhausted",
+    }
+)
 
 
 def _review_reason(flags: list[str]) -> str:
@@ -344,13 +338,9 @@ def _finish_hitl(
     classifications = final_state.get("classifications") or []
     review_needed = [c for c in classifications if c.atom_id in flagged_ids]
 
-    match_by_atom = {
-        mr.atom.atom_id: mr
-        for mr in (final_state.get("match_results") or [])
-    }
+    match_by_atom = {mr.atom.atom_id: mr for mr in (final_state.get("match_results") or [])}
     context_by_atom = {
-        ctx.atom.atom_id: ctx
-        for ctx in (final_state.get("retrieval_contexts") or [])
+        ctx.atom.atom_id: ctx for ctx in (final_state.get("retrieval_contexts") or [])
     }
 
     review_item_dicts = []
@@ -361,44 +351,48 @@ def _finish_hitl(
 
         anomaly_flags = mr.anomaly_flags if mr else []
         item_flags = flagged_reasons.get(c.atom_id, [])
-        review_reason = _review_reason(item_flags) if item_flags else (
-            "anomaly" if anomaly_flags else "low_confidence"
+        review_reason = (
+            _review_reason(item_flags)
+            if item_flags
+            else ("anomaly" if anomaly_flags else "low_confidence")
         )
         reasons_counts[review_reason] = reasons_counts.get(review_reason, 0) + 1
 
-        review_item_dicts.append({
-            "atom_id": c.atom_id,
-            "requirement_text": c.requirement_text,
-            "ai_classification": str(c.classification),
-            "ai_confidence": c.confidence,
-            "ai_rationale": c.rationale,
-            "review_reason": review_reason,
-            "module": c.module,
-            "config_steps": c.config_steps,
-            "gap_description": c.gap_description,
-            "configuration_steps": c.configuration_steps,
-            "dev_effort": c.dev_effort,
-            "gap_type": c.gap_type,
-            "evidence": {
-                "capabilities": [
-                    {
-                        "name": cap.feature,
-                        "score": cap.composite_score,
-                        "navigation": cap.navigation,
-                    }
-                    for cap in (mr.ranked_capabilities[:3] if mr else [])
-                ],
-                "prior_fitments": [
-                    {
-                        "wave": pf.wave,
-                        "country": pf.country,
-                        "classification": pf.classification,
-                    }
-                    for pf in (ctx.prior_fitments if ctx else [])
-                ],
-                "anomaly_flags": anomaly_flags,
-            },
-        })
+        review_item_dicts.append(
+            {
+                "atom_id": c.atom_id,
+                "requirement_text": c.requirement_text,
+                "ai_classification": str(c.classification),
+                "ai_confidence": c.confidence,
+                "ai_rationale": c.rationale,
+                "review_reason": review_reason,
+                "module": c.module,
+                "config_steps": c.config_steps,
+                "gap_description": c.gap_description,
+                "configuration_steps": c.configuration_steps,
+                "dev_effort": c.dev_effort,
+                "gap_type": c.gap_type,
+                "evidence": {
+                    "capabilities": [
+                        {
+                            "name": cap.feature,
+                            "score": cap.composite_score,
+                            "navigation": cap.navigation,
+                        }
+                        for cap in (mr.ranked_capabilities[:3] if mr else [])
+                    ],
+                    "prior_fitments": [
+                        {
+                            "wave": pf.wave,
+                            "country": pf.country,
+                            "classification": pf.classification,
+                        }
+                        for pf in (ctx.prior_fitments if ctx else [])
+                    ],
+                    "anomaly_flags": anomaly_flags,
+                },
+            }
+        )
 
     # Build auto-approved items (classifications NOT flagged for review)
     auto_approved_dicts = []
@@ -418,25 +412,25 @@ def _finish_hitl(
 
         mr = match_by_atom.get(c.atom_id)
         d365_navigation = (
-            mr.ranked_capabilities[0].navigation
-            if mr and mr.ranked_capabilities
-            else ""
+            mr.ranked_capabilities[0].navigation if mr and mr.ranked_capabilities else ""
         )
-        auto_approved_dicts.append({
-            "atom_id": c.atom_id,
-            "requirement_text": c.requirement_text,
-            "classification": cls,
-            "confidence": c.confidence,
-            "module": c.module,
-            "rationale": c.rationale,
-            "d365_capability": c.d365_capability_ref or "",
-            "d365_navigation": d365_navigation,
-            "config_steps": c.config_steps,
-            "configuration_steps": c.configuration_steps,
-            "gap_description": c.gap_description,
-            "gap_type": c.gap_type,
-            "dev_effort": c.dev_effort,
-        })
+        auto_approved_dicts.append(
+            {
+                "atom_id": c.atom_id,
+                "requirement_text": c.requirement_text,
+                "classification": cls,
+                "confidence": c.confidence,
+                "module": c.module,
+                "rationale": c.rationale,
+                "d365_capability": c.d365_capability_ref or "",
+                "d365_navigation": d365_navigation,
+                "config_steps": c.config_steps,
+                "configuration_steps": c.configuration_steps,
+                "gap_description": c.gap_description,
+                "gap_type": c.gap_type,
+                "dev_effort": c.dev_effort,
+            }
+        )
 
     journey_data = _build_journey_data(final_state)
 
@@ -445,12 +439,14 @@ def _finish_hitl(
         status="review_required",
         review_items=json.dumps(review_item_dicts),
         auto_approved=json.dumps(auto_approved_dicts),
-        summary=json.dumps({
-            "total": len(classifications),
-            "fit": fit_count,
-            "partial_fit": partial_fit_count,
-            "gap": gap_count,
-        }),
+        summary=json.dumps(
+            {
+                "total": len(classifications),
+                "fit": fit_count,
+                "partial_fit": partial_fit_count,
+                "gap": gap_count,
+            }
+        ),
         journey=json.dumps(journey_data),
     )
     _emit(
@@ -521,7 +517,8 @@ async def _resume_phase5_hitl(
         POSTGRES_CHECKPOINT_URL, serde=JsonPlusSerializer()
     ) as checkpointer:
         graph = build_dynafit_graph(checkpointer=checkpointer)
-        return await graph.ainvoke(Command(resume=overrides), config=thread_config)
+        state: dict[str, Any] = await graph.ainvoke(Command(resume=overrides), config=thread_config)
+        return state
 
 
 # ---------------------------------------------------------------------------
@@ -529,7 +526,7 @@ async def _resume_phase5_hitl(
 # ---------------------------------------------------------------------------
 
 
-@celery_app.task(
+@celery_app.task(  # type: ignore[untyped-decorator]
     bind=True,
     name="api.workers.tasks.run_dynafit_pipeline",
     max_retries=2,
@@ -562,9 +559,7 @@ def run_dynafit_pipeline(
             override_count=len(overrides),
         )
         try:
-            final_state = asyncio.run(
-                _resume_phase5_hitl(batch_id, thread_config, overrides)
-            )
+            final_state = asyncio.run(_resume_phase5_hitl(batch_id, thread_config, overrides))
         except Exception as exc:
             log.error("pipeline_phase5_resume_failed", batch_id=batch_id, error=str(exc))
             _emit(
@@ -583,7 +578,11 @@ def run_dynafit_pipeline(
     # --- Normal first-run path -----------------------------------------------
     # Extract per-run threshold overrides before consuming the rest of config.
     # These keys are recognized ProductConfig fields the UI may override.
-    _OVERRIDE_KEYS = {"fit_confidence_threshold", "review_confidence_threshold", "auto_approve_with_history"}
+    _OVERRIDE_KEYS = {
+        "fit_confidence_threshold",
+        "review_confidence_threshold",
+        "auto_approve_with_history",
+    }
     run_overrides: dict[str, Any] = {k: v for k, v in config.items() if k in _OVERRIDE_KEYS}
 
     meta = config.pop("_upload_meta", {})
@@ -630,7 +629,8 @@ def run_dynafit_pipeline(
             }
             if run_overrides:
                 initial_state["config_overrides"] = run_overrides
-            return await graph.ainvoke(initial_state, config=thread_config)
+            state: dict[str, Any] = await graph.ainvoke(initial_state, config=thread_config)
+            return state
 
     try:
         # Phases 1–4: graph stops before Phase 5 (interrupt_before=["validate"])

@@ -141,12 +141,19 @@ def _build_classified_requirements(
     source_refs = [r for _, r in raw_texts]
 
     all_atom_lists = _atomise_and_classify_batch(
-        texts, llm, config, batch_size=10,
+        texts,
+        llm,
+        config,
+        batch_size=10,
     )
 
     publish_step_progress(
-        batch_id, redis,
-        phase=1, step="atomize", completed=2, total=4,
+        batch_id,
+        redis,
+        phase=1,
+        step="atomize",
+        completed=2,
+        total=4,
     )
 
     results: list[_ClassifiedRequirement] = []
@@ -265,13 +272,16 @@ class IngestionNode:
 
         # 0. Announce phase start
         publish_phase_start(
-            batch_id, self._get_redis(),
-            phase=1, phase_name="Ingestion",
+            batch_id,
+            self._get_redis(),
+            phase=1,
+            phase_name="Ingestion",
         )
 
         # 1. G1-lite — file validation
         file_check = validate_file(
-            upload.file_bytes, upload.filename,
+            upload.file_bytes,
+            upload.filename,
         )
         if not file_check.is_valid:
             log.error(
@@ -279,10 +289,7 @@ class IngestionNode:
                 batch_id=batch_id,
                 reason=file_check.rejection_reason,
             )
-            return _make_rejection_result(
-                "file_validation_failed: "
-                f"{file_check.rejection_reason}"
-            )
+            return _make_rejection_result(f"file_validation_failed: {file_check.rejection_reason}")
 
         # 2. Document parsing
         parse_result = self._parse_document(upload, batch_id)
@@ -295,15 +302,19 @@ class IngestionNode:
         raw_texts = _collect_requirement_texts(parse_result)
         if not raw_texts:
             log.warning(
-                "ingestion_no_text_found", batch_id=batch_id,
+                "ingestion_no_text_found",
+                batch_id=batch_id,
             )
             return _make_rejection_result(
-                "no_requirements_found: "
-                "document produced no extractable text"
+                "no_requirements_found: document produced no extractable text"
             )
         publish_step_progress(
-            batch_id, self._get_redis(),
-            phase=1, step="parse", completed=1, total=4,
+            batch_id,
+            self._get_redis(),
+            phase=1,
+            step="parse",
+            completed=1,
+            total=4,
         )
 
         # 4. G3-lite — injection scan
@@ -316,23 +327,23 @@ class IngestionNode:
                 patterns=injection_scan.matched_patterns,
             )
             return _make_rejection_result(
-                "injection_blocked: "
-                f"patterns={injection_scan.matched_patterns}"
+                f"injection_blocked: patterns={injection_scan.matched_patterns}"
             )
 
         extra_errors: list[str] = (
-            [
-                f"injection_flagged:{p}"
-                for p in injection_scan.matched_patterns
-            ]
+            [f"injection_flagged:{p}" for p in injection_scan.matched_patterns]
             if injection_scan.action == "FLAG_FOR_REVIEW"
             else []
         )
 
         # 5. Atomise + classify (LLM)
         classified = _build_classified_requirements(
-            raw_texts, upload, self._get_llm(), config,
-            redis=self._get_redis(), batch_id=batch_id,
+            raw_texts,
+            upload,
+            self._get_llm(),
+            config,
+            redis=self._get_redis(),
+            batch_id=batch_id,
         )
         if not classified:
             return _make_rejection_result(
@@ -341,21 +352,31 @@ class IngestionNode:
 
         # 6. Deduplicate
         unique, duplicates = _deduplicate_requirements(
-            classified, self._get_embedder(),
+            classified,
+            self._get_embedder(),
         )
         publish_step_progress(
-            batch_id, self._get_redis(),
-            phase=1, step="deduplicate",
-            completed=3, total=4,
+            batch_id,
+            self._get_redis(),
+            phase=1,
+            step="deduplicate",
+            completed=3,
+            total=4,
         )
 
         # 7-9. Quality gates
         validated, flagged = _apply_quality_gates(
-            unique, duplicates, upload,
+            unique,
+            duplicates,
+            upload,
         )
         publish_step_progress(
-            batch_id, self._get_redis(),
-            phase=1, step="quality", completed=4, total=4,
+            batch_id,
+            self._get_redis(),
+            phase=1,
+            step="quality",
+            completed=4,
+            total=4,
         )
 
         elapsed_ms = (time.monotonic() - t0) * 1000
@@ -369,13 +390,12 @@ class IngestionNode:
             atoms_in=len(raw_texts),
             atoms_out=len(validated),
             flagged=len(flagged),
-            guardrails_triggered=(
-                ["G3_injection_flagged"] if extra_errors else []
-            ),
+            guardrails_triggered=(["G3_injection_flagged"] if extra_errors else []),
             latency_ms=round(elapsed_ms, 1),
         )
         publish_phase_complete(
-            batch_id, self._get_redis(),
+            batch_id,
+            self._get_redis(),
             phase=1,
             phase_name="Ingestion",
             atoms_produced=len(validated),
@@ -396,13 +416,16 @@ class IngestionNode:
     # ------------------------------------------------------------------
 
     def _parse_document(
-        self, upload: RawUpload, batch_id: str,
+        self,
+        upload: RawUpload,
+        batch_id: str,
     ) -> Any | None:
         suffix = Path(upload.filename).suffix or ".bin"
         tmp_path: Path | None = None
         try:
             with tempfile.NamedTemporaryFile(
-                suffix=suffix, delete=False,
+                suffix=suffix,
+                delete=False,
             ) as tmp:
                 tmp.write(upload.file_bytes)
                 tmp_path = Path(tmp.name)
@@ -410,7 +433,8 @@ class IngestionNode:
         except Exception as exc:
             log.error(
                 "ingestion_parse_error",
-                batch_id=batch_id, error=str(exc),
+                batch_id=batch_id,
+                error=str(exc),
             )
             return None
         finally:

@@ -130,7 +130,8 @@ def _parallel_retrieve(
 
         return caps, docs, priors
 
-    return run_async(_gather())
+    result: tuple[list[SearchHit], list[SearchHit], list[PriorFitment]] = run_async(_gather())
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -343,23 +344,29 @@ class RetrievalNode:
 
     def __call__(self, state: DynafitState) -> dict[str, Any]:
         batch_id: str = state["batch_id"]
-        atoms: list[ValidatedAtom] = state.get("validated_atoms", [])  # type: ignore[assignment]
+        atoms: list[ValidatedAtom] = state.get("validated_atoms", [])
         upload = state["upload"]
         t0 = time.monotonic()
 
         publish_phase_start(
-            batch_id, self._get_redis(),
-            phase=2, phase_name="RAG",
+            batch_id,
+            self._get_redis(),
+            phase=2,
+            phase_name="RAG",
         )
         log.info("phase_start", phase=2, batch_id=batch_id, atom_count=len(atoms))
 
         if not atoms:
             log.info("phase_complete", phase=2, batch_id=batch_id, contexts=0, latency_ms=0)
             publish_phase_complete(
-                batch_id, self._get_redis(),
-                phase=2, phase_name="RAG",
-                atoms_produced=0, atoms_validated=0,
-                atoms_flagged=0, latency_ms=0.0,
+                batch_id,
+                self._get_redis(),
+                phase=2,
+                phase_name="RAG",
+                atoms_produced=0,
+                atoms_validated=0,
+                atoms_flagged=0,
+                latency_ms=0.0,
             )
             return {"retrieval_contexts": []}
 
@@ -376,8 +383,10 @@ class RetrievalNode:
             latency_ms=round(elapsed_ms, 1),
         )
         publish_phase_complete(
-            batch_id, self._get_redis(),
-            phase=2, phase_name="RAG",
+            batch_id,
+            self._get_redis(),
+            phase=2,
+            phase_name="RAG",
             atoms_produced=len(contexts),
             atoms_validated=len(contexts),
             atoms_flagged=0,
@@ -411,23 +420,25 @@ class RetrievalNode:
         atom_texts = [a.requirement_text for a in atoms]
         dense_vecs = embedder.embed_batch(atom_texts)
         publish_step_progress(
-            batch_id, redis,
-            phase=2, step="Embedding requirements",
-            completed=1, total=total_steps,
+            batch_id,
+            redis,
+            phase=2,
+            step="Embedding requirements",
+            completed=1,
+            total=total_steps,
         )
 
         # Batch BM25 — IDF weights are meaningful across the whole requirement set.
         bm25 = BM25Retriever(corpus=atom_texts)
 
         contexts = []
-        for i, (atom, dense_vec) in enumerate(
-            zip(atoms, dense_vecs, strict=True)
-        ):
+        for i, (atom, dense_vec) in enumerate(zip(atoms, dense_vecs, strict=True)):
             contexts.append(
                 self._retrieve_one(atom, dense_vec, bm25, store, reranker, postgres, config)
             )
             publish_step_progress(
-                batch_id, redis,
+                batch_id,
+                redis,
                 phase=2,
                 step=f"Retrieving capabilities ({i + 1}/{n})",
                 completed=2 + i,
@@ -442,16 +453,21 @@ class RetrievalNode:
                 hint="run: uv run python -m infra.scripts.seed_knowledge_base --product d365_fo",
             )
             publish_step_progress(
-                batch_id, redis,
+                batch_id,
+                redis,
                 phase=2,
                 step="Warning: capability KB empty — seed Qdrant",
-                completed=total_steps, total=total_steps,
+                completed=total_steps,
+                total=total_steps,
             )
         else:
             publish_step_progress(
-                batch_id, redis,
-                phase=2, step="Reranking results",
-                completed=total_steps, total=total_steps,
+                batch_id,
+                redis,
+                phase=2,
+                step="Reranking results",
+                completed=total_steps,
+                total=total_steps,
             )
 
         return contexts

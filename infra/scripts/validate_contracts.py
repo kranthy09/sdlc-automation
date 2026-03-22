@@ -200,7 +200,10 @@ def check_manifests(root: Path) -> list[str]:
                 violations.append(
                     f"MANIFEST MISSING FIELD: {rel}\n  Required field '{field}' is absent"
                 )
-            elif schema_classes and class_ref not in schema_classes:
+                continue
+            # Support fully-qualified paths like "platform.schemas.requirement.RawUpload"
+            bare_name = class_ref.rsplit(".", 1)[-1] if "." in class_ref else class_ref
+            if schema_classes and bare_name not in schema_classes:
                 violations.append(
                     f"MANIFEST UNRESOLVED SCHEMA: {rel}\n"
                     f"  Field '{field}' = '{class_ref}' not found in platform/schemas/\n"

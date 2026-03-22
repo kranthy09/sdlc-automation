@@ -283,9 +283,7 @@ async def test_list_batches(client: AsyncClient, seeded_batch: str) -> None:
 
 
 @pytest.mark.unit
-async def test_public_results(
-    client: AsyncClient, seeded_batch: str
-) -> None:
+async def test_public_results(client: AsyncClient, seeded_batch: str) -> None:
     resp = await client.get(f"/api/batches/{seeded_batch}/results")
     assert resp.status_code == 200
     body = resp.json()
@@ -312,9 +310,7 @@ async def test_public_results_unknown_batch(
 
 
 @pytest.mark.unit
-async def test_public_batches_listing(
-    client: AsyncClient, seeded_batch: str
-) -> None:
+async def test_public_batches_listing(client: AsyncClient, seeded_batch: str) -> None:
     resp = await client.get("/api/batches")
     assert resp.status_code == 200
     body = resp.json()
@@ -323,9 +319,7 @@ async def test_public_batches_listing(
 
 
 @pytest.mark.unit
-async def test_public_batches_filter_status(
-    client: AsyncClient, seeded_batch: str
-) -> None:
+async def test_public_batches_filter_status(client: AsyncClient, seeded_batch: str) -> None:
     resp = await client.get("/api/batches?status=queued")
     assert resp.status_code == 200
     assert len(resp.json()["batches"]) == 0
@@ -341,12 +335,8 @@ async def test_public_batches_filter_status(
 
 
 @pytest.mark.unit
-async def test_result_item_new_fields(
-    client: AsyncClient, seeded_batch: str
-) -> None:
-    resp = await client.get(
-        f"{BASE}/d365_fo/dynafit/{seeded_batch}/results"
-    )
+async def test_result_item_new_fields(client: AsyncClient, seeded_batch: str) -> None:
+    resp = await client.get(f"{BASE}/d365_fo/dynafit/{seeded_batch}/results")
     r = resp.json()["results"][0]
     assert r["config_steps"] is None
     assert r["gap_description"] is None
@@ -356,12 +346,8 @@ async def test_result_item_new_fields(
 
 
 @pytest.mark.unit
-async def test_review_item_new_fields(
-    client: AsyncClient, seeded_batch: str
-) -> None:
-    resp = await client.get(
-        f"{BASE}/d365_fo/dynafit/{seeded_batch}/review"
-    )
+async def test_review_item_new_fields(client: AsyncClient, seeded_batch: str) -> None:
+    resp = await client.get(f"{BASE}/d365_fo/dynafit/{seeded_batch}/review")
     item = resp.json()["items"][0]
     assert item["module"] == "AccountsPayable"
     assert item["dev_effort"] == "M"
@@ -375,12 +361,8 @@ async def test_review_item_new_fields(
 
 
 @pytest.mark.unit
-async def test_get_journey(
-    client: AsyncClient, seeded_batch: str
-) -> None:
-    resp = await client.get(
-        f"{BASE}/d365_fo/dynafit/{seeded_batch}/journey"
-    )
+async def test_get_journey(client: AsyncClient, seeded_batch: str) -> None:
+    resp = await client.get(f"{BASE}/d365_fo/dynafit/{seeded_batch}/journey")
     assert resp.status_code == 200
     body = resp.json()
     assert body["batch_id"] == seeded_batch
@@ -398,9 +380,7 @@ async def test_get_journey(
 
 
 @pytest.mark.unit
-async def test_get_journey_filter_atom_id(
-    client: AsyncClient, seeded_batch: str
-) -> None:
+async def test_get_journey_filter_atom_id(client: AsyncClient, seeded_batch: str) -> None:
     resp = await client.get(
         f"{BASE}/d365_fo/dynafit/{seeded_batch}/journey",
         params={"atom_id": "REQ-AP-001"},
@@ -435,7 +415,5 @@ async def test_journey_not_available_for_queued(
         "created_at": "2026-03-21T10:00:00+00:00",
         "completed_at": None,
     }
-    resp = await client.get(
-        f"{BASE}/d365_fo/dynafit/bat_queued/journey"
-    )
+    resp = await client.get(f"{BASE}/d365_fo/dynafit/bat_queued/journey")
     assert resp.status_code == 409

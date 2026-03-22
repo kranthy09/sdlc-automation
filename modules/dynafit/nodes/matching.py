@@ -125,7 +125,7 @@ def _token_ratio_score(text_a: str, text_b: str) -> float:
         return 0.0
 
 
-def _normalise(vecs: np.ndarray) -> np.ndarray:  # type: ignore[type-arg]
+def _normalise(vecs: np.ndarray) -> np.ndarray:
     """L2-normalise each row. Zero-norm rows are kept as-is (result is zero vector)."""
     norms = np.linalg.norm(vecs, axis=1, keepdims=True)
     norms = np.where(norms == 0, 1.0, norms)
@@ -180,17 +180,17 @@ class MatchingNode:
     # ------------------------------------------------------------------
 
     def __call__(self, state: DynafitState) -> dict[str, Any]:
-        contexts: list[AssembledContext] = state.get(  # type: ignore[assignment]
-            "retrieval_contexts", []
-        )
+        contexts: list[AssembledContext] = state.get("retrieval_contexts", [])
         batch_id: str = state["batch_id"]
         if not contexts:
             log.debug("matching_skipped_no_contexts", batch_id=batch_id)
             return {"match_results": []}
 
         publish_phase_start(
-            batch_id, self._get_redis(),
-            phase=3, phase_name="Matching",
+            batch_id,
+            self._get_redis(),
+            phase=3,
+            phase_name="Matching",
         )
 
         t0 = time.monotonic()
@@ -201,7 +201,8 @@ class MatchingNode:
         for i, ctx in enumerate(contexts):
             match_results.append(self._score_context(ctx))
             publish_step_progress(
-                batch_id, self._get_redis(),
+                batch_id,
+                self._get_redis(),
                 phase=3,
                 step=f"Scoring requirements ({i + 1}/{n})",
                 completed=i + 1,
@@ -213,14 +214,12 @@ class MatchingNode:
         gap_confirm = sum(1 for r in match_results if r.route == RouteLabel.GAP_CONFIRM)
 
         publish_step_progress(
-            batch_id, self._get_redis(),
+            batch_id,
+            self._get_redis(),
             phase=3,
-            step=(
-                f"Routing: {fast_track} fast,"
-                f" {deep_reason} deep,"
-                f" {gap_confirm} gap"
-            ),
-            completed=total_steps, total=total_steps,
+            step=(f"Routing: {fast_track} fast, {deep_reason} deep, {gap_confirm} gap"),
+            completed=total_steps,
+            total=total_steps,
         )
 
         elapsed_ms = (time.monotonic() - t0) * 1000
@@ -236,8 +235,10 @@ class MatchingNode:
             latency_ms=round(elapsed_ms, 1),
         )
         publish_phase_complete(
-            batch_id, self._get_redis(),
-            phase=3, phase_name="Matching",
+            batch_id,
+            self._get_redis(),
+            phase=3,
+            phase_name="Matching",
             atoms_produced=len(match_results),
             atoms_validated=len(match_results),
             atoms_flagged=0,

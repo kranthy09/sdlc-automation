@@ -82,9 +82,7 @@ def _dispatch_resume(batch_id: str, overrides: dict[str, Any]) -> None:
     try:
         from api.workers.tasks import run_dynafit_pipeline  # noqa: PLC0415
 
-        run_dynafit_pipeline.delay(
-            batch_id, "", {"_resume": True, "_overrides": overrides}
-        )
+        run_dynafit_pipeline.delay(batch_id, "", {"_resume": True, "_overrides": overrides})
     except ImportError:
         log.warning("celery_not_ready_resume", batch_id=batch_id)
 
@@ -99,10 +97,7 @@ def _build_overrides(review_items: list[dict[str, Any]]) -> dict[str, Any]:
     overrides: dict[str, Any] = {}
     for item in review_items:
         atom_id = item["atom_id"]
-        is_override = (
-            item.get("decision") == "OVERRIDE"
-            and item.get("override_classification")
-        )
+        is_override = item.get("decision") == "OVERRIDE" and item.get("override_classification")
         if is_override:
             reviewer = item.get("reviewer", "unknown")
             overrides[atom_id] = {
@@ -325,7 +320,7 @@ def list_batches(
 
     total = len(batches)
     start = (page - 1) * limit
-    page_batches = batches[start:start + limit]
+    page_batches = batches[start : start + limit]
     return BatchHistoryResponse(
         batches=[
             BatchRecord(
@@ -375,7 +370,7 @@ def get_results(
         total=len(results),
         page=page,
         limit=limit,
-        results=[ResultItem(**r) for r in results[start:start + limit]],
+        results=[ResultItem(**r) for r in results[start : start + limit]],
         summary=BatchSummary(**batch["summary"]),
     )
 
@@ -417,14 +412,15 @@ def get_progress(batch_id: str) -> ProgressResponse:
     batch = _get_batch(batch_id)
 
     # Read persisted phase states + classifications from Redis hash
-    persisted: dict[str, dict] = {}
-    persisted_cls: list[dict] = []
+    persisted: dict[str, dict[str, Any]] = {}
+    persisted_cls: list[dict[str, Any]] = []
     try:
         r = _redis.from_url(REDIS_URL)
         try:
             raw = r.hget(f"batch:{batch_id}", "phases")
             raw_cls = r.hget(
-                f"batch:{batch_id}", "classifications",
+                f"batch:{batch_id}",
+                "classifications",
             )
         finally:
             r.close()
@@ -441,22 +437,26 @@ def get_progress(batch_id: str) -> ProgressResponse:
         key = str(i)
         if key in persisted:
             p = persisted[key]
-            phases.append(PhaseProgressItem(
-                phase=i,
-                phase_name=p.get("phase_name", PHASE_NAMES[i - 1]),
-                status=p.get("status", "pending"),
-                current_step=p.get("current_step"),
-                progress_pct=p.get("progress_pct", 0),
-                atoms_produced=p.get("atoms_produced", 0),
-                atoms_validated=p.get("atoms_validated", 0),
-                atoms_flagged=p.get("atoms_flagged", 0),
-                latency_ms=p.get("latency_ms"),
-            ))
+            phases.append(
+                PhaseProgressItem(
+                    phase=i,
+                    phase_name=p.get("phase_name", PHASE_NAMES[i - 1]),
+                    status=p.get("status", "pending"),
+                    current_step=p.get("current_step"),
+                    progress_pct=p.get("progress_pct", 0),
+                    atoms_produced=p.get("atoms_produced", 0),
+                    atoms_validated=p.get("atoms_validated", 0),
+                    atoms_flagged=p.get("atoms_flagged", 0),
+                    latency_ms=p.get("latency_ms"),
+                )
+            )
         else:
-            phases.append(PhaseProgressItem(
-                phase=i,
-                phase_name=PHASE_NAMES[i - 1],
-            ))
+            phases.append(
+                PhaseProgressItem(
+                    phase=i,
+                    phase_name=PHASE_NAMES[i - 1],
+                )
+            )
 
     classifications = [
         ProgressClassificationItem(
@@ -487,9 +487,7 @@ def get_review_queue(batch_id: str) -> ReviewQueueResponse:
         batch_id=batch_id,
         status=batch["status"],
         items=[ReviewItem(**i) for i in batch["review_items"]],
-        auto_approved=[
-            AutoApprovedItem(**i) for i in batch.get("auto_approved", [])
-        ],
+        auto_approved=[AutoApprovedItem(**i) for i in batch.get("auto_approved", [])],
     )
 
 
@@ -543,9 +541,7 @@ def submit_review(
     item["override_classification"] = body.override_classification
 
     final = (
-        body.override_classification
-        if body.decision == "OVERRIDE"
-        else item["ai_classification"]
+        body.override_classification if body.decision == "OVERRIDE" else item["ai_classification"]
     )
     remaining = sum(1 for i in items if not i.get("reviewed", False))
 
@@ -617,9 +613,7 @@ def list_all_batches(
     for b in batches:
         _sync_from_redis(b, b["batch_id"])
     if status:
-        batches = [
-            b for b in batches if b["status"] == status
-        ]
+        batches = [b for b in batches if b["status"] == status]
     total = len(batches)
     start = (page - 1) * limit
     page_batches = batches[start : start + limit]

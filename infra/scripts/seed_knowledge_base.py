@@ -39,12 +39,7 @@ _REPO_ROOT = Path(__file__).resolve().parents[2]
 
 def _load_capabilities(product: str, source: str) -> list[dict]:
     """Load capability dicts from knowledge_bases/{product}/capabilities_{source}.yaml."""
-    yaml_path = (
-        _REPO_ROOT
-        / "knowledge_bases"
-        / product
-        / f"capabilities_{source}.yaml"
-    )
+    yaml_path = _REPO_ROOT / "knowledge_bases" / product / f"capabilities_{source}.yaml"
     if not yaml_path.exists():
         print(f"ERROR: YAML not found: {yaml_path}", file=sys.stderr)
         sys.exit(1)
@@ -58,12 +53,8 @@ def _load_capabilities(product: str, source: str) -> list[dict]:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(
-        description="Seed Qdrant with capability embeddings."
-    )
-    parser.add_argument(
-        "--product", required=True, help="Product ID (e.g. d365_fo)"
-    )
+    parser = argparse.ArgumentParser(description="Seed Qdrant with capability embeddings.")
+    parser.add_argument("--product", required=True, help="Product ID (e.g. d365_fo)")
     parser.add_argument(
         "--source",
         default="lite",
@@ -85,9 +76,7 @@ def main() -> None:
     collection = f"{args.product}_capabilities"
 
     # 1. Load YAML
-    print(
-        f"Loading knowledge_bases/{args.product}/capabilities_{args.source}.yaml ..."
-    )
+    print(f"Loading knowledge_bases/{args.product}/capabilities_{args.source}.yaml ...")
     caps = _load_capabilities(args.product, args.source)
     descriptions = [c["description"] for c in caps]
     print(f"  {len(caps)} capabilities loaded")
@@ -115,16 +104,12 @@ def main() -> None:
         print(f"  Collection '{collection}' ensured.")
 
     # 6. Batch-embed all descriptions
-    print(
-        f"Embedding {len(descriptions)} descriptions (this may take a minute on first run) ..."
-    )
+    print(f"Embedding {len(descriptions)} descriptions (this may take a minute on first run) ...")
     dense_vectors = embedder.embed_batch(descriptions)
 
     # 7. Build Points
     points: list[Point] = []
-    for cap, dense_vec, desc in zip(
-        caps, dense_vectors, descriptions, strict=True
-    ):
+    for cap, dense_vec, desc in zip(caps, dense_vectors, descriptions, strict=True):
         sparse_indices, sparse_values = bm25.encode(desc)
         points.append(
             Point(
@@ -144,9 +129,7 @@ def main() -> None:
     print(f"Upserting {len(points)} points into '{collection}' ...")
     store.upsert(collection, points)
 
-    print(
-        f"\nSeeded {len(points)} capabilities to '{collection}' in Qdrant at {args.qdrant_url}"
-    )
+    print(f"\nSeeded {len(points)} capabilities to '{collection}' in Qdrant at {args.qdrant_url}")
 
 
 if __name__ == "__main__":
