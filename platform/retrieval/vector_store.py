@@ -165,7 +165,8 @@ class VectorStore:
         try:
             return bool(self._get_client().collection_exists(name))
         except Exception as exc:
-            raise VectorStoreError(f"collection_exists({name!r}) failed: {exc}", cause=exc) from exc
+            raise VectorStoreError(
+                f"collection_exists({name!r}) failed: {exc}", cause=exc) from exc
 
     def ensure_collection(self, name: str, config: CollectionConfig) -> None:
         """Create the collection if it does not already exist (idempotent)."""
@@ -186,7 +187,8 @@ class VectorStore:
             self._get_client().delete_collection(name)
             log.info("vector_store_drop_collection", collection=name)
         except Exception as exc:
-            raise VectorStoreError(f"drop_collection({name!r}) failed: {exc}", cause=exc) from exc
+            raise VectorStoreError(
+                f"drop_collection({name!r}) failed: {exc}", cause=exc) from exc
 
     def _create_collection(self, name: str, config: CollectionConfig) -> None:
         from qdrant_client.models import (  # noqa: PLC0415
@@ -201,7 +203,8 @@ class VectorStore:
             if config.sparse:
                 self._get_client().create_collection(
                     collection_name=name,
-                    vectors_config={"dense": VectorParams(size=config.size, distance=distance)},
+                    vectors_config={"dense": VectorParams(
+                        size=config.size, distance=distance)},
                     sparse_vectors_config={
                         "sparse": SparseVectorParams(index=SparseIndexParams(on_disk=False))
                     },
@@ -209,7 +212,8 @@ class VectorStore:
             else:
                 self._get_client().create_collection(
                     collection_name=name,
-                    vectors_config=VectorParams(size=config.size, distance=distance),
+                    vectors_config=VectorParams(
+                        size=config.size, distance=distance),
                 )
             log.info(
                 "vector_store_create_collection",
@@ -217,7 +221,8 @@ class VectorStore:
                 sparse=config.sparse,
             )
         except Exception as exc:
-            raise VectorStoreError(f"create_collection({name!r}) failed: {exc}", cause=exc) from exc
+            raise VectorStoreError(
+                f"create_collection({name!r}) failed: {exc}", cause=exc) from exc
 
     # ------------------------------------------------------------------
     # Write
@@ -248,15 +253,18 @@ class VectorStore:
             else:
                 vector = p.dense_vector
             qdrant_points.append(
-                PointStruct(id=_to_qdrant_id(p.id), vector=vector, payload=payload)
+                PointStruct(id=_to_qdrant_id(p.id),
+                            vector=vector, payload=payload)
             )
         try:
             self._get_client().upsert(collection_name=collection, points=qdrant_points)
-            log.debug("vector_store_upsert", collection=collection, n=len(points))
+            log.debug("vector_store_upsert",
+                      collection=collection, n=len(points))
         except VectorStoreError:
             raise
         except Exception as exc:
-            raise VectorStoreError(f"upsert({collection!r}) failed: {exc}", cause=exc) from exc
+            raise VectorStoreError(
+                f"upsert({collection!r}) failed: {exc}", cause=exc) from exc
 
     def delete_points(self, collection: str, ids: list[str | int]) -> None:
         """Remove specific points by their original caller IDs.
@@ -272,7 +280,8 @@ class VectorStore:
                 collection_name=collection,
                 points_selector=PointIdsList(points=qdrant_ids),
             )
-            log.debug("vector_store_delete_points", collection=collection, n=len(ids))
+            log.debug("vector_store_delete_points",
+                      collection=collection, n=len(ids))
         except VectorStoreError:
             raise
         except Exception as exc:
@@ -312,7 +321,8 @@ class VectorStore:
         """
         try:
             qdrant_filter = _build_filter(payload_filter)
-            response = self._run_query(collection, dense_vector, top_k, qdrant_filter, sparse)
+            response = self._run_query(
+                collection, dense_vector, top_k, qdrant_filter, sparse)
             hits = [_to_hit(p) for p in response.points]
             log.debug(
                 "vector_store_search",
@@ -324,7 +334,8 @@ class VectorStore:
         except VectorStoreError:
             raise
         except Exception as exc:
-            raise VectorStoreError(f"search({collection!r}) failed: {exc}", cause=exc) from exc
+            raise VectorStoreError(
+                f"search({collection!r}) failed: {exc}", cause=exc) from exc
 
     def _run_query(
         self,

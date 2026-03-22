@@ -10,7 +10,6 @@ dist/
 build/
 eggs/
 .eggs/
-lib/
 lib64/
 parts/
 sdist/
