@@ -31,6 +31,12 @@ from contextlib import contextmanager
 from prometheus_client import REGISTRY as _DEFAULT_REGISTRY
 from prometheus_client import CollectorRegistry, Counter, Histogram
 
+# Module-level instrument cache — shared across all MetricsRecorder() instances
+# that use the default registry. Prevents ValueError on duplicate registration
+# when multiple platform components are imported in the same process (e.g. Celery).
+_global_call_total: Counter | None = None
+_global_call_duration: Histogram | None = None
+
 
 class MetricsRecorder:
     """Holds Prometheus instruments and provides a recording context manager.
@@ -42,20 +48,40 @@ class MetricsRecorder:
     """
 
     def __init__(self, registry: CollectorRegistry | None = None) -> None:
-        _registry = registry if registry is not None else _DEFAULT_REGISTRY
+        global _global_call_total, _global_call_duration
 
-        self._call_total = Counter(
-            "platform_external_calls_total",
-            "Total external calls by service, operation, and outcome",
-            ["service", "operation", "status"],
-            registry=_registry,
-        )
-        self._call_duration = Histogram(
-            "platform_external_call_duration_seconds",
-            "Latency of external calls in seconds",
-            ["service", "operation"],
-            registry=_registry,
-        )
+        if registry is None:
+            # Lazily create and cache the global instruments once.
+            # All subsequent MetricsRecorder() instances reuse them.
+            if _global_call_total is None:
+                _global_call_total = Counter(
+                    "platform_external_calls_total",
+                    "Total external calls by service, operation, and outcome",
+                    ["service", "operation", "status"],
+                    registry=_DEFAULT_REGISTRY,
+                )
+                _global_call_duration = Histogram(
+                    "platform_external_call_duration_seconds",
+                    "Latency of external calls in seconds",
+                    ["service", "operation"],
+                    registry=_DEFAULT_REGISTRY,
+                )
+            self._call_total = _global_call_total
+            self._call_duration = _global_call_duration
+        else:
+            # Test-isolated registry: always register fresh instruments.
+            self._call_total = Counter(
+                "platform_external_calls_total",
+                "Total external calls by service, operation, and outcome",
+                ["service", "operation", "status"],
+                registry=registry,
+            )
+            self._call_duration = Histogram(
+                "platform_external_call_duration_seconds",
+                "Latency of external calls in seconds",
+                ["service", "operation"],
+                registry=registry,
+            )
 
     @contextmanager
     def record_call(self, service: str, operation: str) -> Generator[None, None, None]:

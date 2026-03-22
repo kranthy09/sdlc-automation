@@ -77,7 +77,7 @@ def run_sanity_check(
         )
 
     # Rule 3 — llm_schema_retry_exhausted
-    if result.route_used == RouteLabel.REVIEW_REQUIRED:
+    if result.classification == FitLabel.REVIEW_REQUIRED:
         flags.append("llm_schema_retry_exhausted")
         log.info(
             "sanity_llm_schema_retry_exhausted",

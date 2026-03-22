@@ -33,7 +33,7 @@ class RetrievalQuery(PlatformModel):
 
     atom_id: str
 
-    # Dense embedding vector (bge-large-en-v1.5, 1024-dim)
+    # Dense embedding vector (bge-small-en-v1.5, 384-dim)
     dense_vector: Annotated[list[float], Field(min_length=1)]
 
     # Sparse tokens for BM25 retrieval

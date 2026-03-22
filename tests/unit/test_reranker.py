@@ -10,14 +10,18 @@ Tests cover the four behaviours that matter:
 
 All tests use:
   - A fresh CollectorRegistry per test for metric isolation.
-  - The _model kwarg to inject a MagicMock — no real CrossEncoder loaded.
+  - The _model kwarg to inject a MagicMock — no real TextCrossEncoder loaded.
+
+fastembed API note:
+  TextCrossEncoder.rerank(query, documents) returns an Iterable[float] of raw
+  logits in document order. The implementation applies sigmoid to normalise to
+  [0, 1], so mock return values use raw logit floats (same as before).
 """
 
 from __future__ import annotations
 
 from unittest.mock import MagicMock
 
-import numpy as np
 import pytest
 from prometheus_client import CollectorRegistry
 
@@ -25,7 +29,7 @@ from prometheus_client import CollectorRegistry
 # Helpers
 # ---------------------------------------------------------------------------
 
-_MODEL = "cross-encoder/ms-marco-MiniLM-L-6-v2"
+_MODEL = "Xenova/ms-marco-MiniLM-L-6-v2"
 _CANDIDATES: list[tuple[str | int, str]] = [
     ("cap-1", "AP invoice three-way matching"),
     ("cap-2", "Vendor payment terms configuration"),
@@ -59,7 +63,7 @@ def test_rerank_returns_sorted_results_with_sigmoid_scores() -> None:
     """rerank() returns RerankResult list: scores in [0,1], sorted descending, IDs preserved."""
     mock_model = MagicMock()
     # logits: cap-1=2.0 (highest), cap-2=-1.0 (lowest), cap-3=0.5 (middle)
-    mock_model.predict.return_value = np.array([2.0, -1.0, 0.5], dtype=np.float32)
+    mock_model.rerank.return_value = [2.0, -1.0, 0.5]
 
     registry = CollectorRegistry()
     reranker = _make_reranker(mock_model, registry)
@@ -76,6 +80,14 @@ def test_rerank_returns_sorted_results_with_sigmoid_scores() -> None:
     assert results[0].score >= results[1].score >= results[2].score
     # cap-1 had the highest logit (2.0) → must be first
     assert results[0].id == "cap-1"
+    mock_model.rerank.assert_called_once_with(
+        "AP invoice matching",
+        [
+            "AP invoice three-way matching",
+            "Vendor payment terms configuration",
+            "Purchase order approval workflow",
+        ],
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -87,7 +99,7 @@ def test_rerank_returns_sorted_results_with_sigmoid_scores() -> None:
 def test_rerank_respects_top_k() -> None:
     """rerank() returns at most top_k results even when more candidates are provided."""
     mock_model = MagicMock()
-    mock_model.predict.return_value = np.array([2.0, -1.0, 0.5], dtype=np.float32)
+    mock_model.rerank.return_value = [2.0, -1.0, 0.5]
 
     registry = CollectorRegistry()
     reranker = _make_reranker(mock_model, registry)
@@ -106,7 +118,7 @@ def test_rerank_respects_top_k() -> None:
 def test_rerank_records_ok_metric_on_success() -> None:
     """platform_external_calls_total{service=reranker,operation=rerank,status=ok} == 1."""
     mock_model = MagicMock()
-    mock_model.predict.return_value = np.array([1.0, 0.0], dtype=np.float32)
+    mock_model.rerank.return_value = [1.0, 0.0]
 
     registry = CollectorRegistry()
     reranker = _make_reranker(mock_model, registry)
@@ -123,9 +135,9 @@ def test_rerank_records_ok_metric_on_success() -> None:
 
 @pytest.mark.unit
 def test_rerank_raises_reranker_error_and_records_error_metric() -> None:
-    """RuntimeError from predict is wrapped in RerankerError; error metric increments."""
+    """RuntimeError from rerank is wrapped in RerankerError; error metric increments."""
     mock_model = MagicMock()
-    mock_model.predict.side_effect = RuntimeError("CUDA OOM")
+    mock_model.rerank.side_effect = RuntimeError("CUDA OOM")
 
     registry = CollectorRegistry()
     reranker = _make_reranker(mock_model, registry)

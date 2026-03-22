@@ -30,8 +30,8 @@ from prometheus_client import CollectorRegistry
 # ---------------------------------------------------------------------------
 
 
-def _unit(index: int, dim: int = 1024) -> list[float]:
-    """Return a 1024-dim unit vector with 1.0 at *index*, 0.0 elsewhere."""
+def _unit(index: int, dim: int = 384) -> list[float]:
+    """Return a 384-dim unit vector with 1.0 at *index*, 0.0 elsewhere."""
     v = [0.0] * dim
     v[index % dim] = 1.0
     return v

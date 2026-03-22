@@ -1,9 +1,11 @@
-.PHONY: setup test test-unit test-integration test-module test-golden \
-        lint validate-contracts \
-        services services-down services-logs services-ps \
-        dev dev-down dev-logs dev-ps \
-        seed-kb seed-corpus run \
-        ui ui-install test-ui test-ui-coverage type-check-ui ci
+.PHONY: setup lock test test-unit test-integration test-module test-golden \
+        lint format validate-contracts \
+        dev dev-down db-migrate \
+        seed-kb seed-kb-lite smoke-test run \
+        ui ui-install test-ui test-ui-docker test-ui-coverage type-check-ui ci
+
+# Single compose file for dev/MVP
+COMPOSE := docker compose --env-file .env -f infra/docker/docker-compose.dev.yaml
 
 # ---------------------------------------------------------------------------
 # Setup
@@ -12,6 +14,10 @@ setup:
 	uv sync --extra dev --extra ml
 	uv run pre-commit install
 	uv run python -m spacy download en_core_web_lg
+
+# Regenerate uv.lock after pyproject.toml changes, then make dev-full to rebuild
+lock:
+	uv lock
 
 # ---------------------------------------------------------------------------
 # Testing
@@ -31,15 +37,6 @@ test-module:
 test-golden:
 	uv run python -m pytest -m golden -v
 
-test-phase3:
-	uv run python -m pytest tests/integration/test_phase3.py -v
-
-test-phase4:
-	uv run python -m pytest tests/unit/test_phase4_prompts.py tests/integration/test_phase4.py -v
-
-test-api:
-	uv run python -m pytest tests/unit/test_api_dynafit.py tests/unit/test_api_workers.py -v
-
 # ---------------------------------------------------------------------------
 # Quality
 # ---------------------------------------------------------------------------
@@ -58,44 +55,42 @@ validate-contracts:
 # ---------------------------------------------------------------------------
 # Infrastructure
 # ---------------------------------------------------------------------------
-services:
-	docker compose -f infra/docker/docker-compose.services.yaml up -d
-	@echo "Services ready: Postgres :5432  Redis :6379  Qdrant :6333"
 
-services-down:
-	docker compose -f infra/docker/docker-compose.services.yaml down
-
-services-logs:
-	docker compose -f infra/docker/docker-compose.services.yaml logs -f
-
-services-ps:
-	docker compose -f infra/docker/docker-compose.services.yaml ps
-
-# Full stack (services + observability)
 dev:
-	docker compose -f infra/docker/docker-compose.yaml up -d
-	@echo "Services starting: Qdrant :6333, Postgres :5432, Redis :6379, Prometheus :9090, Grafana :3001"
+	$(COMPOSE) up --build -d
+	@echo ""
+	@echo "  UI          → http://localhost:5173"
+	@echo "  API docs    → http://localhost:8000/api/docs"
+	@echo "  API health  → http://localhost:8000/health"
+	@echo "  Qdrant      → http://localhost:6333/dashboard"
+	@echo "  Langfuse    → http://localhost:3000"
+	@echo "  Grafana     → http://localhost:3001"
+	@echo ""
 
 dev-down:
-	docker compose -f infra/docker/docker-compose.yaml down
+	$(COMPOSE) down
 
-dev-logs:
-	docker compose -f infra/docker/docker-compose.yaml logs -f
-
-dev-ps:
-	docker compose -f infra/docker/docker-compose.yaml ps
+# Run pending SQL migrations inside the api container (on the Docker network).
+# Tracks applied versions in schema_migrations — never re-runs a migration.
+# Requires: make dev (stack must be up).
+# Usage: make db-migrate
+db-migrate:
+	$(COMPOSE) exec api uv run python infra/scripts/migrate.py
 
 # ---------------------------------------------------------------------------
 # Knowledge base seeding
 # ---------------------------------------------------------------------------
 seed-kb:
-	uv run python -m infra.scripts.seed_knowledge_base --product $(PRODUCT)
+	$(COMPOSE) exec api uv run python -m infra.scripts.seed_knowledge_base --product $(PRODUCT)
 
-seed-corpus:
-	uv run python -m infra.scripts.seed_ms_learn_corpus --product $(PRODUCT)
+seed-kb-lite:
+	$(COMPOSE) exec api uv run python -m infra.scripts.seed_knowledge_base --product d365_fo --source lite --reset
+
+smoke-test:
+	uv run python -m infra.scripts.smoke_test
 
 # ---------------------------------------------------------------------------
-# Running the platform
+# Running the platform locally (outside Docker)
 # ---------------------------------------------------------------------------
 run:
 	uv run uvicorn api.main:app --reload --port 8000
@@ -109,6 +104,9 @@ ui:
 test-ui:
 	cd ui && npm test
 
+test-ui-docker:
+	docker compose --env-file .env -f infra/docker/docker-compose.ui-test.yaml run --rm ui-test
+
 test-ui-coverage:
 	cd ui && npm run test:coverage
 
@@ -116,7 +114,7 @@ type-check-ui:
 	cd ui && npm run type-check
 
 # ---------------------------------------------------------------------------
-# CI gate (runs all quality checks)
+# CI gate
 # ---------------------------------------------------------------------------
 ci: lint validate-contracts test
 	@echo "CI passed — all gates green"

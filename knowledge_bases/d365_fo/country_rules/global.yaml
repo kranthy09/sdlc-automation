@@ -1,0 +1,3 @@
+# Country rules — global (no overrides)
+# Country-specific files: de.yaml, us.yaml, gb.yaml (future)
+rules: []

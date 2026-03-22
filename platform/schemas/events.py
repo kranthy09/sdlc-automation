@@ -60,6 +60,25 @@ class ClassificationEvent(PlatformModel):
     timestamp: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 
+class PhaseCompleteEvent(PlatformModel):
+    """Emitted when a pipeline phase finishes processing.
+
+    Published by each phase node after it completes work, before the next
+    phase starts. Carries per-phase atom counters and wall-clock latency so
+    the UI can populate PhaseStatsCard without polling REST.
+    """
+
+    event: Literal["phase_complete"] = "phase_complete"
+    batch_id: str
+    phase: Annotated[int, Field(ge=1, le=5)]
+    phase_name: str
+    atoms_produced: Annotated[int, Field(ge=0)]
+    atoms_validated: Annotated[int, Field(ge=0)]
+    atoms_flagged: Annotated[int, Field(ge=0)]
+    latency_ms: float
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+
 class CompleteEvent(PlatformModel):
     """Emitted when Phase 5 finishes and the report is ready."""
 
@@ -91,11 +110,32 @@ class ErrorEvent(PlatformModel):
     timestamp: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 
+class ReviewRequiredEvent(PlatformModel):
+    """Emitted when Phase 4 produces items that require human review (HITL).
+
+    The pipeline pauses after this event until the reviewer resolves all items
+    via POST /review/{batch_id}/complete.
+    """
+
+    event: Literal["review_required"] = "review_required"
+    batch_id: str
+    review_items: Annotated[int, Field(ge=0)]
+    reasons: dict[str, int]
+    review_url: str
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+
 # ---------------------------------------------------------------------------
 # Discriminated union — used at the WebSocket boundary
 # ---------------------------------------------------------------------------
 
 type ProgressEvent = Annotated[
-    PhaseStartEvent | StepProgressEvent | ClassificationEvent | CompleteEvent | ErrorEvent,
+    PhaseStartEvent
+    | StepProgressEvent
+    | ClassificationEvent
+    | PhaseCompleteEvent
+    | CompleteEvent
+    | ErrorEvent
+    | ReviewRequiredEvent,
     Field(discriminator="event"),
 ]

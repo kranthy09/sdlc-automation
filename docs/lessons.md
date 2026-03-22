@@ -54,6 +54,27 @@ Every entry here came from a real mistake. Rules are concrete, not general advic
 
 ---
 
+## Decision: sentence-transformers replaced by fastembed (2026-03-21)
+
+**What happened:** `uv sync --frozen --no-dev --extra ml` took 409 seconds in Docker because `sentence-transformers` pulls PyTorch (~500 MB wheel) as a hard dependency. The build was the single largest bottleneck in the Docker image build cycle.
+
+**Root cause:** sentence-transformers is a convenience wrapper that bundles PyTorch regardless of whether GPU inference is needed. For ONNX-compatible models (BGE, ms-marco MiniLM), PyTorch is never used at runtime.
+
+**Resolution:** Replaced with `fastembed` (Qdrant-maintained, ONNX Runtime backend):
+- `platform/retrieval/embedder.py` — `SentenceTransformer.encode()` → `fastembed.TextEmbedding.embed()`
+- `platform/retrieval/reranker.py` — `CrossEncoder.predict(pairs)` → `fastembed.TextCrossEncoder.rerank(query, docs)`
+- Same model IDs, same output shape, same quality — ONNX Runtime executes the identical weights
+
+**Rules produced:**
+
+| Rule | Applies When |
+|------|-------------|
+| Use `fastembed` for all local embedding and reranking — never `sentence-transformers` | Any new retrieval component |
+| `sentence-transformers` is not a project dependency | Any `pyproject.toml` change |
+| Prefer ONNX Runtime over PyTorch for inference-only workloads | Evaluating any new ML library |
+
+---
+
 ## Standing Principles
 
 These are derived from the above and apply permanently:

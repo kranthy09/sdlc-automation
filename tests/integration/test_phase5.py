@@ -92,7 +92,7 @@ _REVIEW = make_classification_result(
     atom_id="REQ-AP-004",
     classification=FitLabel.REVIEW_REQUIRED,
     confidence=0.0,
-    route_used=RouteLabel.REVIEW_REQUIRED,  # triggers llm_schema_retry_exhausted
+    route_used=RouteLabel.GAP_CONFIRM,  # triggers llm_schema_retry_exhausted (via classification==REVIEW_REQUIRED)
 )
 
 

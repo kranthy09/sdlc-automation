@@ -1,17 +1,15 @@
 """
-Embedding utility — wraps sentence-transformers for dense vector generation.
+Embedding utility — wraps fastembed for dense vector generation.
 
-Produces float vectors using any sentence-transformers compatible model
-(default: BAAI/bge-large-en-v1.5, 1024-dim per the retrieval schema).
+Produces float vectors using any fastembed-compatible model
+(default: BAAI/bge-small-en-v1.5, 384-dim per the retrieval schema).
+
+fastembed uses ONNX Runtime instead of PyTorch — ~50 MB install vs ~500 MB.
+Model weights are downloaded on first use to fastembed's cache directory.
 
 Every encode call is wrapped in record_call("embedder", "encode") for Prometheus.
 
 Usage:
-    from platform.retrieval.embedder import embed
-
-    vec: list[float] = embed("AP invoice matching", "BAAI/bge-large-en-v1.5")
-
-Or instantiate directly (preferred when the model is reused across many calls):
 
     from platform.retrieval.embedder import Embedder
 
@@ -50,13 +48,13 @@ class EmbedderError(Exception):
 
 
 class Embedder:
-    """Dense vector embedder backed by sentence-transformers.
+    """Dense vector embedder backed by fastembed (ONNX Runtime).
 
     The underlying model is loaded lazily on the first encode call so that
     importing this module never triggers the ~500 MB model download.
 
     Args:
-        model_name: HuggingFace model ID (e.g. "BAAI/bge-large-en-v1.5").
+        model_name: HuggingFace model ID (e.g. "BAAI/bge-small-en-v1.5").
         registry:   Prometheus CollectorRegistry for metric isolation in tests.
         _model:     Pre-loaded model instance — for testing only; skips lazy load.
     """
@@ -74,10 +72,10 @@ class Embedder:
 
     def _get_model(self) -> Any:
         if self._model is None:
-            import sentence_transformers  # noqa: PLC0415
+            from fastembed import TextEmbedding  # noqa: PLC0415
 
             log.info("embedder_load_model", model=self._model_name)
-            self._model = sentence_transformers.SentenceTransformer(self._model_name)
+            self._model = TextEmbedding(self._model_name)
         return self._model
 
     def embed(self, text: str) -> list[float]:
@@ -94,7 +92,7 @@ class Embedder:
         """
         try:
             with self._recorder.record_call("embedder", "encode"):
-                vec: Any = self._get_model().encode(text)
+                vec: Any = next(iter(self._get_model().embed([text])))
             log.debug("embedder_encode", model=self._model_name, dim=len(vec))
             result: list[float] = vec.tolist()
             return result
@@ -119,9 +117,9 @@ class Embedder:
         """
         try:
             with self._recorder.record_call("embedder", "encode"):
-                matrix: Any = self._get_model().encode(texts)
+                vecs: list[Any] = list(self._get_model().embed(texts))
             log.debug("embedder_encode_batch", model=self._model_name, n=len(texts))
-            result: list[list[float]] = matrix.tolist()
+            result: list[list[float]] = [v.tolist() for v in vecs]
             return result
         except EmbedderError:
             raise
@@ -130,25 +128,3 @@ class Embedder:
                 f"embed_batch failed (model={self._model_name!r}): {exc}", cause=exc
             ) from exc
 
-
-# ---------------------------------------------------------------------------
-# Module-level convenience (lazy cache by model name)
-# ---------------------------------------------------------------------------
-
-_embedders: dict[str, Embedder] = {}
-
-
-def _get_embedder(model_name: str) -> Embedder:
-    if model_name not in _embedders:
-        _embedders[model_name] = Embedder(model_name)
-    return _embedders[model_name]
-
-
-def embed(text: str, model_name: str) -> list[float]:
-    """Embed a single text. Delegates to a cached Embedder instance."""
-    return _get_embedder(model_name).embed(text)
-
-
-def embed_batch(texts: list[str], model_name: str) -> list[list[float]]:
-    """Embed a batch of texts. Delegates to a cached Embedder instance."""
-    return _get_embedder(model_name).embed_batch(texts)

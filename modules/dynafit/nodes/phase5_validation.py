@@ -28,7 +28,7 @@ Pass 2 — Merge + Build + Write-back + Report (Sub-phase 5B):
 
 Design:
   - ValidationNode accepts injectable postgres / redis / embedder for tests.
-  - Async bridge (_run_async) mirrors retrieval.py pattern — graph.invoke() stays sync.
+  - Async bridge (run_async from events.py) — graph.invoke() stays sync.
   - Module-level singleton + validation_node() mirrors classification.py pattern.
   - Override dict keyed by atom_id; None value = human approved (keep original).
   - Write-back errors are logged as WARNING but do not fail the pipeline.
@@ -36,14 +36,10 @@ Design:
 
 from __future__ import annotations
 
-import asyncio
-import csv
 import hashlib
 import os
 import time
-from collections import Counter
-from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass
+import zipfile
 from typing import Any
 
 from langgraph.types import interrupt
@@ -51,208 +47,32 @@ from langgraph.types import interrupt
 from platform.config.settings import get_settings
 from platform.observability.logger import get_logger
 from platform.retrieval.embedder import Embedder
-from platform.schemas.events import CompleteEvent, PhaseStartEvent
+from platform.schemas.events import CompleteEvent
 from platform.schemas.fitment import (
     ClassificationResult,
     FitLabel,
     MatchResult,
-    ValidatedFitmentBatch,
 )
 from platform.schemas.product import ProductConfig
 from platform.storage.postgres import PostgresError, PostgresStore
 from platform.storage.redis_pub import RedisPubSub
 
+from ..events import (
+    publish_phase_complete,
+    publish_phase_start,
+    run_async,
+)
 from ..guardrails import run_sanity_check
+from ..product_config import get_product_config
 from ..state import DynafitState
-
-log = get_logger(__name__)
-
-# ---------------------------------------------------------------------------
-# CSV column definition (FDD FOR FITS / FDD FOR GAPS)
-# ---------------------------------------------------------------------------
-
-_CSV_FIELDNAMES = [
-    "req_id",
-    "requirement",
-    "module",
-    "country",
-    "wave",
-    "classification",
-    "confidence",
-    "d365_capability",
-    "rationale",
-    "config_steps",
-    "gap_description",
-    "reviewer",
-    "override",
-]
-
-# ---------------------------------------------------------------------------
-# ProductConfig MVP singleton (mirrors Phase 4 pattern)
-# ---------------------------------------------------------------------------
-
-_D365_FO_CONFIG: ProductConfig = ProductConfig(
-    product_id="d365_fo",
-    display_name="Dynamics 365 Finance & Operations",
-    llm_model="claude-sonnet-4-6",
-    embedding_model="BAAI/bge-large-en-v1.5",
-    capability_kb_namespace="d365_fo_capabilities",
-    doc_corpus_namespace="d365_fo_docs",
-    historical_fitments_table="d365_fo_fitments",
-    fit_confidence_threshold=0.85,
-    review_confidence_threshold=0.60,
-    auto_approve_with_history=True,
-    country_rules_path="knowledge_bases/d365_fo/country_rules/",
-    fdd_template_path="knowledge_bases/d365_fo/fdd_templates/fit_template.j2",
-    code_language="xpp",
+from .validation_output import (
+    _MergedResult,
+    _build_batch,
+    _merge_overrides,
+    _write_fdd_csv,
 )
 
-
-def _get_product_config(product_id: str) -> ProductConfig:
-    if product_id == "d365_fo":
-        return _D365_FO_CONFIG
-    return _D365_FO_CONFIG.model_copy(update={"product_id": product_id})
-
-
-# ---------------------------------------------------------------------------
-# Async bridge (same pattern as retrieval.py)
-# ---------------------------------------------------------------------------
-
-
-def _run_async(coro: Any) -> Any:
-    """Run a coroutine from a synchronous context.
-
-    Uses asyncio.run() when there is no running event loop; falls back to a
-    thread pool executor when a loop is already running (e.g. inside pytest-asyncio
-    or an ASGI server thread).
-    """
-    try:
-        loop = asyncio.get_event_loop()
-        if loop.is_running():
-            with ThreadPoolExecutor(max_workers=1) as pool:
-                return pool.submit(asyncio.run, coro).result()
-        return loop.run_until_complete(coro)
-    except RuntimeError:
-        return asyncio.run(coro)
-
-
-# ---------------------------------------------------------------------------
-# Internal DTO — carries override metadata alongside the resolved result
-# ---------------------------------------------------------------------------
-
-
-@dataclass
-class _MergedResult:
-    result: ClassificationResult
-    reviewer_override: bool = False
-    consultant: str | None = None
-
-
-# ---------------------------------------------------------------------------
-# Pure data helpers (module-level, no infra dependencies)
-# ---------------------------------------------------------------------------
-
-
-def _merge_overrides(
-    clean: list[ClassificationResult],
-    flagged: list[tuple[ClassificationResult, list[str]]],
-    overrides: dict[str, Any],
-) -> list[_MergedResult]:
-    """Merge human reviewer decisions into the flagged classification results.
-
-    Args:
-        clean:     Results that passed all sanity checks — no review needed.
-        flagged:   (result, flags) pairs that were sent to the HITL queue.
-        overrides: Map of atom_id → human decision.
-                   None value (or missing key) → human approved original.
-                   Dict value → human override with new classification + rationale.
-
-    Returns:
-        Merged list of _MergedResult, preserving the original ordering of
-        clean results first, then resolved flagged results.
-    """
-    merged: list[_MergedResult] = [_MergedResult(result=r) for r in clean]
-
-    for original, _flags in flagged:
-        decision = overrides.get(original.atom_id)
-
-        if decision and isinstance(decision, dict) and decision.get("classification"):
-            new_classification = FitLabel(decision["classification"])
-            consultant = decision.get("consultant")
-            merged.append(
-                _MergedResult(
-                    result=original.model_copy(
-                        update={
-                            "classification": new_classification,
-                            "rationale": decision.get("rationale", original.rationale),
-                        }
-                    ),
-                    reviewer_override=True,
-                    consultant=consultant,
-                )
-            )
-        else:
-            # Human approved the original classification — no change
-            merged.append(_MergedResult(result=original))
-
-    return merged
-
-
-def _build_batch(
-    state: DynafitState,
-    merged: list[_MergedResult],
-) -> ValidatedFitmentBatch:
-    """Assemble ValidatedFitmentBatch from merged results.
-
-    flagged_for_review is always empty here — all flagged items were resolved
-    by the HITL reviewer before this function is called.
-    """
-    upload = state["upload"]
-    results = [mr.result for mr in merged]
-    counts: Counter[FitLabel] = Counter(r.classification for r in results)
-
-    return ValidatedFitmentBatch(
-        batch_id=state["batch_id"],
-        upload_id=upload.upload_id,
-        product_id=upload.product_id,
-        wave=upload.wave,
-        results=results,
-        flagged_for_review=[],
-        total_atoms=len(results),
-        fit_count=counts.get(FitLabel.FIT, 0),
-        partial_fit_count=counts.get(FitLabel.PARTIAL_FIT, 0),
-        gap_count=counts.get(FitLabel.GAP, 0),
-        review_count=counts.get(FitLabel.REVIEW_REQUIRED, 0),
-    )
-
-
-def _write_fdd_csv(
-    path: str,
-    results: list[_MergedResult],
-) -> None:
-    """Write a single FDD CSV file for the given results."""
-    with open(path, "w", newline="", encoding="utf-8") as fh:
-        writer = csv.DictWriter(fh, fieldnames=_CSV_FIELDNAMES)
-        writer.writeheader()
-        for mr in results:
-            r = mr.result
-            writer.writerow(
-                {
-                    "req_id": r.atom_id,
-                    "requirement": r.requirement_text,
-                    "module": r.module,
-                    "country": r.country,
-                    "wave": r.wave,
-                    "classification": str(r.classification),
-                    "confidence": f"{r.confidence:.4f}",
-                    "d365_capability": r.d365_capability_ref or "",
-                    "rationale": r.rationale,
-                    "config_steps": r.config_steps or "",
-                    "gap_description": r.gap_description or "",
-                    "reviewer": mr.consultant or "",
-                    "override": "yes" if mr.reviewer_override else "",
-                }
-            )
+log = get_logger(__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -310,13 +130,17 @@ class ValidationNode:
 
     def _get_embedder(self) -> Embedder:
         if self._embedder is None:
-            self._embedder = Embedder(get_settings().embedding_model)
+            config = get_product_config("d365_fo")
+            self._embedder = Embedder(config.embedding_model)
         return self._embedder
 
-    def _get_config(self, product_id: str) -> ProductConfig:
-        if self._config_override is not None:
-            return self._config_override
-        return _get_product_config(product_id)
+    def _get_config(self, product_id: str, overrides: dict[str, Any] | None = None) -> ProductConfig:
+        base = self._config_override if self._config_override is not None else get_product_config(product_id)
+        if overrides:
+            recognized = {k: v for k, v in overrides.items() if hasattr(base, k)}
+            if recognized:
+                return base.model_copy(update=recognized)
+        return base
 
     # ------------------------------------------------------------------
     # LangGraph entry point
@@ -335,7 +159,7 @@ class ValidationNode:
         )
         match_results: list[MatchResult] = state.get("match_results", [])  # type: ignore[assignment]
         batch_id = state["batch_id"]
-        config = self._get_config(state["upload"].product_id)
+        config = self._get_config(state["upload"].product_id, state.get("config_overrides"))
 
         t0 = time.monotonic()
         log.info(
@@ -365,14 +189,9 @@ class ValidationNode:
         # ----------------------------------------------------------------
         overrides: dict[str, Any] = {}
         if flagged:
-            _run_async(
-                self._get_redis().publish(
-                    PhaseStartEvent(
-                        batch_id=batch_id,
-                        phase=5,
-                        phase_name="human_review",
-                    )
-                )
+            publish_phase_start(
+                batch_id, self._get_redis(),
+                phase=5, phase_name="human_review",
             )
             log.info(
                 "hitl_checkpoint",
@@ -388,6 +207,7 @@ class ValidationNode:
                     "batch_id": batch_id,
                     "flagged_count": len(flagged),
                     "flagged_atom_ids": [r.atom_id for r, _ in flagged],
+                    "flagged_reasons": {r.atom_id: flags for r, flags in flagged},
                 }
             )
             overrides = raw if isinstance(raw, dict) else {}
@@ -401,9 +221,29 @@ class ValidationNode:
         final_batch = batch.model_copy(update={"report_path": report_path})
 
         # Write-back to postgres (fire-and-forget; errors logged, not raised)
-        _run_async(self._write_back(merged, state))
+        run_async(self._write_back(merged, state))
 
-        _run_async(
+        elapsed_ms = (time.monotonic() - t0) * 1000
+        log.info(
+            "phase_complete",
+            phase=5,
+            batch_id=batch_id,
+            output_hash=hashlib.sha256(repr(final_batch).encode()).hexdigest()[:16],
+            guardrails_triggered=list({f for _, fs in flagged for f in fs}),
+            latency_ms=round(elapsed_ms, 1),
+        )
+
+        # PhaseCompleteEvent MUST be published before CompleteEvent —
+        # CompleteEvent is terminal and stops the Redis subscriber.
+        publish_phase_complete(
+            batch_id, self._get_redis(),
+            phase=5, phase_name="Validation",
+            atoms_produced=final_batch.total_atoms,
+            atoms_validated=final_batch.total_atoms - final_batch.review_count,
+            atoms_flagged=len(flagged),
+            latency_ms=round(elapsed_ms, 1),
+        )
+        run_async(
             self._get_redis().publish(
                 CompleteEvent(
                     batch_id=batch_id,
@@ -415,16 +255,6 @@ class ValidationNode:
                     report_url=report_path,
                 )
             )
-        )
-
-        elapsed_ms = (time.monotonic() - t0) * 1000
-        log.info(
-            "phase_complete",
-            phase=5,
-            batch_id=batch_id,
-            output_hash=hashlib.sha256(repr(final_batch).encode()).hexdigest()[:16],
-            guardrails_triggered=list({f for _, fs in flagged for f in fs}),
-            latency_ms=round(elapsed_ms, 1),
         )
 
         return {"validated_batch": final_batch}
@@ -453,6 +283,10 @@ class ValidationNode:
 
         if mr is not None:
             flags.extend(run_sanity_check(result, mr, config))
+        elif result.classification == FitLabel.REVIEW_REQUIRED:
+            # No MatchResult but LLM still failed to produce a valid label —
+            # Rule 3 (llm_schema_retry_exhausted) must fire unconditionally.
+            flags.append("llm_schema_retry_exhausted")
 
         # Confidence filter — non-GAP, non-REVIEW_REQUIRED results below threshold
         if (
@@ -483,9 +317,12 @@ class ValidationNode:
     # ------------------------------------------------------------------
 
     def _write_csv(self, merged: list[_MergedResult], batch_id: str) -> str:
-        """Write FDD FOR FITS and FDD FOR GAPS CSVs.
+        """Write FDD FOR FITS and FDD FOR GAPS CSVs, then bundle into a ZIP.
 
-        Returns the report directory path (stored as batch.report_path).
+        Returns the path to the ZIP file (stored as batch.report_path).
+        The ZIP contains two CSVs:
+          fdd_fits_{batch_id}.csv  — FIT and PARTIAL_FIT results
+          fdd_gaps_{batch_id}.csv  — GAP results
         """
         report_dir = os.path.join(self._report_dir, batch_id)
         os.makedirs(report_dir, exist_ok=True)
@@ -495,17 +332,24 @@ class ValidationNode:
         ]
         gaps = [mr for mr in merged if mr.result.classification == FitLabel.GAP]
 
-        _write_fdd_csv(os.path.join(report_dir, f"fdd_fits_{batch_id}.csv"), fits)
-        _write_fdd_csv(os.path.join(report_dir, f"fdd_gaps_{batch_id}.csv"), gaps)
+        fits_path = os.path.join(report_dir, f"fdd_fits_{batch_id}.csv")
+        gaps_path = os.path.join(report_dir, f"fdd_gaps_{batch_id}.csv")
+        _write_fdd_csv(fits_path, fits)
+        _write_fdd_csv(gaps_path, gaps)
+
+        zip_path = os.path.join(report_dir, f"fdd_report_{batch_id}.zip")
+        with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
+            zf.write(fits_path, arcname=f"fdd_fits_{batch_id}.csv")
+            zf.write(gaps_path, arcname=f"fdd_gaps_{batch_id}.csv")
 
         log.info(
             "report_written",
             batch_id=batch_id,
-            report_dir=report_dir,
+            zip_path=zip_path,
             fits=len(fits),
             gaps=len(gaps),
         )
-        return report_dir
+        return zip_path
 
     async def _write_back(
         self,

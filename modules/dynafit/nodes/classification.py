@@ -38,6 +38,7 @@ from pydantic import BaseModel, Field
 
 from platform.llm.client import LLMClient, LLMError
 from platform.observability.logger import get_logger
+from platform.storage.redis_pub import RedisPubSub
 from platform.schemas.fitment import (
     ClassificationResult,
     FitLabel,
@@ -47,6 +48,12 @@ from platform.schemas.fitment import (
 from platform.schemas.product import ProductConfig
 from platform.schemas.retrieval import PriorFitment
 
+from ..events import (
+    publish_classification_event,
+    publish_phase_complete,
+    publish_phase_start,
+)
+from ..product_config import get_product_config
 from ..prompts.loader import render_prompt
 from ..state import DynafitState
 
@@ -85,33 +92,6 @@ class LLMClassificationOutput(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# ProductConfig helper  (MVP: d365_fo only, same pattern as retrieval node)
-# ---------------------------------------------------------------------------
-
-_D365_FO_CONFIG: ProductConfig = ProductConfig(
-    product_id="d365_fo",
-    display_name="Dynamics 365 Finance & Operations",
-    llm_model="claude-sonnet-4-6",
-    embedding_model="BAAI/bge-large-en-v1.5",
-    capability_kb_namespace="d365_fo_capabilities",
-    doc_corpus_namespace="d365_fo_docs",
-    historical_fitments_table="d365_fo_fitments",
-    fit_confidence_threshold=0.85,
-    review_confidence_threshold=0.60,
-    auto_approve_with_history=True,
-    country_rules_path="knowledge_bases/d365_fo/country_rules/",
-    fdd_template_path="knowledge_bases/d365_fo/fdd_templates/fit_template.j2",
-    code_language="xpp",
-)
-
-
-def _get_product_config(product_id: str) -> ProductConfig:
-    if product_id == "d365_fo":
-        return _D365_FO_CONFIG
-    return _D365_FO_CONFIG.model_copy(update={"product_id": product_id})
-
-
-# ---------------------------------------------------------------------------
 # ClassificationNode
 # ---------------------------------------------------------------------------
 
@@ -138,19 +118,33 @@ class ClassificationNode:
         *,
         llm_client: LLMClient | None = None,
         product_config: ProductConfig | None = None,
+        redis: RedisPubSub | None = None,
     ) -> None:
         self._llm = llm_client
         self._config_override = product_config
+        self._redis = redis
 
     def _get_llm(self) -> LLMClient:
         if self._llm is None:
             self._llm = LLMClient()
         return self._llm
 
-    def _get_config(self, product_id: str) -> ProductConfig:
-        if self._config_override is not None:
-            return self._config_override
-        return _get_product_config(product_id)
+    def _get_redis(self) -> RedisPubSub:
+        if self._redis is None:
+            from platform.config.settings import get_settings  # noqa: PLC0415
+
+            self._redis = RedisPubSub(get_settings().redis_url)
+        return self._redis
+
+    def _get_config(
+        self, product_id: str, overrides: dict[str, Any] | None = None
+    ) -> ProductConfig:
+        base = self._config_override if self._config_override is not None else get_product_config(product_id)
+        if overrides:
+            recognized = {k: v for k, v in overrides.items() if hasattr(base, k)}
+            if recognized:
+                return base.model_copy(update=recognized)
+        return base
 
     # ------------------------------------------------------------------
     # LangGraph entry point
@@ -167,7 +161,13 @@ class ClassificationNode:
             )
             return {"classifications": []}
 
-        config = self._get_config(state["upload"].product_id)
+        batch_id: str = state["batch_id"]
+        config = self._get_config(state["upload"].product_id, state.get("config_overrides"))
+
+        publish_phase_start(
+            batch_id, self._get_redis(),
+            phase=4, phase_name="Classification",
+        )
 
         # Build prior_fitments lookup from Phase 2 AssembledContexts.
         # Phase 3 (MatchResult) does not carry prior_fitments forward,
@@ -180,26 +180,37 @@ class ClassificationNode:
         }
 
         t0 = time.monotonic()
-        classifications = [
-            self._classify_one(
+        classifications: list[ClassificationResult] = []
+        for mr in match_results:
+            result = self._classify_one(
                 mr,
                 priors_by_atom.get(mr.atom.atom_id, []),
                 config,
             )
-            for mr in match_results
-        ]
+            publish_classification_event(batch_id, result, self._get_redis())
+            classifications.append(result)
         elapsed_ms = (time.monotonic() - t0) * 1000
 
         counts: Counter[FitLabel] = Counter(r.classification for r in classifications)
+        atoms_flagged = counts.get(FitLabel.REVIEW_REQUIRED, 0)
+        atoms_validated = len(classifications) - atoms_flagged
         log.info(
             "phase_complete",
             phase=4,
-            batch_id=state["batch_id"],
+            batch_id=batch_id,
             atoms_in=len(match_results),
             fit=counts.get(FitLabel.FIT, 0),
             partial_fit=counts.get(FitLabel.PARTIAL_FIT, 0),
             gap=counts.get(FitLabel.GAP, 0),
-            review=counts.get(FitLabel.REVIEW_REQUIRED, 0),
+            review=atoms_flagged,
+            latency_ms=round(elapsed_ms, 1),
+        )
+        publish_phase_complete(
+            batch_id, self._get_redis(),
+            phase=4, phase_name="Classification",
+            atoms_produced=len(classifications),
+            atoms_validated=atoms_validated,
+            atoms_flagged=atoms_flagged,
             latency_ms=round(elapsed_ms, 1),
         )
         return {"classifications": classifications}

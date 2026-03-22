@@ -20,7 +20,7 @@ VALID_KWARGS = {
     "product_id": "d365_fo",
     "display_name": "D365 F&O",
     "llm_model": "claude-sonnet-4-6",
-    "embedding_model": "BAAI/bge-large-en-v1.5",
+    "embedding_model": "BAAI/bge-small-en-v1.5",
     "capability_kb_namespace": "d365_fo_capabilities",
     "doc_corpus_namespace": "d365_fo_docs",
     "historical_fitments_table": "d365_fo_fitments",
@@ -43,7 +43,7 @@ class TestProductConfigValid:
         cfg = ProductConfig(**VALID_KWARGS)
         assert cfg.display_name == "D365 F&O"
         assert cfg.llm_model == "claude-sonnet-4-6"
-        assert cfg.embedding_model == "BAAI/bge-large-en-v1.5"
+        assert cfg.embedding_model == "BAAI/bge-small-en-v1.5"
         assert cfg.capability_kb_namespace == "d365_fo_capabilities"
         assert cfg.doc_corpus_namespace == "d365_fo_docs"
         assert cfg.historical_fitments_table == "d365_fo_fitments"

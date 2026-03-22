@@ -1,0 +1,13 @@
+FROM node:20-alpine
+
+WORKDIR /app
+
+# Install dependencies first (cached layer)
+COPY package.json package-lock.json ./
+RUN npm ci
+
+# Copy source
+COPY . .
+
+# Run tests in CI mode (no watch, exit after run)
+CMD ["npm", "test"]

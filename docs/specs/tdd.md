@@ -223,9 +223,9 @@ dependencies = [
     "spacy>=3.7",
     "rapidfuzz>=3.6",
 
-    # Vector / Retrieval
+    # Vector / Retrieval (fastembed uses ONNX Runtime — no PyTorch)
     "qdrant-client>=1.8",
-    "sentence-transformers>=2.5",
+    "fastembed>=0.3",
     "rank-bm25>=0.2",
 
     # Storage
@@ -454,7 +454,7 @@ def test_product_config_d365():
         product_id="d365_fo",
         display_name="Dynamics 365 Finance & Operations",
         llm_model="claude-sonnet-4-20250514",
-        embedding_model="BAAI/bge-large-en-v1.5",
+        embedding_model="BAAI/bge-small-en-v1.5",
         capability_kb_namespace="d365_fo_capabilities",
         doc_corpus_namespace="d365_fo_docs",
         historical_fitments_table="d365_fo_fitments",
@@ -525,7 +525,7 @@ fdd_template_path: knowledge_bases/d365_fo/fdd_templates/fit_template.j2
 code_language: xpp
 code_review_rules: knowledge_bases/d365_fo/code_rules/xpp_rules.yaml
 
-embedding_model: BAAI/bge-large-en-v1.5
+embedding_model: BAAI/bge-small-en-v1.5
 llm_model: claude-sonnet-4-20250514
 classification_llm: claude-sonnet-4-20250514
 country_rules_path: knowledge_bases/d365_fo/country_rules/
@@ -552,30 +552,30 @@ import click
 from pathlib import Path
 from qdrant_client import QdrantClient
 from qdrant_client.models import Distance, VectorParams, PointStruct
-from sentence_transformers import SentenceTransformer
+from platform.retrieval.embedder import Embedder  # wraps fastembed.TextEmbedding
 
 @click.command()
 @click.option("--product", required=True, help="Product ID (e.g., d365_fo)")
 def seed(product: str):
     config_path = Path(f"knowledge_bases/{product}/product_config.yaml")
     # ... load config, read JSONL, embed, upsert to Qdrant
-    
+
     caps_path = Path(f"knowledge_bases/{product}/seed_data/capabilities.jsonl")
-    model = SentenceTransformer("BAAI/bge-large-en-v1.5")
+    embedder = Embedder("BAAI/bge-small-en-v1.5")
     client = QdrantClient(url="http://localhost:6333")
-    
+
     # Create collection
     client.recreate_collection(
         collection_name=f"{product}_capabilities",
         vectors_config=VectorParams(size=1024, distance=Distance.COSINE),
     )
-    
+
     # Load and embed
+    caps = [json.loads(line) for line in caps_path.read_text().splitlines()]
+    texts = [f"{cap['feature']}: {cap['description']}" for cap in caps]
+    embeddings = embedder.embed_batch(texts)  # fastembed: batch is faster than one-by-one
     points = []
-    for i, line in enumerate(caps_path.read_text().splitlines()):
-        cap = json.loads(line)
-        text = f"{cap['feature']}: {cap['description']}"
-        embedding = model.encode(text).tolist()
+    for i, (cap, embedding) in enumerate(zip(caps, embeddings)):
         points.append(PointStruct(
             id=i,
             vector=embedding,
@@ -946,7 +946,7 @@ See DYNAFIT_IMPLEMENTATION_SPEC.md "RAG Sources — When and How to Build" for f
 - [ ] Monthly refresh cron documented in `docs/runbooks/corpus_refresh.md`
 
 **Source C — Historical Fitments (auto-populated, PostgreSQL+pgvector):**
-- [ ] `d365_fo_fitments` table created with `vector(1024)` column and HNSW index
+- [ ] `d365_fo_fitments` table created with `vector(384)` column and HNSW index
 - [ ] Phase 5 write-back implemented: `ValidatedFitmentResult` → postgres insert with embedding
 - [ ] Verify write-back: after a test wave runs, table has rows, pgvector similarity query returns results
 - [ ] Confirm consultant override records (`reviewer_override=TRUE`) rank first in Phase 2 retrieval

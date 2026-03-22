@@ -1,0 +1,18 @@
+services:
+  ui-test:
+    build:
+      context: ../../ui
+      dockerfile: Dockerfile.test
+    container_name: enterprise_ai_ui_test
+    environment:
+      NODE_OPTIONS: "--experimental-global-webcrypto"
+      CI: "true"
+    volumes:
+      # Mount source for live test runs; node_modules stays in image
+      - ../../ui/src:/app/src:ro
+      - ../../ui/index.html:/app/index.html:ro
+      - ../../ui/vite.config.ts:/app/vite.config.ts:ro
+      - ../../ui/tailwind.config.ts:/app/tailwind.config.ts:ro
+      - ../../ui/tsconfig.json:/app/tsconfig.json:ro
+      - ../../ui/tsconfig.app.json:/app/tsconfig.app.json:ro
+      - ../../ui/postcss.config.js:/app/postcss.config.js:ro

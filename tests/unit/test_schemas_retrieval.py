@@ -34,7 +34,7 @@ _VALID_ATOM_KWARGS = {
     "completeness_score": 60.0,
 }
 
-_DENSE = [0.1] * 1024
+_DENSE = [0.1] * 384
 
 
 def _atom() -> ValidatedAtom:
@@ -84,7 +84,7 @@ class TestRetrievalQuery:
     def test_creates_valid(self) -> None:
         q = RetrievalQuery(atom_id="a-001", dense_vector=_DENSE)
         assert q.atom_id == "a-001"
-        assert len(q.dense_vector) == 1024
+        assert len(q.dense_vector) == 384
 
     def test_defaults(self) -> None:
         q = RetrievalQuery(atom_id="a-001", dense_vector=_DENSE)

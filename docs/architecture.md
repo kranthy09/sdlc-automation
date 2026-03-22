@@ -50,7 +50,7 @@ Every parameter that varies by product lives in `ProductConfig`. Nodes receive a
 class ProductConfig(PlatformModel):
     product_id: str
     llm_model: str                      # "claude-sonnet-4-6"
-    embedding_model: str                # "BAAI/bge-large-en-v1.5"
+    embedding_model: str                # "BAAI/bge-small-en-v1.5"
     capability_kb_namespace: str        # Qdrant collection name
     historical_fitments_table: str      # PostgreSQL table name
     fit_confidence_threshold: float     # 0.85

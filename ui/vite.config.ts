@@ -13,7 +13,7 @@ export default defineConfig({
     port: 5173,
     proxy: {
       '/api': {
-        target: 'http://localhost:8000',
+        target: process.env.VITE_API_TARGET ?? 'http://localhost:8000',
         changeOrigin: true,
         ws: true,
       },
@@ -23,6 +23,9 @@ export default defineConfig({
     globals: true,
     environment: 'jsdom',
     setupFiles: ['./src/tests/setup.ts'],
+    env: {
+      VITE_API_URL: 'http://localhost/api/v1',
+    },
     coverage: {
       provider: 'v8',
       reporter: ['text', 'lcov'],

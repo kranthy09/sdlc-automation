@@ -111,7 +111,7 @@ _DDL: list[str] = [
         rationale         TEXT         NOT NULL,
         reviewer_override BOOLEAN      NOT NULL DEFAULT FALSE,
         consultant        TEXT,
-        embedding         vector(1024),
+        embedding         vector(384),
         created_at        TIMESTAMPTZ  NOT NULL DEFAULT NOW()
     )
     """,
@@ -119,6 +119,8 @@ _DDL: list[str] = [
     CREATE INDEX IF NOT EXISTS fitments_hnsw
     ON fitments USING hnsw (embedding vector_cosine_ops)
     """,
+    # V1 migration — idempotent; ensures column exists on both fresh and existing DBs.
+    "ALTER TABLE fitments ADD COLUMN IF NOT EXISTS d365_capability_ref TEXT",
 ]
 
 
@@ -256,7 +258,7 @@ class PostgresStore:
 
         Args:
             result:            Phase 4 or Phase 5 classification result.
-            embedding:         1024-dim dense embedding of the requirement text.
+            embedding:         384-dim dense embedding of the requirement text.
             upload_id:         ID of the upload this result belongs to.
             product_id:        Product ID (e.g. "d365_fo").
             reviewer_override: True when a consultant changed the AI verdict.
@@ -273,11 +275,12 @@ class PostgresStore:
             INSERT INTO fitments
                 (atom_id, upload_id, product_id, module, country, wave,
                  classification, confidence, rationale,
-                 reviewer_override, consultant, embedding)
+                 reviewer_override, consultant, embedding, d365_capability_ref)
             VALUES
                 (:atom_id, :upload_id, :product_id, :module, :country, :wave,
                  :classification, :confidence, :rationale,
-                 :reviewer_override, :consultant, CAST(:embedding AS vector))
+                 :reviewer_override, :consultant, CAST(:embedding AS vector),
+                 :d365_capability_ref)
             """
         )
         params: dict[str, Any] = {
@@ -293,6 +296,7 @@ class PostgresStore:
             "reviewer_override": reviewer_override,
             "consultant": consultant,
             "embedding": _vec_str(embedding),
+            "d365_capability_ref": result.d365_capability_ref,
         }
         engine = self._get_engine()
         try:
@@ -324,7 +328,7 @@ class PostgresStore:
         override records are not lost to the LIMIT before the re-sort runs.
 
         Args:
-            embedding: 1024-dim dense query vector.
+            embedding: 384-dim dense query vector.
             top_k:     Maximum number of results to return.
             module:    Optional D365 module filter (exact match).
         """

@@ -54,5 +54,10 @@ class DynafitState(TypedDict):
     # --- Phase 5 — Validation + HITL -----------------------------------------
     validated_batch: NotRequired[ValidatedFitmentBatch | None]  # final deliverable
 
+    # --- Per-run ProductConfig overrides (from API config_overrides) ----------
+    # Recognized keys: fit_confidence_threshold, review_confidence_threshold,
+    # auto_approve_with_history. Phase 5 applies these via model_copy.
+    config_overrides: NotRequired[dict[str, Any]]
+
     # --- Optional: per-phase timing and counts --------------------------------
     phase_metrics: NotRequired[dict[str, Any]]

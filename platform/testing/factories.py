@@ -124,7 +124,7 @@ def make_llm_client(*responses: BaseModel) -> LLMClient:
     return cast(LLMClient, client)
 
 
-def make_embedder(*, dim: int = 1024) -> Embedder:
+def make_embedder(*, dim: int = 384) -> Embedder:
     """Return a mock Embedder that returns zero vectors of *dim* dimensions.
 
     The underlying mock handles both single-text ``embed()`` and batch
@@ -132,7 +132,7 @@ def make_embedder(*, dim: int = 1024) -> Embedder:
     yields a 2-D array (one row per text).
 
     Args:
-        dim: Vector dimension.  Default 1024 matches BAAI/bge-large-en-v1.5.
+        dim: Vector dimension.  Default 384 matches BAAI/bge-small-en-v1.5.
     """
     mock_model: MagicMock = MagicMock()
 
@@ -244,7 +244,7 @@ def make_product_config(**overrides: Any) -> ProductConfig:
         "product_id": "d365_fo",
         "display_name": "Dynamics 365 Finance & Operations",
         "llm_model": "claude-sonnet-4-6",
-        "embedding_model": "BAAI/bge-large-en-v1.5",
+        "embedding_model": "BAAI/bge-small-en-v1.5",
         "capability_kb_namespace": "d365_fo_capabilities",
         "doc_corpus_namespace": "d365_fo_docs",
         "historical_fitments_table": "d365_fo_fitments",

@@ -1,0 +1,10 @@
+REQ-001: The system must support automated three-way matching between purchase orders, product receipts, and vendor invoices with configurable tolerance thresholds per vendor group.
+REQ-002: The system must automatically calculate and apply early payment discounts (e.g. 2/10 net 30) when vendor invoices are paid within the discount window.
+REQ-003: Vendors must be able to access a self-service portal to submit invoices, check payment status, and view outstanding balances without contacting AP staff.
+REQ-004: The system must generate dunning letters for overdue customer accounts with configurable escalation levels and frequency intervals per customer group.
+REQ-005: The system must automatically match incoming customer payments to open invoices using remittance advice data, with a fallback to manual matching for unresolved items.
+REQ-006: The system must enforce customer credit limits at order entry time, blocking or warning when a new order would exceed the approved credit limit.
+REQ-007: AP staff must be able to run an accounts payable aging report grouped by vendor with the ability to drill down to individual invoice details.
+REQ-008: The system should handle data.
+REQ-009: The system must support revenue recognition for multi-element arrangements in accordance with ASC 606 / IFRS 15, deferring and releasing revenue based on performance obligation completion.
+REQ-010: Three-way matching between purchase order, goods receipt, and vendor invoice must be enforced before releasing payment to any supplier.

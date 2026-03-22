@@ -22,10 +22,12 @@ Usage:
 
 from __future__ import annotations
 
+import datetime
 import time
 from typing import Any, TypeVar
 
 import anthropic
+from langfuse import Langfuse
 from prometheus_client import REGISTRY as _DEFAULT_REGISTRY
 from prometheus_client import CollectorRegistry, Counter
 from pydantic import BaseModel
@@ -111,6 +113,15 @@ class LLMClient:
         )
         settings = get_settings()
         self._client = anthropic.Anthropic(api_key=settings.anthropic_api_key.get_secret_value())
+        self._langfuse: Langfuse | None = (
+            Langfuse(
+                public_key=settings.langfuse_public_key,
+                secret_key=settings.langfuse_secret_key.get_secret_value(),
+                host=settings.langfuse_base_url,
+            )
+            if settings.langfuse_public_key
+            else None
+        )
 
     def complete(
         self,
@@ -156,6 +167,7 @@ class LLMClient:
                 attempt=attempt,
                 max_retries=self._max_retries,
             )
+            _t0 = datetime.datetime.utcnow()
             try:
                 with record_call("llm", "invoke"):
                     response = self._client.messages.create(  # type: ignore[call-overload]
@@ -192,6 +204,7 @@ class LLMClient:
             if tool_block is None:
                 raise LLMError(f"LLM response contained no tool_use block (model={model!r})")
 
+            _t1 = datetime.datetime.utcnow()
             result: T = output_schema.model_validate(tool_block.input)
 
             # Emit cost metrics
@@ -209,6 +222,19 @@ class LLMClient:
                 output_tokens=out_tokens,
                 cost_usd=round(in_cost + out_cost, 6),
             )
+
+            if self._langfuse is not None:
+                self._langfuse.generation(
+                    name="llm-complete",
+                    model=model,
+                    model_parameters={"temperature": temperature, "max_tokens": max_tokens},
+                    input=[{"role": "user", "content": prompt}],
+                    output=result.model_dump(),
+                    usage={"input": in_tokens, "output": out_tokens},
+                    start_time=_t0,
+                    end_time=_t1,
+                )
+
             return result
 
         raise LLMError(

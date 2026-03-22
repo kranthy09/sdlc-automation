@@ -24,7 +24,7 @@ Usage:
     store.upsert("d365_fo_capabilities", [
         Point(
             id="cap-ap-0001",
-            dense_vector=[...],           # 1024-dim bge-large embedding
+            dense_vector=[...],           # 384-dim bge-small embedding
             payload={"module": "AccountsPayable", "feature": "Three-way matching"},
             sparse_indices=[0, 5, 12],    # BM25 term indices
             sparse_values=[1.0, 0.8, 0.6],
@@ -72,7 +72,9 @@ _DISTANCE_MAP = {
 class VectorStoreError(Exception):
     """Raised when a Qdrant operation fails."""
 
-    def __init__(self, message: str, *, cause: Exception | None = None) -> None:
+    def __init__(
+        self, message: str, *, cause: Exception | None = None
+    ) -> None:
         self.cause = cause
         super().__init__(message)
 
@@ -87,13 +89,13 @@ class CollectionConfig:
     """Configuration for a Qdrant collection.
 
     Args:
-        size:     Embedding dimension. Default 1024 (bge-large-en-v1.5).
+        size:     Embedding dimension. Default 384 (bge-small-en-v1.5).
         distance: Similarity metric — "cosine" | "dot" | "euclidean".
         sparse:   True → hybrid collection with named "dense" + "sparse" vectors.
                   False → dense-only collection (unnamed vector).
     """
 
-    size: int = 1024
+    size: int = 384
     distance: str = "cosine"
     sparse: bool = False
 
@@ -173,7 +175,9 @@ class VectorStore:
         try:
             return bool(self._get_client().collection_exists(name))
         except Exception as exc:
-            raise VectorStoreError(f"collection_exists({name!r}) failed: {exc}", cause=exc) from exc
+            raise VectorStoreError(
+                f"collection_exists({name!r}) failed: {exc}", cause=exc
+            ) from exc
 
     def ensure_collection(self, name: str, config: CollectionConfig) -> None:
         """Create the collection if it does not already exist (idempotent)."""
@@ -194,7 +198,9 @@ class VectorStore:
             self._get_client().delete_collection(name)
             log.info("vector_store_drop_collection", collection=name)
         except Exception as exc:
-            raise VectorStoreError(f"drop_collection({name!r}) failed: {exc}", cause=exc) from exc
+            raise VectorStoreError(
+                f"drop_collection({name!r}) failed: {exc}", cause=exc
+            ) from exc
 
     def _create_collection(self, name: str, config: CollectionConfig) -> None:
         from qdrant_client.models import (  # noqa: PLC0415
@@ -209,19 +215,33 @@ class VectorStore:
             if config.sparse:
                 self._get_client().create_collection(
                     collection_name=name,
-                    vectors_config={"dense": VectorParams(size=config.size, distance=distance)},
+                    vectors_config={
+                        "dense": VectorParams(
+                            size=config.size, distance=distance
+                        )
+                    },
                     sparse_vectors_config={
-                        "sparse": SparseVectorParams(index=SparseIndexParams(on_disk=False))
+                        "sparse": SparseVectorParams(
+                            index=SparseIndexParams(on_disk=False)
+                        )
                     },
                 )
             else:
                 self._get_client().create_collection(
                     collection_name=name,
-                    vectors_config=VectorParams(size=config.size, distance=distance),
+                    vectors_config=VectorParams(
+                        size=config.size, distance=distance
+                    ),
                 )
-            log.info("vector_store_create_collection", collection=name, sparse=config.sparse)
+            log.info(
+                "vector_store_create_collection",
+                collection=name,
+                sparse=config.sparse,
+            )
         except Exception as exc:
-            raise VectorStoreError(f"create_collection({name!r}) failed: {exc}", cause=exc) from exc
+            raise VectorStoreError(
+                f"create_collection({name!r}) failed: {exc}", cause=exc
+            ) from exc
 
     # ------------------------------------------------------------------
     # Write
@@ -236,7 +256,10 @@ class VectorStore:
         Raises:
             VectorStoreError: If the upsert fails.
         """
-        from qdrant_client.models import PointStruct, SparseVector  # noqa: PLC0415
+        from qdrant_client.models import (
+            PointStruct,
+            SparseVector,
+        )  # noqa: PLC0415
 
         qdrant_points = []
         for p in points:
@@ -244,21 +267,31 @@ class VectorStore:
             if p.sparse_indices:
                 vector: Any = {
                     "dense": p.dense_vector,
-                    "sparse": SparseVector(indices=p.sparse_indices, values=p.sparse_values),
+                    "sparse": SparseVector(
+                        indices=p.sparse_indices, values=p.sparse_values
+                    ),
                 }
             else:
                 vector = p.dense_vector
             qdrant_points.append(
-                PointStruct(id=_to_qdrant_id(p.id), vector=vector, payload=payload)
+                PointStruct(
+                    id=_to_qdrant_id(p.id), vector=vector, payload=payload
+                )
             )
         try:
             with self._recorder.record_call("qdrant", "upsert"):
-                self._get_client().upsert(collection_name=collection, points=qdrant_points)
-            log.debug("vector_store_upsert", collection=collection, n=len(points))
+                self._get_client().upsert(
+                    collection_name=collection, points=qdrant_points
+                )
+            log.debug(
+                "vector_store_upsert", collection=collection, n=len(points)
+            )
         except VectorStoreError:
             raise
         except Exception as exc:
-            raise VectorStoreError(f"upsert({collection!r}) failed: {exc}", cause=exc) from exc
+            raise VectorStoreError(
+                f"upsert({collection!r}) failed: {exc}", cause=exc
+            ) from exc
 
     def delete_points(self, collection: str, ids: list[str | int]) -> None:
         """Remove specific points by their original caller IDs.
@@ -275,7 +308,9 @@ class VectorStore:
                     collection_name=collection,
                     points_selector=PointIdsList(points=qdrant_ids),
                 )
-            log.debug("vector_store_delete_points", collection=collection, n=len(ids))
+            log.debug(
+                "vector_store_delete_points", collection=collection, n=len(ids)
+            )
         except VectorStoreError:
             raise
         except Exception as exc:
@@ -316,14 +351,23 @@ class VectorStore:
         try:
             qdrant_filter = _build_filter(payload_filter)
             with self._recorder.record_call("qdrant", "search"):
-                response = self._run_query(collection, dense_vector, top_k, qdrant_filter, sparse)
+                response = self._run_query(
+                    collection, dense_vector, top_k, qdrant_filter, sparse
+                )
             hits = [_to_hit(p) for p in response.points]
-            log.debug("vector_store_search", collection=collection, top_k=top_k, hits=len(hits))
+            log.debug(
+                "vector_store_search",
+                collection=collection,
+                top_k=top_k,
+                hits=len(hits),
+            )
             return hits
         except VectorStoreError:
             raise
         except Exception as exc:
-            raise VectorStoreError(f"search({collection!r}) failed: {exc}", cause=exc) from exc
+            raise VectorStoreError(
+                f"search({collection!r}) failed: {exc}", cause=exc
+            ) from exc
 
     def _run_query(
         self,
@@ -334,8 +378,12 @@ class VectorStore:
         sparse: tuple[list[int], list[float]] | None,
     ) -> Any:
         if sparse is not None:
-            return self._hybrid_query(collection, dense_vector, sparse, top_k, qdrant_filter)
-        return self._dense_query(collection, dense_vector, top_k, qdrant_filter)
+            return self._hybrid_query(
+                collection, dense_vector, sparse, top_k, qdrant_filter
+            )
+        return self._dense_query(
+            collection, dense_vector, top_k, qdrant_filter
+        )
 
     def _dense_query(
         self,
@@ -401,9 +449,18 @@ def _build_filter(raw: dict[str, str | int | float | bool] | None) -> Any:
     """Convert a flat payload dict to a Qdrant Filter (AND of MatchValue conditions)."""
     if not raw:
         return None
-    from qdrant_client.models import FieldCondition, Filter, MatchValue  # noqa: PLC0415
+    from qdrant_client.models import (
+        FieldCondition,
+        Filter,
+        MatchValue,
+    )  # noqa: PLC0415
 
-    return Filter(must=[FieldCondition(key=k, match=MatchValue(value=v)) for k, v in raw.items()])
+    return Filter(
+        must=[
+            FieldCondition(key=k, match=MatchValue(value=v))
+            for k, v in raw.items()
+        ]
+    )
 
 
 def _to_hit(scored_point: Any) -> SearchHit:

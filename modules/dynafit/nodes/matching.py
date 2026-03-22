@@ -32,9 +32,17 @@ import numpy as np
 
 from platform.observability.logger import get_logger
 from platform.retrieval.embedder import Embedder
+from platform.storage.redis_pub import RedisPubSub
+
+from ..product_config import get_product_config
 from platform.schemas.fitment import MatchResult, RouteLabel
 from platform.schemas.retrieval import AssembledContext, PriorFitment, RankedCapability
 
+from ..events import (
+    publish_phase_complete,
+    publish_phase_start,
+    publish_step_progress,
+)
 from ..state import DynafitState
 
 log = get_logger(__name__)
@@ -139,20 +147,34 @@ class MatchingNode:
         result = node(state)
 
     Production code uses the module-level ``matching_node`` singleton which
-    lazily initialises MatchingNode with the default bge-large embedder.
+    lazily initialises MatchingNode with the ProductConfig embedder.
 
     Args:
         embedder: Sentence-transformer embedder for embedding cosine computation.
-                  Lazily initialised with bge-large-en-v1.5 if not provided.
+                  Lazily initialised from ProductConfig if not provided.
     """
 
-    def __init__(self, *, embedder: Embedder | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        embedder: Embedder | None = None,
+        redis: RedisPubSub | None = None,
+    ) -> None:
         self._embedder = embedder
+        self._redis = redis
 
     def _get_embedder(self) -> Embedder:
         if self._embedder is None:
-            self._embedder = Embedder("BAAI/bge-large-en-v1.5")
+            config = get_product_config("d365_fo")
+            self._embedder = Embedder(config.embedding_model)
         return self._embedder
+
+    def _get_redis(self) -> RedisPubSub:
+        if self._redis is None:
+            from platform.config.settings import get_settings  # noqa: PLC0415
+
+            self._redis = RedisPubSub(get_settings().redis_url)
+        return self._redis
 
     # ------------------------------------------------------------------
     # LangGraph entry point
@@ -162,23 +184,52 @@ class MatchingNode:
         contexts: list[AssembledContext] = state.get(  # type: ignore[assignment]
             "retrieval_contexts", []
         )
+        batch_id: str = state["batch_id"]
         if not contexts:
-            log.debug("matching_skipped_no_contexts", batch_id=state["batch_id"])
+            log.debug("matching_skipped_no_contexts", batch_id=batch_id)
             return {"match_results": []}
+
+        publish_phase_start(
+            batch_id, self._get_redis(),
+            phase=3, phase_name="Matching",
+        )
 
         t0 = time.monotonic()
         match_results = [self._score_context(ctx) for ctx in contexts]
-        elapsed_ms = (time.monotonic() - t0) * 1000
 
+        fast_track = sum(1 for r in match_results if r.route == RouteLabel.FAST_TRACK)
+        deep_reason = sum(1 for r in match_results if r.route == RouteLabel.DEEP_REASON)
+        gap_confirm = sum(1 for r in match_results if r.route == RouteLabel.GAP_CONFIRM)
+
+        publish_step_progress(
+            batch_id, self._get_redis(),
+            phase=3, step="score", completed=1, total=2,
+        )
+        publish_step_progress(
+            batch_id, self._get_redis(),
+            phase=3,
+            step=f"route: fast_track={fast_track} deep_reason={deep_reason} gap_confirm={gap_confirm}",
+            completed=2, total=2,
+        )
+
+        elapsed_ms = (time.monotonic() - t0) * 1000
         log.info(
             "phase_complete",
             phase=3,
             batch_id=state["batch_id"],
             contexts_in=len(contexts),
             results_out=len(match_results),
-            fast_track=sum(1 for r in match_results if r.route == RouteLabel.FAST_TRACK),
-            deep_reason=sum(1 for r in match_results if r.route == RouteLabel.DEEP_REASON),
-            gap_confirm=sum(1 for r in match_results if r.route == RouteLabel.GAP_CONFIRM),
+            fast_track=fast_track,
+            deep_reason=deep_reason,
+            gap_confirm=gap_confirm,
+            latency_ms=round(elapsed_ms, 1),
+        )
+        publish_phase_complete(
+            batch_id, self._get_redis(),
+            phase=3, phase_name="Matching",
+            atoms_produced=len(match_results),
+            atoms_validated=len(match_results),
+            atoms_flagged=0,
             latency_ms=round(elapsed_ms, 1),
         )
         return {"match_results": match_results}

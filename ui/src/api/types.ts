@@ -18,7 +18,7 @@ export interface UploadResponse {
   filename: string
   size_bytes: number
   detected_format: string
-  status: 'uploaded'
+  status: 'uploaded' | 'already_exists'
 }
 
 // ─── Run ──────────────────────────────────────────────────────────────────────
@@ -121,10 +121,22 @@ export interface ReviewItem {
   evidence: ReviewItemEvidence
 }
 
+export interface AutoApprovedItem {
+  atom_id: string
+  requirement_text: string
+  classification: Classification
+  confidence: number
+  module: string
+  rationale: string
+  d365_capability: string
+  d365_navigation: string
+}
+
 export interface ReviewResponse {
   batch_id: string
   status: 'review_pending'
   items: ReviewItem[]
+  auto_approved: AutoApprovedItem[]
 }
 
 export interface ReviewSubmitRequest {
@@ -178,72 +190,74 @@ export interface BatchesResponse {
 // ─── WebSocket message types ──────────────────────────────────────────────────
 
 export interface WSPhaseStart {
-  type: 'phase_start'
+  event: 'phase_start'
+  batch_id: string
   phase: number
   phase_name: string
-  total_phases: number
   timestamp: string
 }
 
 export interface WSStepProgress {
-  type: 'step_progress'
+  event: 'step_progress'
+  batch_id: string
   phase: number
   step: string
-  sub_step: string
-  progress_pct: number
-  items_processed: number
-  items_total: number
+  completed: number
+  total: number
   timestamp: string
 }
 
 export interface WSPhaseComplete {
-  type: 'phase_complete'
+  event: 'phase_complete'
+  batch_id: string
   phase: number
   phase_name: string
   atoms_produced: number
   atoms_validated: number
   atoms_flagged: number
-  atoms_rejected: number
   latency_ms: number
   timestamp: string
 }
 
 export interface WSClassification {
-  type: 'classification'
+  event: 'classification'
+  batch_id: string
   atom_id: string
-  requirement_text: string
   classification: Classification
   confidence: number
-  module: string
-  rationale: string
+  timestamp: string
 }
 
 export interface WSReviewRequired {
-  type: 'review_required'
+  event: 'review_required'
   batch_id: string
   review_items: number
   reasons: {
     low_confidence: number
-    conflicts: number
-    anomalies: number
+    conflicts?: number
+    anomalies?: number
   }
   review_url: string
 }
 
 export interface WSComplete {
-  type: 'complete'
+  event: 'complete'
   batch_id: string
-  summary: BatchSummary & { total: number }
-  report_url: string
-  latency_total_ms: number
+  total: number
+  fit_count: number
+  partial_fit_count: number
+  gap_count: number
+  review_count: number
+  report_url: string | null
 }
 
 export interface WSError {
-  type: 'error'
-  phase?: number
+  event: 'error'
+  batch_id: string
+  phase?: number | null
+  atom_id?: string | null
+  error_type: string
   message: string
-  recoverable: boolean
-  retry_at?: string
 }
 
 export type WSMessage =
@@ -254,3 +268,6 @@ export type WSMessage =
   | WSReviewRequired
   | WSComplete
   | WSError
+
+// Discriminator used by the backend (Pydantic `event` field)
+export type WSEventType = WSMessage['event']

@@ -26,7 +26,6 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import time
-from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
 from prometheus_client import CollectorRegistry
@@ -37,7 +36,6 @@ from platform.retrieval.bm25 import BM25Retriever
 from platform.retrieval.embedder import Embedder
 from platform.retrieval.reranker import Reranker, RerankResult
 from platform.retrieval.vector_store import SearchHit, VectorStore
-from platform.schemas.product import ProductConfig
 from platform.schemas.requirement import ValidatedAtom
 from platform.schemas.retrieval import (
     AssembledContext,
@@ -46,7 +44,15 @@ from platform.schemas.retrieval import (
     RankedCapability,
 )
 from platform.storage.postgres import PostgresStore
+from platform.storage.redis_pub import RedisPubSub
 
+from ..events import (
+    publish_phase_complete,
+    publish_phase_start,
+    publish_step_progress,
+    run_async,
+)
+from ..product_config import get_product_config
 from ..state import DynafitState
 
 log = get_logger(__name__)
@@ -55,61 +61,11 @@ log = get_logger(__name__)
 # Constants
 # ---------------------------------------------------------------------------
 
-_RERANKER_MODEL = "cross-encoder/ms-marco-MiniLM-L-12-v2"
 _SOURCE_TIMEOUT = 5.0  # per-source asyncio.wait_for timeout (seconds)
 _DOC_BOOST = 0.05  # fixed score boost when a doc chunk confirms a capability
 _CE_THRESHOLD = 0.5  # top-1 score threshold used in retrieval quality classification
 _GAP_LO = 3  # adaptive-K: search for largest score gap starting at rank 3
 _GAP_HI = 7  # adaptive-K: stop searching after rank 7
-
-# ---------------------------------------------------------------------------
-# ProductConfig helper  (MVP: d365_fo only)
-# ---------------------------------------------------------------------------
-
-_D365_FO_CONFIG: ProductConfig = ProductConfig(
-    product_id="d365_fo",
-    display_name="Dynamics 365 Finance & Operations",
-    llm_model="claude-sonnet-4-6",
-    embedding_model="BAAI/bge-large-en-v1.5",
-    capability_kb_namespace="d365_fo_capabilities",
-    doc_corpus_namespace="d365_fo_docs",
-    historical_fitments_table="d365_fo_fitments",
-    fit_confidence_threshold=0.85,
-    review_confidence_threshold=0.60,
-    auto_approve_with_history=True,
-    country_rules_path="knowledge_bases/d365_fo/country_rules/",
-    fdd_template_path="knowledge_bases/d365_fo/fdd_templates/fit_template.j2",
-    code_language="xpp",
-)
-
-
-def _get_product_config(product_id: str) -> ProductConfig:
-    if product_id == "d365_fo":
-        return _D365_FO_CONFIG
-    return _D365_FO_CONFIG.model_copy(update={"product_id": product_id})
-
-
-# ---------------------------------------------------------------------------
-# Async bridge — safe to call from sync or async contexts
-# ---------------------------------------------------------------------------
-
-_executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="retrieval")
-
-
-def _run_async(coro: Any) -> Any:
-    """Run a coroutine from a synchronous context.
-
-    If an event loop is already running (e.g. inside graph.ainvoke()),
-    submit the coroutine to a thread that owns a fresh event loop so we
-    never block the caller's loop.
-    """
-    try:
-        asyncio.get_running_loop()
-        # Already inside an event loop — run in a separate thread
-        return _executor.submit(asyncio.run, coro).result(timeout=_SOURCE_TIMEOUT * 3 + 5)
-    except RuntimeError:
-        # No running loop — safe to call asyncio.run() directly
-        return asyncio.run(coro)
 
 
 # ---------------------------------------------------------------------------
@@ -175,7 +131,7 @@ def _parallel_retrieve(
 
         return caps, docs, priors
 
-    return _run_async(_gather())
+    return run_async(_gather())
 
 
 # ---------------------------------------------------------------------------
@@ -342,11 +298,13 @@ class RetrievalNode:
         vector_store: VectorStore | None = None,
         reranker: Any | None = None,
         postgres: PostgresStore | None = None,
+        redis: RedisPubSub | None = None,
     ) -> None:
         self._embedder = embedder
         self._store = vector_store
         self._reranker = reranker
         self._postgres = postgres
+        self._redis = redis
 
     # ------------------------------------------------------------------
     # Lazy infra (production path only — tests inject mocks)
@@ -354,7 +312,8 @@ class RetrievalNode:
 
     def _get_embedder(self) -> Embedder:
         if self._embedder is None:
-            self._embedder = Embedder("BAAI/bge-large-en-v1.5")
+            config = get_product_config("d365_fo")
+            self._embedder = Embedder(config.embedding_model)
         return self._embedder
 
     def _get_store(self) -> VectorStore:
@@ -362,15 +321,22 @@ class RetrievalNode:
             self._store = VectorStore(get_settings().qdrant_url)
         return self._store
 
-    def _get_reranker(self) -> Reranker:
+    def _get_reranker(self, model: str) -> Reranker:
         if self._reranker is None:
-            self._reranker = Reranker(_RERANKER_MODEL)
+            self._reranker = Reranker(model)
         return self._reranker
 
     def _get_postgres(self) -> PostgresStore:
         if self._postgres is None:
             self._postgres = PostgresStore(get_settings().postgres_url)
         return self._postgres
+
+    def _get_redis(self) -> RedisPubSub:
+        if self._redis is None:
+            from platform.config.settings import get_settings  # noqa: PLC0415
+
+            self._redis = RedisPubSub(get_settings().redis_url)
+        return self._redis
 
     # ------------------------------------------------------------------
     # LangGraph entry point
@@ -382,14 +348,24 @@ class RetrievalNode:
         upload = state["upload"]
         t0 = time.monotonic()
 
+        publish_phase_start(
+            batch_id, self._get_redis(),
+            phase=2, phase_name="RAG",
+        )
         log.info("phase_start", phase=2, batch_id=batch_id, atom_count=len(atoms))
 
         if not atoms:
             log.info("phase_complete", phase=2, batch_id=batch_id, contexts=0, latency_ms=0)
+            publish_phase_complete(
+                batch_id, self._get_redis(),
+                phase=2, phase_name="RAG",
+                atoms_produced=0, atoms_validated=0,
+                atoms_flagged=0, latency_ms=0.0,
+            )
             return {"retrieval_contexts": []}
 
-        config = _get_product_config(upload.product_id)
-        contexts = self._run(atoms, config)
+        config = get_product_config(upload.product_id)
+        contexts = self._run(atoms, config, batch_id=batch_id, redis=self._get_redis())
 
         elapsed_ms = (time.monotonic() - t0) * 1000
         log.info(
@@ -398,6 +374,14 @@ class RetrievalNode:
             batch_id=batch_id,
             atoms_in=len(atoms),
             contexts_out=len(contexts),
+            latency_ms=round(elapsed_ms, 1),
+        )
+        publish_phase_complete(
+            batch_id, self._get_redis(),
+            phase=2, phase_name="RAG",
+            atoms_produced=len(contexts),
+            atoms_validated=len(contexts),
+            atoms_flagged=0,
             latency_ms=round(elapsed_ms, 1),
         )
         return {"retrieval_contexts": contexts}
@@ -409,26 +393,60 @@ class RetrievalNode:
     def _run(
         self,
         atoms: list[ValidatedAtom],
-        config: ProductConfig,
+        config: "ProductConfig",
+        *,
+        batch_id: str = "",
+        redis: RedisPubSub | None = None,
     ) -> list[AssembledContext]:
+        from platform.schemas.product import ProductConfig  # noqa: PLC0415, F811
+
         embedder = self._get_embedder()
         store = self._get_store()
-        reranker = self._get_reranker()
+        reranker = self._get_reranker(config.reranker_model)
         postgres = self._get_postgres()
 
         # Batch embed (one model call for all atoms)
         atom_texts = [a.requirement_text for a in atoms]
         dense_vecs = embedder.embed_batch(atom_texts)
+        publish_step_progress(
+            batch_id, redis,
+            phase=2, step="embed", completed=1, total=3,
+        )
 
         # Batch BM25 — IDF weights are meaningful across the whole requirement set.
         # Fresh registry per invocation prevents Prometheus duplicate-counter errors
         # when the node is called multiple times in the same process (e.g. tests).
         bm25 = BM25Retriever(corpus=atom_texts, registry=CollectorRegistry())
 
-        return [
+        contexts = [
             self._retrieve_one(atom, dense_vec, bm25, store, reranker, postgres, config)
             for atom, dense_vec in zip(atoms, dense_vecs, strict=True)
         ]
+        publish_step_progress(
+            batch_id, redis,
+            phase=2, step="retrieve", completed=2, total=3,
+        )
+
+        # Warn if Qdrant returned nothing — capability KB likely not seeded
+        if all(not ctx.capabilities for ctx in contexts):
+            log.warning(
+                "retrieval_capability_kb_empty",
+                batch_id=batch_id,
+                hint="run: uv run python -m infra.scripts.seed_knowledge_base --product d365_fo",
+            )
+            publish_step_progress(
+                batch_id, redis,
+                phase=2,
+                step="warning: capability KB empty — seed Qdrant before running",
+                completed=3, total=3,
+            )
+        else:
+            publish_step_progress(
+                batch_id, redis,
+                phase=2, step="rerank", completed=3, total=3,
+            )
+
+        return contexts
 
     def _retrieve_one(
         self,
@@ -438,7 +456,7 @@ class RetrievalNode:
         store: VectorStore,
         reranker: Reranker,
         postgres: PostgresStore,
-        config: ProductConfig,
+        config: Any,
     ) -> AssembledContext:
         t0 = time.monotonic()
 

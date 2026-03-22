@@ -1,0 +1,77 @@
+Acme Corp - D365 Finance & Operations Requirements Document
+Wave 1 - Core Finance and Supply Chain
+
+REQ-001: Accounts Payable - Three-Way Matching
+The system must support automated three-way matching between purchase orders, product receipts, and vendor invoices. Quantities and prices must be validated against configurable tolerance thresholds per vendor group. Any mismatches should be flagged for AP clerk review before payment release.
+
+REQ-002: Accounts Payable - Invoice Automation via OCR
+The system shall automate vendor invoice ingestion using OCR and AI-based data extraction. Captured header and line-level data must be matched against open purchase orders and routed through configurable approval workflows to reduce manual data entry.
+
+REQ-003: Accounts Payable - Payment Proposal Generation
+The system must generate vendor payment batches based on due dates, early-pay discount windows, and cash-flow limits. Payment proposals should be filterable by vendor group, currency, and legal entity, and require controller approval before journal posting.
+
+REQ-004: Accounts Payable - Vendor Hold Management
+The system shall allow AP administrators to place vendors on payment hold, invoice hold, or all-transactions hold. Held vendors must be blocked from new PO creation, invoice posting, or payment generation until explicitly released, with full audit trail.
+
+REQ-005: Accounts Payable - ACH and Wire Electronic Payments
+The system must generate ACH (NACHA format) and wire-transfer payment files for electronic vendor disbursements. Remittance advice should be automatically emailed to vendors upon payment posting.
+
+REQ-006: Accounts Receivable - Customer Credit Limit Enforcement
+The system shall enforce customer credit limits at order entry, picking, and invoicing checkpoints. Credit limits must be configurable per customer or customer group. Orders exceeding the limit should be blocked or flagged for credit manager approval before release to fulfillment.
+
+REQ-007: Accounts Receivable - Dunning Letter Automation
+The system must generate tiered dunning letters based on configurable aging thresholds and customer classification. Letter sequences (reminder, first notice, final notice, legal) must be templated. Sending frequency, grace periods, and escalation rules should be set per dunning code.
+
+REQ-008: Accounts Receivable - Cash Application Auto-Matching
+The system shall automatically match incoming customer payments to open invoices using configurable matching rules such as exact amount, remittance reference, and customer account. Unmatched receipts must be placed in a suspense account for manual resolution.
+
+REQ-009: Accounts Receivable - Revenue Recognition (ASC 606)
+The system must implement the five-step revenue recognition model required by ASC 606 for multi-element arrangements. Performance obligations must be identified per contract, standalone selling prices allocated, and revenue deferred or recognized as obligations are satisfied.
+
+REQ-010: General Ledger - Period Close Management
+The system shall provide a structured checklist of financial period close tasks assigned to owners with due dates and dependencies. Tasks must span subledger reconciliation, journal approvals, accruals, and consolidation steps with real-time status dashboards.
+
+REQ-011: General Ledger - Financial Report Designer
+The system must allow finance teams to build income statements, balance sheets, and cash-flow reports using row definitions, column layouts, and reporting-unit trees. Reports should pull live GL data and support drill-through to transaction detail.
+
+REQ-012: General Ledger - Intercompany Accounting and Elimination
+The system shall automate intercompany journal creation and elimination during consolidation. Intercompany postings must be balanced automatically using configurable due-to and due-from accounts per legal entity pair.
+
+REQ-013: General Ledger - Budget Control with Commitments
+The system must track encumbrances from purchase requisitions and purchase orders against approved budgets at the financial dimension level. Over-budget transactions should be blocked or warned based on configurable thresholds. Budget transfer workflows must allow reallocation between dimensions.
+
+REQ-014: General Ledger - Bank Reconciliation
+The system shall match bank statement lines to GL cash transactions using configurable auto-matching rules based on amount, date, and reference. Unmatched lines must be flagged for manual review. The system should support SEPA, MT940, and BAI2 import formats.
+
+REQ-015: Inventory Management - FIFO and Weighted Average Costing
+The system must support FIFO and weighted-average inventory costing methods configured at item model group level. Inventory close and adjustment processes must settle actual-cost differences against running-average postings.
+
+REQ-016: Inventory Management - Cycle Count Planning
+The system shall generate cycle-count plans based on ABC analysis or location groups. Count journals must be issued to warehouse workers via mobile devices. Discrepancies above configurable thresholds should require supervisor approval before posting adjustments.
+
+REQ-017: Inventory Management - Batch and Lot Traceability
+The system must enable full batch traceability from vendor receipt through production and customer shipment. Batch attributes including expiry date, origin, and quality status must be captured at receipt and enforced during picking.
+
+REQ-018: Inventory Management - Quality Inspection Orders
+The system shall trigger automatic inspection sampling on receipts and production completions. Test groups must define which tests to perform and acceptable ranges. Failed quality orders should place inventory in quarantine pending disposition.
+
+REQ-019: Procurement - Purchase Order Approval Workflow
+The system must route purchase orders through configurable approval hierarchies based on amount, category, and legal entity. Escalation rules should handle non-response. Approvers must receive notifications and be able to approve from mobile devices.
+
+REQ-020: Procurement - Request for Quotation Process
+The system shall allow buyers to solicit bids from multiple vendors. Vendors must be able to submit replies via a collaboration portal. Buyer comparison worksheets should rank bids by price, lead time, and evaluation criteria. Accepted replies must convert to purchase orders.
+
+REQ-021: Procurement - Purchase Requisition with Budget Check
+The system must route purchase requisitions through approval workflows and trigger budget checks against financial dimension budgets before approval. Approved requisitions should convert to RFQs or POs based on sourcing rules.
+
+REQ-022: Project Management - Work Breakdown Structure
+The system shall include a WBS editor for decomposing project scope into tasks, subtasks, and work packages with effort, duration, and resource estimates. The WBS must drive project scheduling, resource planning, and budget roll-up.
+
+REQ-023: Project Management - Timesheet Approval
+The system must allow project team members to submit weekly timesheets against project tasks. Submitted timesheets should route to project managers for approval via configurable workflow. Approved hours must post to project cost journals.
+
+REQ-024: Project Management - Expense Report with Policy Enforcement
+The system shall capture project-related travel, meals, and miscellaneous costs with receipt attachments. Policy rules must enforce per diem limits, category restrictions, and required fields by expense type. Approved reports should be allocated to project cost.
+
+REQ-025: Project Management - Milestone-Based Billing
+The system must support fixed-price project contracts with billing milestones. When a milestone is marked complete, an invoice proposal should be automatically created for PM and finance approval.

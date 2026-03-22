@@ -12,17 +12,21 @@ State store:
 
 from __future__ import annotations
 
+import hashlib
+import json
 import os
 import uuid
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+import redis as _redis
 import structlog
 from fastapi import APIRouter, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 
 from api.models import (
+    AutoApprovedItem,
     BatchHistoryResponse,
     BatchRecord,
     BatchSummary,
@@ -44,6 +48,7 @@ log = structlog.get_logger(__name__)
 router = APIRouter(tags=["dynafit"])
 
 UPLOAD_DIR = Path(os.getenv("UPLOAD_DIR", "/tmp/dynafit_uploads"))
+REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 
 # In-memory state — replaced by PostgreSQL in Session B
 _uploads: dict[str, dict[str, Any]] = {}
@@ -52,29 +57,125 @@ _batches: dict[str, dict[str, Any]] = {}
 
 def _dispatch(batch_id: str, upload_id: str, config: dict[str, Any]) -> None:
     """Enqueue the pipeline task. Upload metadata is included so the Celery
-    worker (separate process) can reconstruct RawUpload without shared memory."""
+    worker (separate process) can reconstruct RawUpload without shared
+    memory."""
     try:
         from api.workers.tasks import run_dynafit_pipeline  # noqa: PLC0415
 
-        run_dynafit_pipeline.delay(batch_id, upload_id, config)
+        # countdown=3: browser WebSocket must subscribe before Phase 1
+        # publishes. Redis Pub/Sub has no persistence — early events lost.
+        run_dynafit_pipeline.apply_async(
+            args=[batch_id, upload_id, config], countdown=3
+        )
     except ImportError:
         log.warning("celery_not_ready", batch_id=batch_id)
 
 
-def _dispatch_resume(batch_id: str) -> None:
+def _dispatch_resume(batch_id: str, overrides: dict[str, Any]) -> None:
     """Enqueue a resume-only run for Phase 5 after HITL review completes."""
     try:
         from api.workers.tasks import run_dynafit_pipeline  # noqa: PLC0415
 
-        run_dynafit_pipeline.delay(batch_id, "", {"_resume": True})
+        run_dynafit_pipeline.delay(
+            batch_id, "", {"_resume": True, "_overrides": overrides}
+        )
     except ImportError:
         log.warning("celery_not_ready_resume", batch_id=batch_id)
+
+
+def _build_overrides(review_items: list[dict[str, Any]]) -> dict[str, Any]:
+    """Convert stored review decisions into the format Phase 5 expects.
+
+    Returns a dict keyed by atom_id:
+      - None  → human approved the AI classification (keep original)
+      - dict  → human override: {classification, rationale, consultant}
+    """
+    overrides: dict[str, Any] = {}
+    for item in review_items:
+        atom_id = item["atom_id"]
+        is_override = (
+            item.get("decision") == "OVERRIDE"
+            and item.get("override_classification")
+        )
+        if is_override:
+            reviewer = item.get("reviewer", "unknown")
+            overrides[atom_id] = {
+                "classification": item["override_classification"],
+                "rationale": f"Reviewer override by {reviewer}",
+                "consultant": item.get("reviewer"),
+            }
+        else:
+            # APPROVE or unreviewed — keep AI classification unchanged
+            overrides[atom_id] = None
+    return overrides
+
+
+def _sync_from_redis(batch: dict[str, Any], batch_id: str) -> None:
+    """Merge Celery-written state from Redis into the in-memory batch.
+
+    The Celery worker (separate OS process) writes results, review_items,
+    status, summary, report_path, and completed_at to a Redis hash keyed
+    by batch:{batch_id}.  This function merges those fields so REST routes
+    return real data without shared memory.
+
+    Scalar fields (status, summary, report_path, completed_at) are always
+    refreshed from Redis — they are authoritative from the worker.
+    List fields (results, review_items) are only loaded when empty in
+    memory, preserving any submit_review() mutations made in-process.
+    """
+    try:
+        r = _redis.from_url(REDIS_URL)
+        try:
+            raw: dict[bytes, bytes] = r.hgetall(f"batch:{batch_id}")
+        finally:
+            r.close()
+    except Exception:
+        return  # Redis unavailable — fall back to in-memory state
+
+    if not raw:
+        return
+
+    data = {k.decode(): v.decode() for k, v in raw.items()}
+
+    # Always refresh authoritative scalar fields from the worker
+    if "status" in data:
+        batch["status"] = data["status"]
+    if "report_path" in data and data["report_path"]:
+        batch["report_path"] = data["report_path"]
+    if "completed_at" in data and data["completed_at"]:
+        batch["completed_at"] = data["completed_at"]
+    if "summary" in data:
+        try:
+            batch["summary"] = json.loads(data["summary"])
+        except json.JSONDecodeError:
+            pass
+
+    # Only load lists when empty — preserves submit_review() mutations
+    if "review_items" in data and not batch.get("review_items"):
+        try:
+            batch["review_items"] = json.loads(data["review_items"])
+        except json.JSONDecodeError:
+            pass
+    if "results" in data and not batch.get("results"):
+        try:
+            batch["results"] = json.loads(data["results"])
+        except json.JSONDecodeError:
+            pass
+    if "auto_approved" in data and not batch.get("auto_approved"):
+        try:
+            batch["auto_approved"] = json.loads(data["auto_approved"])
+        except json.JSONDecodeError:
+            pass
 
 
 def _get_batch(batch_id: str) -> dict[str, Any]:
     batch = _batches.get(batch_id)
     if batch is None:
-        raise HTTPException(status_code=404, detail=f"batch_id {batch_id!r} not found")
+        raise HTTPException(
+            status_code=404,
+            detail=f"batch_id {batch_id!r} not found",
+        )
+    _sync_from_redis(batch, batch_id)
     return batch
 
 
@@ -99,8 +200,25 @@ async def upload_file(
     dest_dir.mkdir(parents=True, exist_ok=True)
 
     filename = file.filename or "upload"
-    dest_path = dest_dir / filename
     content = await file.read()
+    content_hash = hashlib.sha256(content).hexdigest()
+
+    # Return existing upload if identical content was already uploaded
+    for existing in _uploads.values():
+        if existing.get("content_hash") == content_hash:
+            log.info(
+                "upload_duplicate_detected",
+                existing_id=existing["upload_id"],
+            )
+            return UploadResponse(
+                upload_id=existing["upload_id"],
+                filename=existing["filename"],
+                size_bytes=existing["size_bytes"],
+                detected_format=existing["detected_format"].upper(),
+                status="already_exists",
+            )
+
+    dest_path = dest_dir / filename
     dest_path.write_bytes(content)
 
     try:
@@ -118,6 +236,7 @@ async def upload_file(
         "product": product,
         "country": country,
         "wave": wave,
+        "content_hash": content_hash,
     }
     log.info("upload_complete", upload_id=upload_id, fmt=result.format)
     return UploadResponse(
@@ -136,7 +255,10 @@ async def upload_file(
 @router.post("/d365_fo/dynafit/run", status_code=202)
 def run_pipeline(body: RunRequest) -> RunResponse:
     if body.upload_id not in _uploads:
-        raise HTTPException(status_code=404, detail=f"upload_id {body.upload_id!r} not found")
+        raise HTTPException(
+            status_code=404,
+            detail=f"upload_id {body.upload_id!r} not found",
+        )
 
     up = _uploads[body.upload_id]
     batch_id = f"bat_{uuid.uuid4().hex[:8]}"
@@ -166,7 +288,7 @@ def run_pipeline(body: RunRequest) -> RunResponse:
 
 
 # ---------------------------------------------------------------------------
-# 3. Batch history  (declared before /{batch_id}/... to avoid routing ambiguity)
+# 3. Batch history (declared before /{batch_id}/... to avoid routing ambiguity)
 # ---------------------------------------------------------------------------
 
 
@@ -179,6 +301,9 @@ def list_batches(
     limit: int = 10,
 ) -> BatchHistoryResponse:
     batches = list(_batches.values())
+    # Sync status/summary from Redis so batch history reflects pipeline state
+    for b in batches:
+        _sync_from_redis(b, b["batch_id"])
     if country:
         batches = [b for b in batches if b["country"] == country]
     if wave is not None:
@@ -186,7 +311,9 @@ def list_batches(
     if status:
         batches = [b for b in batches if b["status"] == status]
 
+    total = len(batches)
     start = (page - 1) * limit
+    page_batches = batches[start:start + limit]
     return BatchHistoryResponse(
         batches=[
             BatchRecord(
@@ -199,8 +326,11 @@ def list_batches(
                 created_at=b["created_at"],
                 completed_at=b.get("completed_at"),
             )
-            for b in batches[start : start + limit]
-        ]
+            for b in page_batches
+        ],
+        total=total,
+        page=page,
+        limit=limit,
     )
 
 
@@ -232,7 +362,7 @@ def get_results(
         total=len(results),
         page=page,
         limit=limit,
-        results=[ResultItem(**r) for r in results[start : start + limit]],
+        results=[ResultItem(**r) for r in results[start:start + limit]],
         summary=BatchSummary(**batch["summary"]),
     )
 
@@ -249,6 +379,9 @@ def get_review_queue(batch_id: str) -> ReviewQueueResponse:
         batch_id=batch_id,
         status=batch["status"],
         items=[ReviewItem(**i) for i in batch["review_items"]],
+        auto_approved=[
+            AutoApprovedItem(**i) for i in batch.get("auto_approved", [])
+        ],
     )
 
 
@@ -259,9 +392,14 @@ def get_review_queue(batch_id: str) -> ReviewQueueResponse:
 
 @router.post("/d365_fo/dynafit/{batch_id}/review/complete", status_code=202)
 def complete_review(batch_id: str) -> dict[str, str]:
-    _get_batch(batch_id)  # 404 if unknown
-    _dispatch_resume(batch_id)
-    log.info("review_complete_dispatched", batch_id=batch_id)
+    batch = _get_batch(batch_id)
+    overrides = _build_overrides(batch["review_items"])
+    _dispatch_resume(batch_id, overrides)
+    log.info(
+        "review_complete_dispatched",
+        batch_id=batch_id,
+        override_count=len(overrides),
+    )
     return {"batch_id": batch_id, "status": "resumed"}
 
 
@@ -281,20 +419,34 @@ def submit_review(
 
     item = next((i for i in items if i["atom_id"] == atom_id), None)
     if item is None:
-        raise HTTPException(status_code=404, detail=f"atom_id {atom_id!r} not in review queue")
+        raise HTTPException(
+            status_code=404,
+            detail=f"atom_id {atom_id!r} not in review queue",
+        )
     if body.decision == "OVERRIDE" and not body.override_classification:
-        raise HTTPException(status_code=422, detail="override_classification required for OVERRIDE")
+        raise HTTPException(
+            status_code=422,
+            detail="override_classification required for OVERRIDE",
+        )
 
     item["reviewed"] = True
     item["decision"] = body.decision
     item["reviewer"] = body.reviewer
+    item["override_classification"] = body.override_classification
 
     final = (
-        body.override_classification if body.decision == "OVERRIDE" else item["ai_classification"]
+        body.override_classification
+        if body.decision == "OVERRIDE"
+        else item["ai_classification"]
     )
     remaining = sum(1 for i in items if not i.get("reviewed", False))
 
-    log.info("review_submitted", batch_id=batch_id, atom_id=atom_id, decision=body.decision)
+    log.info(
+        "review_submitted",
+        batch_id=batch_id,
+        atom_id=atom_id,
+        decision=body.decision,
+    )
     return ReviewDecisionResponse(
         atom_id=atom_id,
         final_classification=final,
@@ -316,6 +468,6 @@ def download_report(batch_id: str) -> FileResponse:
         raise HTTPException(status_code=404, detail="Report not yet generated")
     return FileResponse(
         path=report_path,
-        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        filename=f"fitment_matrix_{batch_id}.xlsx",
+        media_type="application/zip",
+        filename=f"fdd_report_{batch_id}.zip",
     )

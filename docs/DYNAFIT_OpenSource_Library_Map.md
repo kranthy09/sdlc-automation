@@ -127,7 +127,7 @@ extraction_graph.add_edge("tag", END)
 
 | Sub-component | Library | Why |
 |---------------|---------|-----|
-| **Embedding generation** | **sentence-transformers** (`all-MiniLM-L6-v2` or `bge-large-en-v1.5`) | Generates 384/1024-dim vectors for deduplication similarity checks. Runs locally, no API calls, ~100ms per embedding |
+| **Embedding generation** | **fastembed** (`BAAI/bge-small-en-v1.5`) | Generates 384-dim vectors for deduplication similarity checks. Uses ONNX Runtime — no PyTorch dependency (~50 MB vs ~500 MB). Runs fully local, no API calls |
 | **Deduplication similarity** | **FAISS** (Facebook) | In-memory cosine similarity at batch scale. For 5,000 requirements, pairwise comparison completes in <1s on CPU. FAISS is a library (not a DB) — perfect here because we need fast transient similarity, not persistent storage |
 | **Fuzzy string matching** | **RapidFuzz** | Levenshtein distance + token sort ratio for header mapping (column name → canonical field). 10x faster than python-Levenshtein |
 | **Synonym dictionary** | **Custom YAML + spaCy EntityRuler** | D365-specific synonym map (supplier→vendor, stock→inventory) loaded as spaCy patterns. EntityRuler applies replacements in-context, respecting module tags for disambiguation |
@@ -154,7 +154,7 @@ This is the most infrastructure-heavy phase — it maintains three knowledge bas
 
 | Knowledge base | Content | Storage | Indexing | Update frequency |
 |---------------|---------|---------|---------|-----------------|
-| **D365 capability KB** | Standard D365 F&O feature descriptions (~5,000 capabilities across all modules) | **Qdrant** | Embedding vectors (bge-large-en-v1.5) + BM25 sparse vectors | Quarterly (aligned with D365 release waves) |
+| **D365 capability KB** | Standard D365 F&O feature descriptions (~5,000 capabilities across all modules) | **Qdrant** | Embedding vectors (bge-small-en-v1.5) + BM25 sparse vectors | Quarterly (aligned with D365 release waves) |
 | **MS Learn corpus** | Microsoft documentation, task guides, configuration guides | **Qdrant** | Same hybrid index | Monthly (scraped via Docling + scheduled crawler) |
 | **Historical fitments** | All prior wave fitment decisions with rationale | **PostgreSQL** + **pgvector** | Structured queries + vector similarity | Real-time (every human-approved fitment writes back) |
 
@@ -164,9 +164,9 @@ This is the most infrastructure-heavy phase — it maintains three knowledge bas
 |---------------|---------|-----|
 | **Vector database** | **Qdrant** (Rust-based, open-source) | Production-grade: HNSW indexing, rich payload filtering (filter by module, country, wave), real-time updates, REST/gRPC API, native Python client. Handles the D365 KB + MS Learn corpus (~50K documents, ~500K chunks). Payload filtering is critical — when retrieving for an AP requirement, we filter `module=accounts_payable` BEFORE vector similarity, dramatically reducing search space |
 | **Sparse retrieval (BM25)** | **Qdrant sparse vectors** or **rank_bm25** | Hybrid search: BM25 catches exact D365 terminology ("VendInvoiceInfoTable") that embedding models might miss. Qdrant natively supports sparse vectors alongside dense vectors in the same collection |
-| **Embedding model** | **sentence-transformers** (`BAAI/bge-large-en-v1.5`) | 1024-dim, state-of-the-art on MTEB retrieval benchmarks. Runs locally on GPU. For enterprise air-gapped deployments, this avoids API-based embedding services |
+| **Embedding model** | **fastembed** (`BAAI/bge-small-en-v1.5`) | 384-dim, strong MTEB retrieval benchmarks. ONNX Runtime backend — no PyTorch (~50 MB install). Runs fully local; supports air-gapped enterprise deployments |
 | **Hybrid retrieval** | **LangChain EnsembleRetriever** | Combines Qdrant dense retrieval + BM25 sparse retrieval with reciprocal rank fusion (RRF). Configurable weight: `dense_weight=0.7, sparse_weight=0.3` |
-| **Reranker** | **sentence-transformers CrossEncoder** (`cross-encoder/ms-marco-MiniLM-L-12-v2`) | After hybrid retrieval returns top-20 candidates, the cross-encoder reranks them for the final top-5. Cross-encoders are 10x more accurate than bi-encoders for reranking but too slow for initial retrieval |
+| **Reranker** | **fastembed TextCrossEncoder** (`Xenova/ms-marco-MiniLM-L-6-v2`) | After hybrid retrieval returns top-20 candidates, the cross-encoder reranks them for the final top-5. ONNX Runtime backend — same model accuracy with no PyTorch dependency |
 | **Historical fitment DB** | **PostgreSQL + pgvector** | Structured storage for fitment records (queryable by wave, country, module, classification) with vector similarity for "find similar requirements from prior waves". pgvector keeps everything in one DB — no separate vector store needed for this smaller dataset |
 | **Document ingestion pipeline** | **Docling + LangChain DoclingLoader** | MS Learn pages and D365 docs are periodically crawled, converted via Docling, chunked via `HybridChunker`, embedded, and upserted into Qdrant |
 | **Web scraping** (for MS Learn updates) | **Scrapy** (BSD-3) | Scheduled scraping of learn.microsoft.com for D365 documentation updates. Scrapy handles both static HTML and can integrate middleware for JS-rendered pages. Fully open-source, no SaaS dependency |
@@ -176,7 +176,7 @@ This is the most infrastructure-heavy phase — it maintains three knowledge bas
 ```
 Normalized requirement atom
     │
-    ├─ Generate embedding (bge-large-en-v1.5)
+    ├─ Generate embedding (bge-small-en-v1.5)
     │
     ├─ Qdrant hybrid search (dense + BM25 sparse)
     │   ├─ Filter: module = atom.module_primary
@@ -203,7 +203,7 @@ Normalized requirement atom
 
 | Sub-component | Library | Why |
 |---------------|---------|-----|
-| **Embedding similarity** | **sentence-transformers** (same model as Phase 2) | Cosine similarity between requirement embedding and each retrieved capability embedding. Consistent model ensures comparable scores |
+| **Embedding similarity** | **fastembed** (same model as Phase 2) | Cosine similarity between requirement embedding and each retrieved capability embedding. Consistent model ensures comparable scores |
 | **Confidence scoring** | **Custom Python** (numpy) | Threshold engine: `>0.85 + historical precedent = HIGH`, `0.6–0.85 = MEDIUM (needs LLM)`, `<0.6 = LOW (likely GAP)`. numpy for fast vectorized computation |
 | **Candidate ranking** | **scikit-learn** | When multiple D365 features match, rank by: (1) cosine similarity, (2) historical fit rate, (3) module specificity. Uses `sklearn.preprocessing.normalize` + weighted scoring |
 | **Feature extraction** | **spaCy** | Extract key entities from both requirement and capability text for structured comparison (e.g., "tolerance percentage" vs "matching tolerance") |
@@ -296,7 +296,7 @@ python-magic>=0.4.27
 
 # NLP
 spacy>=3.8.0
-sentence-transformers>=3.0.0
+fastembed>=0.3            # ONNX Runtime embedder + cross-encoder (replaces sentence-transformers)
 tiktoken>=0.7.0
 rapidfuzz>=3.9.0
 lingua-py>=2.0.0         # language detection
@@ -431,7 +431,8 @@ Adding a new approved format (e.g., if PPTX is later approved):
 | Document parsing | Docling (primary) + Unstructured (fallback) | PyPDF, Marker, MinerU | Docling: MIT license, best table extraction (TableFormer), native LangChain integration, fully local. Unstructured: fallback for Docling edge-case failures on PDF/DOCX |
 | Input formats | PDF, DOCX, TXT only | xlsx, csv, pptx, email | Docling handles tables natively in these three formats. Excel-specific parsing (merged cells, multi-row headers) was complexity with no additional real-world coverage. Decision in `docs/lessons.md` |
 | Vector DB | Qdrant (primary) + pgvector (historical) | Milvus, Chroma, FAISS-only | Qdrant: payload filtering (filter by module before similarity), real-time updates, production-grade. pgvector: keeps historical fitments in the same PostgreSQL as the audit trail — no extra infrastructure |
-| Embedding model | bge-large-en-v1.5 (local) | OpenAI ada-002, Cohere | Runs fully local (air-gapped enterprise), top-5 on MTEB retrieval, 1024 dimensions for high-fidelity matching |
+| Embedding model | bge-small-en-v1.5 (local) | OpenAI ada-002, Cohere | Runs fully local (air-gapped enterprise), strong MTEB retrieval, 384 dimensions — fast inference, small footprint |
+| Embedding library | fastembed (ONNX Runtime) | sentence-transformers (PyTorch) | fastembed: ~50 MB install vs ~500 MB PyTorch. Same model weights (ONNX-converted). Cuts Docker build from 400s+ to ~60s |
 | LLM | Configurable (Claude / GPT-4 / Llama 3.1) | Single-vendor lock-in | LangChain abstraction lets you swap. Classification accuracy testing per model ensures you always use the best available |
 | LLM observability | Langfuse (MIT, self-hosted) | LangSmith (commercial SaaS) | Langfuse is fully open-source (MIT), self-hosted via Docker, zero data egress. LangSmith is BSL-licensed and requires commercial agreement for self-hosting. |
 | Web scraping | Scrapy (BSD-3) | Firecrawl (SaaS) | Scrapy is fully open-source, battle-tested for large-scale crawls, no API key or account required |

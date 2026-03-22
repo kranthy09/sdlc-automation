@@ -49,7 +49,7 @@ from platform.testing.factories import (
 # ---------------------------------------------------------------------------
 
 
-def _make_unit_embedder(dim: int = 1024) -> Embedder:
+def _make_unit_embedder(dim: int = 384) -> Embedder:
     """Embedder that returns identical unit vectors → embedding_cosine = 1.0."""
     mock_model = MagicMock()
     unit = np.ones(dim, dtype=np.float32) / np.sqrt(dim)

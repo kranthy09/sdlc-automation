@@ -30,9 +30,9 @@ Import boundaries are enforced by CI on every PR — violations block merges.
 | Orchestration | LangGraph (state machine, checkpointing, HITL) |
 | LLM | Claude Sonnet (Anthropic) |
 | Schemas | Pydantic v2 |
-| Vector DB | Qdrant + bge-large-en-v1.5 embeddings |
+| Vector DB | Qdrant + bge-small-en-v1.5 embeddings |
 | Sparse retrieval | rank_bm25 |
-| Reranker | cross-encoder/ms-marco-MiniLM |
+| Reranker | Xenova/ms-marco-MiniLM (fastembed) |
 | Storage | PostgreSQL + pgvector, Redis |
 | Document parsing | Docling (primary), Unstructured (fallback) — PDF, DOCX, TXT |
 | API | FastAPI + Celery + WebSocket |

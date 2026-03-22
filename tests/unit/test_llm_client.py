@@ -39,7 +39,7 @@ _PRODUCT = ProductConfig(
     product_id="test",
     display_name="Test Product",
     llm_model="claude-sonnet-4-6",
-    embedding_model="BAAI/bge-large-en-v1.5",
+    embedding_model="BAAI/bge-small-en-v1.5",
     capability_kb_namespace="test_caps",
     doc_corpus_namespace="test_docs",
     historical_fitments_table="test_fitments",
@@ -75,6 +75,7 @@ def _make_client(
 
     mock_settings = MagicMock()
     mock_settings.anthropic_api_key.get_secret_value.return_value = "sk-test"
+    mock_settings.langfuse_public_key = ""  # disable Langfuse in standard unit tests
 
     monkeypatch.setattr(module, "get_settings", lambda: mock_settings)
 
@@ -230,3 +231,80 @@ def test_cost_counter_emitted_on_success(monkeypatch: pytest.MonkeyPatch) -> Non
 
     assert in_cost == pytest.approx(100 * 3.0 / 1_000_000)
     assert out_cost == pytest.approx(40 * 15.0 / 1_000_000)
+
+
+# ---------------------------------------------------------------------------
+# Langfuse generation emit
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+def test_langfuse_generation_emitted_on_success(monkeypatch: pytest.MonkeyPatch) -> None:
+    """langfuse.generation() is called once with model, input, output, and usage."""
+    import platform.llm.client as module
+
+    mock_api = MagicMock()
+    mock_api.messages.create.return_value = _make_tool_response("FIT", 0.92)
+
+    mock_langfuse_instance = MagicMock()
+    mock_langfuse_cls = MagicMock(return_value=mock_langfuse_instance)
+
+    mock_settings = MagicMock()
+    mock_settings.anthropic_api_key.get_secret_value.return_value = "sk-test"
+    mock_settings.langfuse_public_key = "pk-test"
+    mock_settings.langfuse_secret_key.get_secret_value.return_value = "sk-lf-test"
+    mock_settings.langfuse_base_url = "https://cloud.langfuse.com"
+
+    monkeypatch.setattr(module, "get_settings", lambda: mock_settings)
+    monkeypatch.setattr(module, "Langfuse", mock_langfuse_cls)
+
+    with patch.object(module.anthropic, "Anthropic", return_value=mock_api):
+        from platform.llm.client import LLMClient
+
+        client = LLMClient(registry=CollectorRegistry())
+
+    client.complete("classify this", _ClassifyOutput, _PRODUCT)
+
+    mock_langfuse_instance.generation.assert_called_once()
+    call_kwargs = mock_langfuse_instance.generation.call_args.kwargs
+    assert call_kwargs["model"] == _PRODUCT.llm_model
+    assert call_kwargs["input"] == [{"role": "user", "content": "classify this"}]
+    assert call_kwargs["usage"]["input"] == 100
+    assert call_kwargs["usage"]["output"] == 40
+
+
+@pytest.mark.unit
+def test_langfuse_generation_not_called_on_failure(monkeypatch: pytest.MonkeyPatch) -> None:
+    """langfuse.generation() is NOT called when the LLM call raises LLMError."""
+    import platform.llm.client as module
+
+    mock_api = MagicMock()
+    mock_api.messages.create.side_effect = anthropic.AuthenticationError(
+        message="invalid key",
+        response=MagicMock(status_code=401, headers={}),
+        body={},
+    )
+
+    mock_langfuse_instance = MagicMock()
+    mock_langfuse_cls = MagicMock(return_value=mock_langfuse_instance)
+
+    mock_settings = MagicMock()
+    mock_settings.anthropic_api_key.get_secret_value.return_value = "sk-test"
+    mock_settings.langfuse_public_key = "pk-test"
+    mock_settings.langfuse_secret_key.get_secret_value.return_value = "sk-lf-test"
+    mock_settings.langfuse_base_url = "https://cloud.langfuse.com"
+
+    monkeypatch.setattr(module, "get_settings", lambda: mock_settings)
+    monkeypatch.setattr(module, "Langfuse", mock_langfuse_cls)
+
+    with patch.object(module.anthropic, "Anthropic", return_value=mock_api):
+        from platform.llm.client import LLMClient
+
+        client = LLMClient(registry=CollectorRegistry())
+
+    from platform.llm.client import LLMError
+
+    with pytest.raises(LLMError):
+        client.complete("classify this", _ClassifyOutput, _PRODUCT)
+
+    mock_langfuse_instance.generation.assert_not_called()

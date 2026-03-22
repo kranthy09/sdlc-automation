@@ -33,12 +33,17 @@ from prometheus_client import CollectorRegistry
 from pydantic import TypeAdapter
 
 from platform.observability.logger import get_logger
-from platform.observability.metrics import MetricsRecorder
+from platform.observability.metrics import (
+    MetricsRecorder,
+    record_call as _default_record_call,
+)
 from platform.schemas.events import (
     ClassificationEvent,
     CompleteEvent,
     ErrorEvent,
+    PhaseCompleteEvent,
     PhaseStartEvent,
+    ReviewRequiredEvent,
     StepProgressEvent,
 )
 
@@ -49,14 +54,26 @@ log = get_logger(__name__)
 # ---------------------------------------------------------------------------
 
 type _AnyEvent = (
-    PhaseStartEvent | StepProgressEvent | ClassificationEvent | CompleteEvent | ErrorEvent
+    PhaseStartEvent
+    | StepProgressEvent
+    | ClassificationEvent
+    | PhaseCompleteEvent
+    | CompleteEvent
+    | ErrorEvent
+    | ReviewRequiredEvent
 )
 
 _adapter: TypeAdapter[Any] = TypeAdapter(
-    PhaseStartEvent | StepProgressEvent | ClassificationEvent | CompleteEvent | ErrorEvent
+    PhaseStartEvent
+    | StepProgressEvent
+    | ClassificationEvent
+    | PhaseCompleteEvent
+    | CompleteEvent
+    | ErrorEvent
+    | ReviewRequiredEvent
 )
 
-_TERMINAL = (CompleteEvent, ErrorEvent)
+_TERMINAL = (CompleteEvent, ErrorEvent, ReviewRequiredEvent)
 
 
 # ---------------------------------------------------------------------------
@@ -94,7 +111,11 @@ class RedisPubSub:
         _client: Any = None,
     ) -> None:
         self._url = url
-        self._recorder = MetricsRecorder(registry)
+        self._record_call = (
+            MetricsRecorder(registry).record_call
+            if registry is not None
+            else _default_record_call
+        )
         self._client: Any = _client
 
     # ------------------------------------------------------------------
@@ -128,7 +149,7 @@ class RedisPubSub:
         payload = event.model_dump_json()
         client = self._get_client()
         try:
-            with self._recorder.record_call("redis", "publish"):
+            with self._record_call("redis", "publish"):
                 await client.publish(channel, payload)
             log.debug("redis_published", channel=channel, event_type=event.event)
         except RedisError:
@@ -153,7 +174,7 @@ class RedisPubSub:
         client = self._get_client()
         pubsub = client.pubsub()
         try:
-            with self._recorder.record_call("redis", "subscribe"):
+            with self._record_call("redis", "subscribe"):
                 await pubsub.subscribe(channel)
             log.info("redis_subscribed", channel=channel)
 
@@ -173,6 +194,9 @@ class RedisPubSub:
         except Exception as exc:
             raise RedisError(f"subscribe({batch_id!r}) failed: {exc}", cause=exc) from exc
         finally:
-            await pubsub.unsubscribe(channel)
-            await pubsub.aclose()
+            try:
+                await pubsub.unsubscribe(channel)
+                await pubsub.aclose()
+            except Exception:
+                pass
             log.info("redis_unsubscribed", channel=channel)

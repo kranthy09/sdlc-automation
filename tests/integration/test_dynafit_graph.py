@@ -76,12 +76,31 @@ def test_stub_run_pauses_before_validate() -> None:
 
 
 @pytest.mark.unit
-def test_stub_resume_completes_phase5() -> None:
-    """Resuming after HITL pause runs Phase 5 stub and sets validated_batch."""
+def test_stub_resume_completes_phase5(monkeypatch, tmp_path) -> None:
+    """Resuming after HITL pause runs Phase 5 and produces a ValidatedFitmentBatch."""
+    import modules.dynafit.nodes.phase5_validation as phase5_mod
     from langgraph.checkpoint.memory import MemorySaver
 
     from modules.dynafit.graph import build_dynafit_graph
-    from platform.testing.factories import make_raw_upload
+    from modules.dynafit.nodes.phase5_validation import ValidationNode
+    from platform.schemas.fitment import ValidatedFitmentBatch
+    from platform.testing.factories import (
+        make_embedder,
+        make_postgres_store,
+        make_raw_upload,
+        make_redis_pub_sub,
+    )
+
+    monkeypatch.setattr(
+        phase5_mod,
+        "_node",
+        ValidationNode(
+            postgres=make_postgres_store(),
+            redis=make_redis_pub_sub(),
+            embedder=make_embedder(),
+            report_dir=str(tmp_path),
+        ),
+    )
 
     checkpointer = MemorySaver()
     graph = build_dynafit_graph(checkpointer=checkpointer)
@@ -95,12 +114,12 @@ def test_stub_resume_completes_phase5() -> None:
     # First invoke — runs phases 1-4, pauses before validate
     graph.invoke(initial, config)
 
-    # Resume — passes None to continue from checkpoint; runs Phase 5 stub
+    # Resume — passes None to continue from checkpoint; runs Phase 5
     final_state = graph.invoke(None, config)
 
-    # Phase 5 stub sets validated_batch=None (real impl builds ValidatedFitmentBatch)
-    assert "validated_batch" in final_state
-    assert final_state["validated_batch"] is None
+    # Phase 5 builds ValidatedFitmentBatch (stub phases produce zero atoms)
+    assert isinstance(final_state["validated_batch"], ValidatedFitmentBatch)
+    assert final_state["validated_batch"].total_atoms == 0
 
 
 @pytest.mark.unit

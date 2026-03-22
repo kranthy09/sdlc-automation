@@ -17,6 +17,8 @@ dependencies = [
     "asyncpg>=0.29",
     "redis>=5.0",
     "psycopg2-binary>=2.9",
+    "psycopg[binary]>=3.1",
+    "langgraph-checkpoint-postgres>=2.0",
     # API / workers
     "fastapi>=0.110",
     "uvicorn[standard]>=0.27",
@@ -40,24 +42,19 @@ dependencies = [
 [project.optional-dependencies]
 # Heavy ML/parsing stack — installed from Layer 2 onward (make setup installs this)
 ml = [
-    # Document parsing
-    "docling>=2.0",
+    # Document parsing (text-only — no ML models, no OCR)
+    "pypdf>=4.0",
+    "python-docx>=1.1",
     "python-magic>=0.4",
-    "unstructured[all-docs]>=0.13",
 
     # NLP
     "spacy>=3.7",
     "rapidfuzz>=3.6",
 
-    # Translation (offline ML models)
-    "argostranslate>=1.9",
-
-    # Vector / retrieval (sentence-transformers pulls torch ~500 MB)
+    # Vector / retrieval (fastembed uses ONNX Runtime ~50 MB — no PyTorch)
     "qdrant-client>=1.8",
-    "sentence-transformers>=3.0",
+    "fastembed>=0.3",
     "rank-bm25>=0.2",
-    "faiss-cpu>=1.8",
-    "datasketch>=1.6",
 ]
 
 # Dev tooling only — what CI installs for Layer 0/1
@@ -136,16 +133,11 @@ exclude = [
 [[tool.mypy.overrides]]
 module = [
     "qdrant_client.*",
-    "sentence_transformers.*",
+    "fastembed.*",
     "rank_bm25.*",
-    "faiss.*",
-    "datasketch.*",
-    "docling.*",
-    "unstructured.*",
     "magic.*",
     "spacy.*",
     "rapidfuzz.*",
-    "argostranslate.*",
     "celery.*",
     "networkx.*",
     "langfuse.*",
@@ -154,18 +146,6 @@ module = [
     "langgraph.*",
 ]
 ignore_missing_imports = true
-
-# docling_core ships partial stubs that don't re-export all symbols via __all__
-# (e.g. DocItemLabel in docling_core.types.doc).  The [attr-defined] false
-# positive originates at the call site in docling_parser.py, so we suppress it
-# there rather than globally.
-[[tool.mypy.overrides]]
-module = ["docling_core.*"]
-ignore_errors = true
-
-[[tool.mypy.overrides]]
-module = ["platform.parsers.docling_parser"]
-disable_error_code = ["attr-defined"]
 
 # ---------------------------------------------------------------------------
 # coverage

@@ -1,79 +1,101 @@
 """
-TDD — platform/parsers/docling_parser.py
+TDD — platform/parsers/docling_parser.py  (pypdf + python-docx backend)
 
-Tests cover the six behaviours that matter:
-  - Tables   → extract() converts table rows to list[dict[str, str]].
-  - Prose    → extract() groups text items into ProseChunks with section label.
-  - Empty    → empty doc (no tables, no texts) returns empty ParseResult.
-  - Error    → DocumentConverter failure is wrapped in ParseError.
+Behaviours under test:
+  - TXT   → prose chunks produced; text content preserved.
+  - DOCX  → Heading style becomes section label; body paragraph is prose.
+  - PDF   → text extracted per page; content appears in prose chunks.
+  - Empty → empty TXT produces empty ParseResult (tables=[], prose=[]).
+  - Error → unreadable file raises ParseError.
+  - tables field → always [] (text-only extraction).
   - ok metric  → platform_external_calls_total{status="ok"} increments.
   - err metric → platform_external_calls_total{status="error"} increments.
 
-All tests inject _converter via the DoclingParser constructor — no real Docling
-calls, no file system dependencies beyond a tmp_path sentinel file.
+No mocked converters — tests write real minimal files to tmp_path.
 """
 
 from __future__ import annotations
 
+import io
+import zipfile
 from pathlib import Path
-from unittest.mock import MagicMock
 
 import pytest
 from prometheus_client import CollectorRegistry
 
+
 # ---------------------------------------------------------------------------
-# Helpers
+# File builders
 # ---------------------------------------------------------------------------
 
 
-def _make_mock_doc(
-    *,
-    table_dfs: list[list[dict[str, str]]] | None = None,
-    text_items: list[tuple[object, str, int]] | None = None,
-) -> MagicMock:
-    """Build a MagicMock docling document with controllable tables and texts."""
-    doc = MagicMock()
-
-    # Tables — each entry in table_dfs becomes one TableItem mock.
-    # We build a minimal DataFrame-like mock: the production code only calls
-    # .empty and .iterrows(), so no real pandas dependency is needed.
-    mock_tables: list[MagicMock] = []
-    for rows in table_dfs or []:
-        t = MagicMock()
-        df = MagicMock()
-        df.empty = len(rows) == 0
-        mock_rows = []
-        for row in rows:
-            mock_row = MagicMock()
-            mock_row.items.return_value = list(row.items())
-            mock_rows.append(mock_row)
-        df.iterrows.return_value = iter(enumerate(mock_rows))
-        t.export_to_dataframe.return_value = df
-        mock_tables.append(t)
-    doc.tables = mock_tables
-
-    # Texts — each tuple is (DocItemLabel, text_str, page_no)
-    mock_texts: list[MagicMock] = []
-    for label, text, page in text_items or []:
-        ti = MagicMock()
-        ti.label = label
-        ti.text = text
-        prov = MagicMock()
-        prov.page_no = page
-        ti.prov = [prov]
-        mock_texts.append(ti)
-    doc.texts = mock_texts
-
-    return doc
+def _write_txt(tmp_path: Path, text: str, name: str = "reqs.txt") -> Path:
+    p = tmp_path / name
+    p.write_text(text, encoding="utf-8")
+    return p
 
 
-def _make_converter(doc: MagicMock) -> MagicMock:
-    """Wrap a mock document in a mock DocumentConverter."""
-    result = MagicMock()
-    result.document = doc
-    converter = MagicMock()
-    converter.convert.return_value = result
-    return converter
+def _write_docx(tmp_path: Path, heading: str, body: str, name: str = "reqs.docx") -> Path:
+    """Create a real DOCX with one heading and one body paragraph."""
+    from docx import Document
+
+    buf = io.BytesIO()
+    doc = Document()
+    doc.add_heading(heading, level=1)
+    doc.add_paragraph(body)
+    doc.save(buf)
+    p = tmp_path / name
+    p.write_bytes(buf.getvalue())
+    return p
+
+
+def _write_pdf(tmp_path: Path, text: str, name: str = "reqs.pdf") -> Path:
+    """Create a minimal valid PDF with embedded text (no OCR needed)."""
+    safe = text.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
+    stream = f"BT /F1 12 Tf 72 720 Td ({safe}) Tj ET\n".encode("latin-1")
+
+    header = b"%PDF-1.4\n"
+    obj1 = b"1 0 obj\n<</Type /Catalog /Pages 2 0 R>>\nendobj\n"
+    obj2 = b"2 0 obj\n<</Type /Pages /Kids [3 0 R] /Count 1>>\nendobj\n"
+    obj3 = (
+        b"3 0 obj\n<</Type /Page /Parent 2 0 R /MediaBox [0 0 612 792]"
+        b" /Contents 4 0 R /Resources <</Font <</F1 5 0 R>>>>>>\nendobj\n"
+    )
+    obj4 = (
+        b"4 0 obj\n<</Length "
+        + str(len(stream)).encode()
+        + b">>\nstream\n"
+        + stream
+        + b"endstream\nendobj\n"
+    )
+    obj5 = b"5 0 obj\n<</Type /Font /Subtype /Type1 /BaseFont /Helvetica>>\nendobj\n"
+
+    body = header + obj1 + obj2 + obj3 + obj4 + obj5
+    o1 = len(header)
+    o2 = o1 + len(obj1)
+    o3 = o2 + len(obj2)
+    o4 = o3 + len(obj3)
+    o5 = o4 + len(obj4)
+    xref_pos = len(body)
+
+    xref = (
+        b"xref\n0 6\n"
+        b"0000000000 65535 f\r\n"
+        + f"{o1:010d} 00000 n\r\n".encode()
+        + f"{o2:010d} 00000 n\r\n".encode()
+        + f"{o3:010d} 00000 n\r\n".encode()
+        + f"{o4:010d} 00000 n\r\n".encode()
+        + f"{o5:010d} 00000 n\r\n".encode()
+    )
+    trailer = (
+        b"trailer\n<</Size 6 /Root 1 0 R>>\nstartxref\n"
+        + str(xref_pos).encode()
+        + b"\n%%EOF\n"
+    )
+
+    p = tmp_path / name
+    p.write_bytes(body + xref + trailer)
+    return p
 
 
 def _counter(registry: CollectorRegistry, labels: dict[str, str]) -> float:
@@ -87,62 +109,118 @@ def _counter(registry: CollectorRegistry, labels: dict[str, str]) -> float:
 
 
 # ---------------------------------------------------------------------------
-# Table extraction
+# TXT parsing
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
-def test_parse_extracts_table_rows_as_dicts(tmp_path: Path) -> None:
-    """Table rows are returned as list[dict[str, str]] with original column names."""
+def test_parse_txt_extracts_prose_chunks(tmp_path: Path) -> None:
+    """Plain-text requirement is returned as a ProseChunk with the correct text."""
     from platform.parsers.docling_parser import DoclingParser
 
-    rows = [
-        {"Req ID": "REQ-001", "Description": "Three-way matching", "Module": "AP"},
-        {"Req ID": "REQ-002", "Description": "Automated payment proposals", "Module": "AP"},
-    ]
-    doc = _make_mock_doc(table_dfs=[rows])
-    registry = CollectorRegistry()
-    parser = DoclingParser(registry=registry, _converter=_make_converter(doc))
+    req = "The system must validate three-way matching for vendor invoices."
+    path = _write_txt(tmp_path, req)
 
-    sentinel = tmp_path / "reqs.pdf"
-    sentinel.write_bytes(b"%PDF-1.4")
-    result = parser.parse(sentinel)
+    result = DoclingParser().parse(path)
 
-    assert len(result.tables) == 2
-    assert result.tables[0]["Req ID"] == "REQ-001"
-    assert result.tables[1]["Description"] == "Automated payment proposals"
+    assert result.tables == []
+    assert len(result.prose) >= 1
+    full_text = " ".join(c.text for c in result.prose)
+    assert "three-way matching" in full_text
+
+
+@pytest.mark.unit
+def test_parse_txt_multi_paragraph_produces_multiple_chunks(tmp_path: Path) -> None:
+    """Double-newline separated paragraphs each become candidate chunk content."""
+    from platform.parsers.docling_parser import DoclingParser
+
+    content = (
+        "The system must validate vendor invoices against purchase orders.\n\n"
+        "The system shall calculate tax amounts per invoice automatically.\n\n"
+        "The system must approve payments within the configured tolerance."
+    )
+    path = _write_txt(tmp_path, content)
+    result = DoclingParser().parse(path)
+
+    full_text = " ".join(c.text for c in result.prose)
+    assert "vendor invoices" in full_text
+    assert "tax amounts" in full_text
+    assert "tolerance" in full_text
 
 
 # ---------------------------------------------------------------------------
-# Prose extraction
+# DOCX parsing
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
-def test_parse_extracts_prose_chunks_with_section(tmp_path: Path) -> None:
-    """Prose items are grouped under their section heading."""
-    from docling_core.types.doc import DocItemLabel
-
+def test_parse_docx_heading_becomes_section(tmp_path: Path) -> None:
+    """A DOCX Heading 1 paragraph sets the section label on subsequent chunks."""
     from platform.parsers.docling_parser import DoclingParser
 
-    text_items = [
-        (DocItemLabel.SECTION_HEADER, "Accounts Payable", 1),
-        (DocItemLabel.PARAGRAPH, "System must support three-way matching.", 1),
-        (DocItemLabel.TEXT, "Automated payment proposals are required.", 2),
-    ]
-    doc = _make_mock_doc(text_items=text_items)
-    registry = CollectorRegistry()
-    parser = DoclingParser(registry=registry, _converter=_make_converter(doc))
+    path = _write_docx(
+        tmp_path,
+        heading="Accounts Payable",
+        body="The system must support three-way matching.",
+    )
+    result = DoclingParser().parse(path)
 
-    sentinel = tmp_path / "reqs.docx"
-    sentinel.write_bytes(b"PK\x03\x04")
-    result = parser.parse(sentinel)
-
+    assert result.tables == []
     assert len(result.prose) >= 1
     chunk = result.prose[0]
     assert chunk.section == "Accounts Payable"
     assert "three-way matching" in chunk.text
     assert chunk.has_overlap is False
+
+
+@pytest.mark.unit
+def test_parse_docx_no_heading_section_is_empty(tmp_path: Path) -> None:
+    """Body-only DOCX (no heading paragraph) produces section='' on chunks."""
+    from docx import Document
+
+    buf = io.BytesIO()
+    doc = Document()
+    doc.add_paragraph("The system must validate payment tolerance thresholds.")
+    doc.save(buf)
+    p = tmp_path / "reqs.docx"
+    p.write_bytes(buf.getvalue())
+
+    from platform.parsers.docling_parser import DoclingParser
+
+    result = DoclingParser().parse(p)
+
+    assert len(result.prose) >= 1
+    assert result.prose[0].section == ""
+
+
+# ---------------------------------------------------------------------------
+# PDF parsing
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+def test_parse_pdf_extracts_embedded_text(tmp_path: Path) -> None:
+    """Embedded text in a minimal PDF appears in prose chunks."""
+    from platform.parsers.docling_parser import DoclingParser
+
+    path = _write_pdf(tmp_path, "System must validate invoice matching.")
+    result = DoclingParser().parse(path)
+
+    assert result.tables == []
+    assert len(result.prose) >= 1
+    full_text = " ".join(c.text for c in result.prose)
+    assert "invoice" in full_text.lower()
+
+
+@pytest.mark.unit
+def test_parse_pdf_chunk_page_number_is_1_based(tmp_path: Path) -> None:
+    """Chunks from a single-page PDF carry page=1."""
+    from platform.parsers.docling_parser import DoclingParser
+
+    path = _write_pdf(tmp_path, "The system shall post journal entries to the ledger.")
+    result = DoclingParser().parse(path)
+
+    assert all(c.page >= 1 for c in result.prose)
 
 
 # ---------------------------------------------------------------------------
@@ -151,17 +229,12 @@ def test_parse_extracts_prose_chunks_with_section(tmp_path: Path) -> None:
 
 
 @pytest.mark.unit
-def test_parse_empty_document_returns_empty_result(tmp_path: Path) -> None:
-    """An empty DoclingDocument produces empty tables and prose lists."""
+def test_parse_empty_txt_returns_empty_result(tmp_path: Path) -> None:
+    """An empty TXT file produces tables=[] and prose=[]."""
     from platform.parsers.docling_parser import DoclingParser
 
-    doc = _make_mock_doc()
-    registry = CollectorRegistry()
-    parser = DoclingParser(registry=registry, _converter=_make_converter(doc))
-
-    sentinel = tmp_path / "empty.txt"
-    sentinel.write_text("", encoding="utf-8")
-    result = parser.parse(sentinel)
+    path = _write_txt(tmp_path, "")
+    result = DoclingParser().parse(path)
 
     assert result.tables == []
     assert result.prose == []
@@ -173,25 +246,36 @@ def test_parse_empty_document_returns_empty_result(tmp_path: Path) -> None:
 
 
 @pytest.mark.unit
-def test_parse_wraps_converter_failure_in_parse_error(tmp_path: Path) -> None:
-    """RuntimeError from DocumentConverter is re-raised as ParseError."""
+def test_parse_bad_pdf_raises_parse_error(tmp_path: Path) -> None:
+    """Random bytes with .pdf extension are wrapped in ParseError."""
     from platform.parsers.docling_parser import DoclingParser
     from platform.schemas.errors import ParseError
 
-    converter = MagicMock()
-    converter.convert.side_effect = RuntimeError("conversion failed")
-
-    registry = CollectorRegistry()
-    parser = DoclingParser(registry=registry, _converter=converter)
-
-    sentinel = tmp_path / "bad.pdf"
-    sentinel.write_bytes(b"%PDF-1.4")
+    bad = tmp_path / "bad.pdf"
+    bad.write_bytes(b"\x00\x01\x02\x03not a pdf")
 
     with pytest.raises(ParseError) as exc_info:
-        parser.parse(sentinel)
+        DoclingParser().parse(bad)
 
     assert exc_info.value.filename == "bad.pdf"
-    assert "conversion failed" in exc_info.value.reason
+
+
+@pytest.mark.unit
+def test_parse_bad_docx_raises_parse_error(tmp_path: Path) -> None:
+    """A ZIP that is not a valid DOCX raises ParseError."""
+    from platform.parsers.docling_parser import DoclingParser
+    from platform.schemas.errors import ParseError
+
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        zf.writestr("not_a_docx.xml", "<root/>")
+    bad = tmp_path / "bad.docx"
+    bad.write_bytes(buf.getvalue())
+
+    with pytest.raises(ParseError) as exc_info:
+        DoclingParser().parse(bad)
+
+    assert exc_info.value.filename == "bad.docx"
 
 
 # ---------------------------------------------------------------------------
@@ -204,36 +288,26 @@ def test_parse_records_ok_metric_on_success(tmp_path: Path) -> None:
     """platform_external_calls_total{service=docling,operation=parse,status=ok} == 1."""
     from platform.parsers.docling_parser import DoclingParser
 
-    doc = _make_mock_doc()
+    path = _write_txt(tmp_path, "The system must validate invoices.", "metric_ok.txt")
     registry = CollectorRegistry()
-    parser = DoclingParser(registry=registry, _converter=_make_converter(doc))
+    DoclingParser(registry=registry).parse(path)
 
-    sentinel = tmp_path / "reqs.txt"
-    sentinel.write_text("text", encoding="utf-8")
-    parser.parse(sentinel)
-
-    value = _counter(registry, {"service": "docling", "operation": "parse", "status": "ok"})
-    assert value == 1.0
+    assert _counter(registry, {"service": "docling", "operation": "parse", "status": "ok"}) == 1.0
 
 
 @pytest.mark.unit
 def test_parse_records_error_metric_on_failure(tmp_path: Path) -> None:
     """platform_external_calls_total{service=docling,operation=parse,status=error} == 1."""
     from platform.parsers.docling_parser import DoclingParser
-
-    converter = MagicMock()
-    converter.convert.side_effect = RuntimeError("crash")
-
-    registry = CollectorRegistry()
-    parser = DoclingParser(registry=registry, _converter=converter)
-
-    sentinel = tmp_path / "bad.txt"
-    sentinel.write_text("x", encoding="utf-8")
-
     from platform.schemas.errors import ParseError
 
-    with pytest.raises(ParseError):
-        parser.parse(sentinel)
+    bad = tmp_path / "bad.pdf"
+    bad.write_bytes(b"not a pdf")
+    registry = CollectorRegistry()
 
-    value = _counter(registry, {"service": "docling", "operation": "parse", "status": "error"})
-    assert value == 1.0
+    with pytest.raises(ParseError):
+        DoclingParser(registry=registry).parse(bad)
+
+    assert (
+        _counter(registry, {"service": "docling", "operation": "parse", "status": "error"}) == 1.0
+    )

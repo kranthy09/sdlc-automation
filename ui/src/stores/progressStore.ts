@@ -1,6 +1,8 @@
 import { create } from 'zustand'
 import type {
   Classification,
+  ResultsResponse,
+  ReviewResponse,
   WSClassification,
   WSMessage,
   WSPhaseComplete,
@@ -57,6 +59,7 @@ interface ProgressState {
   // Actions
   init: (batchId: string) => void
   dispatch: (msg: WSMessage) => void
+  hydrate: (resultsData: ResultsResponse, reviewData?: ReviewResponse | null) => void
   reset: () => void
 }
 
@@ -85,9 +88,10 @@ function applyPhaseStart(phases: PhaseState[], msg: WSPhaseStart): PhaseState[] 
 }
 
 function applyStepProgress(phases: PhaseState[], msg: WSStepProgress): PhaseState[] {
+  const pct = msg.total > 0 ? Math.round((msg.completed / msg.total) * 100) : 0
   return phases.map((p) =>
     p.phase === msg.phase
-      ? { ...p, progressPct: msg.progress_pct, currentStep: `${msg.step} — ${msg.sub_step}` }
+      ? { ...p, progressPct: pct, currentStep: msg.step }
       : p,
   )
 }
@@ -112,15 +116,16 @@ function applyClassification(
   rows: LiveClassificationRow[],
   msg: WSClassification,
 ): LiveClassificationRow[] {
+  if (rows.some((r) => r.atomId === msg.atom_id)) return rows
   return [
     ...rows,
     {
       atomId: msg.atom_id,
-      requirementText: msg.requirement_text,
-      classification: msg.classification,
+      requirementText: '',
+      classification: msg.classification as Classification,
       confidence: msg.confidence,
-      module: msg.module,
-      rationale: msg.rationale,
+      module: '',
+      rationale: '',
     },
   ]
 }
@@ -147,7 +152,7 @@ export const useProgressStore = create<ProgressState>((set) => ({
 
   dispatch: (msg) =>
     set((state) => {
-      switch (msg.type) {
+      switch (msg.event) {
         case 'phase_start':
           return { phases: applyPhaseStart(state.phases, msg) }
 
@@ -164,7 +169,11 @@ export const useProgressStore = create<ProgressState>((set) => ({
           return {
             reviewRequired: {
               reviewItems: msg.review_items,
-              reasons: msg.reasons,
+              reasons: {
+                low_confidence: msg.reasons.low_confidence,
+                conflicts: msg.reasons.conflicts ?? 0,
+                anomalies: msg.reasons.anomalies ?? 0,
+              },
               reviewUrl: msg.review_url,
             },
           }
@@ -172,17 +181,16 @@ export const useProgressStore = create<ProgressState>((set) => ({
         case 'complete':
           return {
             complete: {
-              total: msg.summary.total,
-              fit: msg.summary.fit,
-              partial_fit: msg.summary.partial_fit,
-              gap: msg.summary.gap,
-              reportUrl: msg.report_url,
-              latencyTotalMs: msg.latency_total_ms,
+              total: msg.total,
+              fit: msg.fit_count,
+              partial_fit: msg.partial_fit_count,
+              gap: msg.gap_count,
+              reportUrl: msg.report_url ?? '',
+              latencyTotalMs: 0,
             },
           }
 
         case 'error': {
-          // Mark the active phase as errored
           const phases = state.phases.map((p) =>
             p.status === 'active' ? { ...p, status: 'error' as const } : p,
           )
@@ -192,6 +200,69 @@ export const useProgressStore = create<ProgressState>((set) => ({
         default:
           return {}
       }
+    }),
+
+  hydrate: (resultsData, reviewData) =>
+    set((state) => {
+      if (resultsData.status === 'complete') {
+        const phases = state.phases.map((p) => ({
+          ...p,
+          status: 'complete' as const,
+          progressPct: 100,
+        }))
+        const classifications = resultsData.results.map((r) => ({
+          atomId: r.atom_id,
+          requirementText: r.requirement_text,
+          classification: r.classification,
+          confidence: r.confidence,
+          module: r.module,
+          rationale: r.rationale,
+        }))
+        const { fit, partial_fit, gap } = resultsData.summary
+        return {
+          phases,
+          classifications,
+          complete: {
+            total: fit + partial_fit + gap,
+            fit,
+            partial_fit,
+            gap,
+            reportUrl: '',
+            latencyTotalMs: 0,
+          },
+        }
+      }
+      if (resultsData.status === 'review_required') {
+        const reviewItems = reviewData?.items.length ?? 0
+        const { fit, partial_fit, gap } = resultsData.summary
+        const total = fit + partial_fit + gap
+        const phases = state.phases.map((p) => {
+          if (p.phase < 5) {
+            // Phase 4 gets the classification stats; phases 1-3 just marked complete
+            if (p.phase === 4) {
+              return {
+                ...p,
+                status: 'complete' as const,
+                progressPct: 100,
+                atomsProduced: total,
+                atomsValidated: total - reviewItems,
+                atomsFlagged: reviewItems,
+              }
+            }
+            return { ...p, status: 'complete' as const, progressPct: 100 }
+          }
+          return p
+        })
+        return {
+          phases,
+          reviewRequired: {
+            reviewItems,
+            reasons: { low_confidence: reviewItems, conflicts: 0, anomalies: 0 },
+            reviewUrl: `/review/${resultsData.batch_id}`,
+          },
+        }
+      }
+      return {}
     }),
 
   reset: () =>

@@ -290,7 +290,7 @@ D365_MODULES = [
 #### Sub-step A: Deduplicator
 
 **Algorithm:**
-1. Embed all atoms using `bge-large-en-v1.5` (batch encode)
+1. Embed all atoms using `bge-small-en-v1.5` (batch encode)
 2. For <5K atoms: FAISS `IndexFlatIP` → pairwise cosine similarity
 3. For >10K atoms: `datasketch.MinHashLSH` with 128 permutations, threshold 0.8
 4. Pairs with cosine > 0.92 → merge (keep highest completeness score, concatenate source_refs)
@@ -404,7 +404,7 @@ There are three sources. They are built at different times by different processe
 ```python
 # Qdrant hybrid collection — HNSW for dense + sparse vectors for BM25
 VectorsConfig = {
-    "dense": VectorParams(size=1024, distance=Distance.COSINE),  # bge-large-en-v1.5
+    "dense": VectorParams(size=384, distance=Distance.COSINE),  # bge-small-en-v1.5
     "sparse": SparseVectorParams(index=SparseIndexParams(on_disk=False)),
 }
 ```
@@ -422,7 +422,7 @@ VectorsConfig = {
 }
 ```
 
-**Embedding:** `bge-large-en-v1.5.encode(f"{record['feature']}: {record['description']}")` — both fields concatenated so the vector captures feature name AND description.
+**Embedding:** `bge-small-en-v1.5.encode(f"{record['feature']}: {record['description']}")` — both fields concatenated so the vector captures feature name AND description.
 
 **Sparse vector:** Computed from `tags` + `feature` + tokenized `description` keywords via BM25 term weighting.
 
@@ -456,16 +456,16 @@ BASE_URLS = [
 **Chunking strategy:**
 1. Strip navigation chrome, keep article body only
 2. Split at `<h2>` and `<h3>` boundaries — preserve section context
-3. Chunk sections at 512 tokens (bge-large context window), 50-token overlap
+3. Chunk sections at 512 tokens (bge-small context window), 50-token overlap
 4. Each chunk carries: `{url, title, section_heading, text, d365_module_hint, crawled_at}`
 
 **Collection configuration:**
 ```python
 # Dense-only collection — documentation is prose, sparse BM25 less useful
-VectorParams(size=1024, distance=Distance.COSINE)
+VectorParams(size=384, distance=Distance.COSINE)
 ```
 
-**Embedding:** `bge-large-en-v1.5.encode(f"{chunk['section_heading']}: {chunk['text']}")` — heading prepended for context.
+**Embedding:** `bge-small-en-v1.5.encode(f"{chunk['section_heading']}: {chunk['text']}")` — heading prepended for context.
 
 **Refresh policy:** Monthly cron job. Does NOT recreate collection — upserts by URL hash, so only changed pages are re-embedded. Deletions handled by comparing URL inventory against existing points and removing stale IDs.
 
@@ -486,7 +486,7 @@ CREATE TABLE d365_fo_fitments (
     id              SERIAL PRIMARY KEY,
     atom_id         TEXT NOT NULL,
     requirement_text TEXT NOT NULL,
-    embedding       vector(1024) NOT NULL,          -- bge-large embedding of requirement_text
+    embedding       vector(384) NOT NULL,          -- bge-small embedding of requirement_text
     module          TEXT NOT NULL,
     country         TEXT NOT NULL,
     wave            INT NOT NULL,
@@ -559,7 +559,7 @@ LIMIT 5;
 
 **For each RequirementAtom, generate three retrieval signals:**
 
-1. **Dense vector:** `bge-large-en-v1.5.encode(atom.requirement_text)` → 1024-dim float[]
+1. **Dense vector:** `bge-small-en-v1.5.encode(atom.requirement_text)` → 384-dim float[]
 2. **Sparse tokens:** Extract keywords using spaCy NER + TF-IDF top-10 terms → BM25 query
 3. **Metadata filter:** `{"module": atom.module, "version": {"$gte": "10.0.30"}}` → Qdrant payload filter
 
@@ -619,10 +619,10 @@ LIMIT 5;
 
 ### Step 4: Cross-Encoder Rerank
 
-**Problem:** Bi-encoder (bge-large) optimizes for retrieval speed, not pairwise accuracy. Cross-encoder reads (atom, capability) jointly.
+**Problem:** Bi-encoder (bge-small) optimizes for retrieval speed, not pairwise accuracy. Cross-encoder reads (atom, capability) jointly.
 
 **Implementation:**
-1. Model: `cross-encoder/ms-marco-MiniLM-L-12-v2`
+1. Model: `Xenova/ms-marco-MiniLM-L-6-v2`
 2. Construct 20 pairs: `[(atom.text, cap.description) for cap in fused_capabilities]`
 3. Forward pass: `model.predict(pairs)` → raw logits
 4. Sigmoid activation: `1 / (1 + exp(-logit))` → relevance score 0-1
@@ -956,7 +956,7 @@ log.info("phase_complete",
 
 1. **Phase 1:** Parse DOCX (Docling) → detect "Geschäftsanforderung" column in embedded table → map to `requirement_text` via synonym dict → extract 50 rows → atomize (LLM splits 3 compound reqs) → 53 atoms → normalize (2 deduped) → validate (1 rejected as too vague) → **50 ValidatedAtoms**
 
-2. **Phase 2:** For each atom → embed with bge-large → parallel search Qdrant (20 caps) + MS Learn (10 docs) + pgvector (0-3 history) → RRF fuse → cross-encoder rerank to top-5 → assemble context → **50 AssembledContexts**
+2. **Phase 2:** For each atom → embed with bge-small → parallel search Qdrant (20 caps) + MS Learn (10 docs) + pgvector (0-3 history) → RRF fuse → cross-encoder rerank to top-5 → assemble context → **50 AssembledContexts**
 
 3. **Phase 3:** For each context → compute 5 signals (cosine, entity overlap, token ratio, history, rerank) → weighted composite → route: 30 FAST_TRACK, 15 DEEP_REASON, 5 GAP_CONFIRM → **50 MatchResults**
 

@@ -1,0 +1,1954 @@
+capabilities:
+
+  # ---------------------------------------------------------------------------
+  # AccountsPayable (cap-ap-0001 – cap-ap-0010)
+  # Navigation: Accounts payable > ...
+  # ---------------------------------------------------------------------------
+
+  - id: cap-ap-0001
+    module: AccountsPayable
+    feature: Three-way Matching
+    description: >
+      Navigate to Accounts payable > Setup > Accounts payable parameters > Invoice
+      validation tab. Three-way matching validates vendor invoices against purchase
+      order price and product receipt quantity. Tolerance rules are configured at
+      Accounts payable > Setup > Invoice matching > Matching policy per legal entity,
+      vendor group, or item. Price tolerances use net unit price matching with
+      configurable percentage or amount thresholds. Matching discrepancies generate
+      match variance warnings on the Invoice matching details form and must be
+      resolved or overridden with approval before invoice posting.
+
+  - id: cap-ap-0002
+    module: AccountsPayable
+    feature: Invoice Capture with AI
+    description: >
+      Invoice capture uses AI Builder prebuilt models to extract header fields
+      (vendor name, invoice number, date, total) and line items (item, quantity,
+      unit price) from scanned PDF or image invoices. Extracted data is staged in
+      Accounts payable > Invoices > Pending vendor invoices for review and mapping
+      to purchase orders. Confidence scores are shown per field. Continuously
+      learning models improve extraction accuracy from user corrections. Requires
+      AI Builder capacity in Power Platform and Dataverse integration enabled in
+      Feature management.
+
+  - id: cap-ap-0003
+    module: AccountsPayable
+    feature: Vendor Payment Proposal
+    description: >
+      Navigate to Accounts payable > Payments > Vendor payment journal > Lines >
+      Payment proposal > Create payment proposal. Filters include payment date
+      range, cash discount date, vendor group, method of payment, bank account, and
+      legal entity. The proposal calculates net amounts after cash discounts (terms
+      like 2/10 net 30 configured at Accounts payable > Payment setup > Cash
+      discounts). Proposals are reviewed on the Vendor payment proposal form,
+      where individual lines can be excluded before transferring to the payment
+      journal for posting and payment file generation.
+
+  - id: cap-ap-0004
+    module: AccountsPayable
+    feature: Vendor Hold and Block Controls
+    description: >
+      Navigate to Accounts payable > Vendors > All vendors > select vendor > General
+      tab > On hold field. Hold options include Payment (blocks payment generation
+      but allows invoicing), Invoice (blocks invoice posting), All (blocks all
+      transactions including PO confirmation), and Never. Hold status is enforced
+      across purchase order confirmation, invoice posting, and payment proposal
+      generation. Hold reason and date are tracked on the vendor record. The vendor
+      on-hold report at Accounts payable > Inquiries shows all currently held vendors
+      with hold type and duration.
+
+  - id: cap-ap-0005
+    module: AccountsPayable
+    feature: Vendor Collaboration Portal
+    description: >
+      Vendor collaboration is enabled at Procurement and sourcing > Setup > Vendor
+      collaboration > Vendor collaboration parameters. External vendor users
+      authenticate via Azure AD B2C and access purchase order confirmations,
+      advance shipment notices (ASN), invoicing, consignment inventory, and RFQ
+      responses. Vendors confirm or reject PO lines with delivery date changes.
+      Invoice submission creates pending vendor invoices in the Accounts payable
+      workflow. User provisioning is managed through vendor contact security
+      roles assigned in System administration > Security > Assign users to roles.
+
+  - id: cap-ap-0006
+    module: AccountsPayable
+    feature: Cash Discount Processing
+    description: >
+      Cash discount terms are configured at Accounts payable > Payment setup >
+      Cash discounts (e.g. 2%/10 days, 1%/20 days, Net 30). Terms are linked
+      to vendors via payment terms on the vendor record or purchase agreement.
+      During payment proposal generation, the system identifies invoices within
+      the discount window and calculates the discount amount. Discounts taken are
+      posted to the Cash discount account configured in Accounts payable > Setup >
+      Accounts payable parameters > Settlement tab. Split discount handling
+      supports partial payments retaining proportional discounts.
+
+  - id: cap-ap-0007
+    module: AccountsPayable
+    feature: Vendor Aging Report
+    description: >
+      Navigate to Accounts payable > Inquiries and reports > Vendor aging. The
+      aging snapshot processes open vendor balances into configurable aging period
+      definitions (e.g. Current, 1-30, 31-60, 61-90, Over 90 days). Aging can
+      be calculated by due date, transaction date, or document date. Filters
+      include vendor account, vendor group, legal entity, and currency. The aging
+      report supports printing with subtotals by vendor group. Drill-through
+      from aging buckets opens the Vendor transactions form showing individual
+      open invoices, credit notes, and prepayments.
+
+  - id: cap-ap-0008
+    module: AccountsPayable
+    feature: Invoice Matching Policies
+    description: >
+      Matching policies are configured at Accounts payable > Setup > Invoice
+      matching > Matching policy. Policy levels: Two-way matching (PO price vs
+      invoice price), Three-way matching (adds product receipt quantity
+      validation), No matching. Policies can be set at legal entity level and
+      overridden per vendor, vendor group, item, or item group. Price tolerance
+      percentages and net unit price matching are configured separately per
+      policy. The Invoice validation statistics report at Accounts payable >
+      Inquiries tracks matching exception rates per vendor and buyer.
+
+  - id: cap-ap-0009
+    module: AccountsPayable
+    feature: Check Payment with Positive Pay
+    description: >
+      Check layouts are configured at Cash and bank management > Setup > Check
+      layout per bank account. D365 generates prenumbered checks from vendor
+      payment journals using MICR encoding via configurable report formats.
+      Positive pay files are generated at Cash and bank management > Periodic
+      tasks > Positive pay > Generate positive pay file. The file includes
+      check number, payee name, amount, and date for bank verification. Void
+      check functionality reverses the original payment and generates a void
+      positive pay record. Check reprint and reversal maintain full audit trail.
+
+  - id: cap-ap-0010
+    module: AccountsPayable
+    feature: Electronic Payment Formats (ACH / SEPA / Wire)
+    description: >
+      Electronic payment formats are configured at Accounts payable > Payment
+      setup > Methods of payment using Electronic reporting (ER) configurations.
+      Standard formats include NACHA ACH (US), SEPA Credit Transfer ISO 20022
+      (EU), BACS (UK), and generic wire/SWIFT MT103. Payment file generation
+      occurs from the vendor payment journal via Generate payments button.
+      Remittance advice is emailed to vendors using the Email payment remittance
+      feature. Bank account validation (IBAN, routing number) is enforced per
+      payment method. Payment status tracking shows Generated, Sent, Received,
+      and Reconciled states.
+
+  # ---------------------------------------------------------------------------
+  # AccountsReceivable (cap-ar-0001 – cap-ar-0010)
+  # Navigation: Accounts receivable > ...
+  # ---------------------------------------------------------------------------
+
+  - id: cap-ar-0001
+    module: AccountsReceivable
+    feature: Customer Credit Limit Management
+    description: >
+      Credit limits are configured per customer at Accounts receivable >
+      Customers > All customers > Credit and collections FastTab. Credit limit
+      enforcement checkpoints include sales order confirmation, picking list
+      posting, packing slip, and invoice posting — configured at Accounts
+      receivable > Setup > Accounts receivable parameters > Credit and
+      collections tab. Mandatory credit limit checking sets the effect to Error
+      (block) or Warning. Credit limit aggregation across legal entities uses
+      the Credit limit adjustment journal. The Credit management workspace
+      shows over-limit customers, blocked orders, and pending credit reviews
+      with aging summary.
+
+  - id: cap-ar-0002
+    module: AccountsReceivable
+    feature: Collection Letter (Dunning) Automation
+    description: >
+      Collection letter sequences are configured at Accounts receivable > Setup >
+      Collection letter > Collection letter sequence. Each sequence defines
+      multiple steps with aging interval (e.g. 30, 60, 90 days), fee amount,
+      and letter template. The collection letter creation process at Accounts
+      receivable > Periodic tasks > Collection letters > Create collection
+      letters calculates which customers qualify based on oldest open invoice
+      aging. Collection letter posting updates the customer balance with fees.
+      Grace period and minimum balance thresholds prevent letters for trivial
+      amounts. Letter output uses document management email or print routing.
+
+  - id: cap-ar-0003
+    module: AccountsReceivable
+    feature: Automatic Payment Settlement
+    description: >
+      Automatic settlement is configured at Accounts receivable > Setup >
+      Accounts receivable parameters > Settlement tab. Payment matching rules
+      at Cash and bank management > Setup > Advanced bank reconciliation >
+      Reconciliation matching rules define criteria: exact amount, customer
+      account, invoice number reference, and date tolerance. Customer payment
+      journals created from bank statement import propose settlement against
+      open invoices. Unmatched payments are posted to a clearing account.
+      The settlement priority feature at Accounts receivable > Setup >
+      Settlement priority determines invoice selection order (oldest first,
+      highest amount, or manual specification).
+
+  - id: cap-ar-0004
+    module: AccountsReceivable
+    feature: Customer Aging Report and Snapshot
+    description: >
+      Navigate to Accounts receivable > Inquiries and reports > Customer aging.
+      The aging snapshot process at Credit and collections > Periodic tasks >
+      Age customer balances segments open customer balances into configurable
+      aging period definitions. Aging direction can be Backward (from current
+      date) or Forward (from due date). The Customer aging report filters by
+      customer pool, collector, legal entity, and activity status. The
+      Collections workspace displays aging tiles with drill-through to
+      customer transactions, activity history, and promise-to-pay records.
+      Export to Excel supports external credit review workflows.
+
+  - id: cap-ar-0005
+    module: AccountsReceivable
+    feature: Collections Case Management
+    description: >
+      Navigate to Credit and collections > Collections > Collections workspace.
+      Customer pools assign accounts to collectors by balance threshold, days
+      overdue, or geographic region at Credit and collections > Setup >
+      Customer pools. Collection activities (phone call, email, letter, meeting)
+      are logged per customer with follow-up dates. Promise-to-pay records track
+      committed payment amounts and dates. Escalation to legal collections
+      creates a case in the Case management module with linked customer
+      transactions. Activity automation rules at Credit and collections >
+      Setup > Collections automation create scheduled follow-up tasks.
+
+  - id: cap-ar-0006
+    module: AccountsReceivable
+    feature: Customer Invoice Delivery (Email / EDI / Portal)
+    description: >
+      Customer invoice delivery is configured per customer at Accounts
+      receivable > Customers > All customers > Invoice and delivery tab.
+      Email delivery uses document routing and the Customer account statement
+      email template. EDI X12 810 invoice generation uses Electronic reporting
+      configurations. The Customer self-service portal allows customers to view
+      and download invoices, make payments, and dispute line items. Invoice
+      document formats are configured using Business document management with
+      customizable Word or Excel templates. Invoice delivery status (Sent,
+      Opened, Paid) is tracked on the Sales invoice journal.
+
+  - id: cap-ar-0007
+    module: AccountsReceivable
+    feature: Subscription Billing and Recurring Invoices
+    description: >
+      Subscription billing is configured at Subscription billing > Recurring
+      contract billing > Billing schedules. Billing frequencies include Monthly,
+      Quarterly, Semi-annual, Annual, and Custom. Revenue splitting allocates
+      contract amounts across performance obligations per ASC 606. Proration
+      handles mid-period start/end dates. Escalation clauses support annual
+      price increases by percentage or index. Renewal processing at Subscription
+      billing > Periodic tasks > Renew billing schedules automates contract
+      extensions. Revenue recognition integration defers billing to appropriate
+      periods based on service delivery.
+
+  - id: cap-ar-0008
+    module: AccountsReceivable
+    feature: Revenue Recognition (ASC 606 / IFRS 15)
+    description: >
+      Revenue recognition is configured at Revenue recognition > Setup >
+      Revenue recognition parameters. Revenue schedules define recognition
+      patterns: Point in time, Over time (straight-line, percentage complete),
+      or Event-based. Multi-element arrangements allocate transaction price
+      to performance obligations using standalone selling price at Revenue
+      recognition > Setup > Revenue prices. Revenue contracts at Revenue
+      recognition > Revenue contracts track obligation status. The Revenue
+      recognition reallocation feature handles contract modifications.
+      Revenue schedules post automatically via Revenue recognition > Periodic
+      tasks > Revenue schedule processing.
+
+  - id: cap-ar-0009
+    module: AccountsReceivable
+    feature: Bad Debt Write-off with Approval Workflow
+    description: >
+      Write-off proposals are initiated from Credit and collections >
+      Collections > Customer balance write-off. Write-off reason codes are
+      configured at Accounts receivable > Setup > Write-off reasons. Write-off
+      approval workflows route requests through configurable approval
+      hierarchies based on amount thresholds at Organization administration >
+      Workflow > Accounts receivable workflows > Customer write-off approval.
+      Approved write-offs post to the Write-off GL account configured per
+      posting profile. Write-off reversal restores the original invoice
+      balance. The Write-off transaction inquiry tracks all write-offs by
+      customer, date, and approver for audit and credit analysis.
+
+  - id: cap-ar-0010
+    module: AccountsReceivable
+    feature: Interest Calculation on Overdue Balances
+    description: >
+      Interest codes are configured at Credit and collections > Interest >
+      Interest codes with calculation methods: Percentage per period, Amount
+      per period, or Range-based tiered rates. Interest code assignment at
+      customer or customer group level determines applicability. The interest
+      note creation process at Credit and collections > Interest > Create
+      interest notes calculates charges on overdue invoices. Grace period
+      and minimum interest thresholds are configured per interest code.
+      Posted interest notes generate separate transactions visible on the
+      customer statement. Interest waiver at Credit and collections >
+      Interest > Waive interest notes allows selective exemptions.
+
+  # ---------------------------------------------------------------------------
+  # GeneralLedger (cap-gl-0001 – cap-gl-0010)
+  # Navigation: General ledger > ...
+  # ---------------------------------------------------------------------------
+
+  - id: cap-gl-0001
+    module: GeneralLedger
+    feature: Financial Period Close Workspace
+    description: >
+      Navigate to General ledger > Period close > Financial period close
+      workspace. Close task templates define recurring activities (subledger
+      reconciliation, accrual reversal, journal approval, tax reporting,
+      intercompany settlement, consolidation) with assigned owners, due dates,
+      dependencies, and company scope. Task status tracking shows Not started,
+      In progress, Completed, and Overdue. The close calendar at General
+      ledger > Ledger setup > Fiscal calendars > Period close calendar defines
+      task scheduling. Period close status by legal entity prevents posting
+      to closed periods via General ledger > Period close > Ledger calendar.
+
+  - id: cap-gl-0002
+    module: GeneralLedger
+    feature: Financial Reporting (Management Reporter)
+    description: >
+      Navigate to General ledger > Inquiries and reports > Financial reporting.
+      Report designer uses Row definitions (GL account ranges, calculations,
+      formatting), Column definitions (period layouts, budget vs actual,
+      currency, YTD/QTD), and Reporting tree definitions (organizational
+      hierarchy roll-up). Reports access live GL transaction data without
+      data warehouse. Drill-through from report cells opens the Voucher
+      transactions form. Report scheduling publishes to the Financial
+      reporting web viewer. Default report templates include Income Statement,
+      Balance Sheet, Cash Flow Statement, and Trial Balance with currency
+      translation support for multinational reporting.
+
+  - id: cap-gl-0003
+    module: GeneralLedger
+    feature: Intercompany Accounting
+    description: >
+      Intercompany accounting is configured at General ledger > Posting setup >
+      Intercompany accounting. Each legal entity pair defines due-to (payable)
+      and due-from (receivable) main accounts for automatic offset entries.
+      Intercompany journal posting at General ledger > Journal entries >
+      Intercompany journal creates balanced entries in both originating and
+      destination companies simultaneously. Financial consolidation elimination
+      rules at General ledger > Periodic tasks > Consolidate > Consolidate
+      online remove intercompany balances. The Intercompany transactions
+      inquiry tracks all cross-company postings with voucher references.
+
+  - id: cap-gl-0004
+    module: GeneralLedger
+    feature: Ledger Allocation Rules
+    description: >
+      Allocation rules are configured at General ledger > Allocations >
+      Ledger allocation rules. Source criteria define which GL account and
+      dimension combinations to allocate from. Allocation basis options include
+      Fixed percentage, Variable balance (proportional to target dimension
+      balances), or Equally distributed. Destination rules specify target
+      financial dimensions (department, cost center, business unit). The
+      Process ledger allocations function at General ledger > Periodic tasks
+      generates allocation journals with full audit trail. Allocation
+      processing supports intercompany distribution when cross-company
+      allocation is enabled.
+
+  - id: cap-gl-0005
+    module: GeneralLedger
+    feature: Budget Control Framework
+    description: >
+      Budget control is configured at Budgeting > Setup > Budget control >
+      Budget control configuration. Budget control rules define which financial
+      dimensions and main accounts are tracked. The budget cycle time span
+      sets the budget period (fiscal year or project lifetime). Budget
+      checking is activated at source document entry (purchase requisitions,
+      purchase orders, vendor invoices, expense reports, and journal entries).
+      Over-budget transactions are Blocked or generate Warnings based on
+      threshold percentages. Budget register entries at Budgeting > Budget
+      register entries record original budget, transfers, revisions, and
+      encumbrances. The Budget control statistics inquiry shows budget vs
+      actual vs encumbrance by dimension.
+
+  - id: cap-gl-0006
+    module: GeneralLedger
+    feature: Trial Balance Report
+    description: >
+      Navigate to General ledger > Inquiries and reports > Trial balance.
+      The report displays opening balance, period debits, period credits,
+      and closing balance for each main account. Filters include date range,
+      posting layer (Current, Operations, Tax), legal entity, currency type
+      (accounting or reporting), and financial dimension values (department,
+      cost center, business unit). The Detailed trial balance includes
+      individual transaction-level detail. Summary trial balance aggregates
+      by main account category. Export to Excel enables external analysis.
+      Comparative periods can be displayed side-by-side using Financial
+      reporting column definitions.
+
+  - id: cap-gl-0007
+    module: GeneralLedger
+    feature: Foreign Currency Revaluation
+    description: >
+      Navigate to General ledger > Periodic tasks > Foreign currency
+      revaluation. The process revalues GL balances denominated in foreign
+      currencies using exchange rates from General ledger > Currencies >
+      Currency exchange rates. Exchange rate types (Spot, Average, Budget)
+      are assigned per revaluation run. Unrealized gain/loss postings use
+      ledger accounts configured at General ledger > Currency > Currency
+      revaluation accounts. The revaluation preview shows estimated
+      adjustments before posting. Subledger revaluation for AP and AR runs
+      separately from Accounts payable > Periodic tasks > Foreign currency
+      revaluation and Accounts receivable > Periodic tasks > Foreign
+      currency revaluation respectively.
+
+  - id: cap-gl-0008
+    module: GeneralLedger
+    feature: Financial Consolidation
+    description: >
+      Navigate to General ledger > Periodic tasks > Consolidate > Consolidate
+      online. Consolidation aggregates trial balances from subsidiary legal
+      entities into a consolidation company. Currency translation uses exchange
+      rate types mapped per main account category (balance sheet at closing
+      rate, income statement at average rate). Minority interest calculations
+      are handled via percentage-based elimination rules. Consolidation
+      differences post to a designated translation adjustment equity account.
+      The elimination proposal at General ledger > Journal entries >
+      Elimination journal automates intercompany balance removal. The
+      Consolidation groups feature organizes subsidiaries for multi-level
+      consolidation hierarchies.
+
+  - id: cap-gl-0009
+    module: GeneralLedger
+    feature: Database Logging (Audit Trail)
+    description: >
+      Database logging is configured at System administration > Setup >
+      Database logging > Database logging. Table and field level tracking
+      captures Insert, Update, and Delete operations with user ID, date/time
+      stamp, original value, and new value. The Database log inquiry at
+      System administration > Inquiries > Database logging > Database log
+      shows all tracked changes filterable by table, field, user, and date
+      range. Cleanup at System administration > Periodic tasks > Database
+      log cleanup manages log volume. For financial transactions, the Audit
+      trail report at General ledger > Inquiries and reports > Audit trail
+      shows journal voucher history with user and posting details.
+
+  - id: cap-gl-0010
+    module: GeneralLedger
+    feature: Advanced Bank Reconciliation
+    description: >
+      Navigate to Cash and bank management > Bank statement reconciliation >
+      Bank reconciliation. Bank statement import supports formats BAI2
+      (US), MT940 (SWIFT), CAMT.053 (ISO 20022), and CSV via Electronic
+      reporting configurations. Matching rules at Cash and bank management >
+      Setup > Advanced bank reconciliation > Reconciliation matching rules
+      define auto-matching criteria (amount, date, reference number, check
+      number). Unmatched statement lines are manually matched or create new
+      GL transactions. The reconciliation worksheet shows matched, unmatched,
+      and reconciled totals. Bank reconciliation posting generates the
+      reconciliation report for sign-off and archives the completed
+      reconciliation.
+
+  # ---------------------------------------------------------------------------
+  # InventoryManagement (cap-inv-0001 – cap-inv-0010)
+  # Navigation: Inventory management > ...
+  # ---------------------------------------------------------------------------
+
+  - id: cap-inv-0001
+    module: InventoryManagement
+    feature: Inventory Costing Methods (FIFO / LIFO / Weighted Avg / Standard)
+    description: >
+      Inventory valuation methods are configured per item model group at
+      Inventory management > Setup > Inventory > Item model groups. Available
+      methods: FIFO (first in first out), LIFO (last in first out), Weighted
+      average, Standard cost, and Moving average. Inventory close at Inventory
+      management > Periodic tasks > Closing and adjustment settles inventory
+      transactions and adjusts cost-of-goods-sold postings. Standard cost
+      uses BOM/route cost roll-up at Inventory management > Periodic tasks >
+      Standard cost update. The Inventory value report at Inventory management
+      > Inquiries and reports reconciles inventory subledger to GL. Costing
+      sheet configuration defines overhead allocation for manufactured items.
+
+  - id: cap-inv-0002
+    module: InventoryManagement
+    feature: Inventory Adjustment and Movement Journals
+    description: >
+      Navigate to Inventory management > Journal entries > Item counting >
+      Adjustment. Adjustment journals modify on-hand quantity and cost value
+      with offset posting to configurable GL accounts per item group posting
+      profile. Movement journals at Inventory management > Journal entries >
+      Items > Movement transfer inventory between warehouses and locations
+      without a transfer order. Profit/loss journals record cost adjustments
+      for inventory valuation corrections. All journal types require posting
+      and can be routed through approval workflows configured at Inventory
+      management > Setup > Journal names > Inventory.
+
+  - id: cap-inv-0003
+    module: InventoryManagement
+    feature: Cycle Counting and Physical Inventory
+    description: >
+      Cycle count plans are configured at Warehouse management > Setup >
+      Cycle counting > Cycle count plans with criteria: item ABC classification,
+      warehouse zone, location profile, or minimum days between counts. The
+      cycle count work creation process at Warehouse management > Periodic
+      tasks > Cycle count plan generates count work for the Warehouse
+      Management mobile app (WMA). Workers scan locations and enter counted
+      quantities. Variance thresholds at Warehouse management > Setup >
+      Cycle counting > Cycle count thresholds flag discrepancies for
+      supervisor approval. Approved counts post adjustment journals
+      automatically. Full physical inventory is supported via tag counting
+      or on-hand inventory counting journals.
+
+  - id: cap-inv-0004
+    module: InventoryManagement
+    feature: Batch Tracking and Traceability
+    description: >
+      Batch tracking is enabled per tracking dimension group at Product
+      information management > Setup > Dimension and variant groups > Tracking
+      dimension groups with Batch number set to Active and Physical/Financial
+      inventory enabled. Batch attributes (production date, expiration date,
+      vendor batch, potency, country of origin) are defined at Inventory
+      management > Setup > Batch attributes. FEFO (first expiry first out)
+      reservation is configured per item reservation hierarchy. Batch
+      disposition codes at Inventory management > Setup > Batch disposition
+      codes control availability (Available, On hold, Quarantine). The Item
+      tracing report at Inventory management > Inquiries and reports >
+      Tracing > Item tracing provides forward and backward lot genealogy.
+
+  - id: cap-inv-0005
+    module: InventoryManagement
+    feature: Serial Number Control and Tracking
+    description: >
+      Serial number tracking is configured per tracking dimension group at
+      Product information management > Setup > Dimension and variant groups >
+      Tracking dimension groups with Serial number Active. Serial number
+      assignment can be required at Receipt, Pick, or Issue depending on
+      the control setting. Serial number groups define number sequence formats
+      and whether numbers are pre-generated or assigned at transaction time.
+      The Serial number registered inquiry at Inventory management >
+      Inquiries shows registration history. Item tracing by serial number
+      provides complete lifecycle visibility from receipt through customer
+      delivery, including returns and warranty tracking.
+
+  - id: cap-inv-0006
+    module: InventoryManagement
+    feature: Item Model Groups and Inventory Policies
+    description: >
+      Item model groups at Inventory management > Setup > Inventory > Item
+      model groups define inventory valuation method, physical and financial
+      posting policies, and stocked/non-stocked behavior. Key settings include
+      Post physical inventory (controls whether packing slips update GL),
+      Post financial inventory (controls whether invoices update GL), Accrue
+      liability on product receipt (determines if AP is recognized at
+      receipt), and Include physical value (includes unrealized cost in
+      running average). Item groups at Inventory management > Setup >
+      Inventory > Item groups define GL posting profiles mapping inventory
+      transactions to main accounts.
+
+  - id: cap-inv-0007
+    module: InventoryManagement
+    feature: Inventory Value and On-hand Reports
+    description: >
+      Navigate to Inventory management > Inquiries and reports > Inventory
+      value report. The report provides financial value of on-hand inventory
+      by item, warehouse, site, batch, and financial dimension at any point
+      in time (as-of date reporting). The On-hand inventory inquiry at
+      Inventory management > Inquiries > On-hand shows current quantities
+      by location, batch, and serial number with Available physical,
+      Available ordered, and Total available calculations. The Inventory
+      aging report at Inventory management > Inquiries and reports >
+      Inventory aging segments on-hand by receipt date for slow-moving
+      inventory identification. All reports reconcile to GL when inventory
+      close is current.
+
+  - id: cap-inv-0008
+    module: InventoryManagement
+    feature: Quality Management (Quality Orders and Test Groups)
+    description: >
+      Quality orders are configured at Inventory management > Setup >
+      Quality management > Quality associations which define automatic order
+      creation triggers (purchase receipt, production report-as-finished,
+      quarantine order, transfer order receipt). Test groups at Inventory
+      management > Setup > Quality management > Test groups define the
+      tests, acceptable quality level (AQL), sampling plan, and
+      pass/fail criteria. Failed quality orders place inventory into
+      quarantine status with disposition options: Return to vendor, Scrap,
+      Rework, or Relabel. Quality order results are recorded per test
+      instrument with certificate of analysis generation. The Quality
+      order inquiry provides non-conformance history by item and vendor.
+
+  - id: cap-inv-0009
+    module: InventoryManagement
+    feature: Landed Cost (Freight and Duty Allocation)
+    description: >
+      Landed cost is configured at Landed cost > Voyages. Cost types
+      (freight, customs duty, insurance, handling, demurrage) are defined
+      at Landed cost > Cost type setup > Costing types. Apportionment
+      methods distribute costs across purchase order lines by Quantity,
+      Weight, Volume, or Value. Estimated costs are attached to the voyage
+      at creation; actual costs are reconciled against estimates when vendor
+      invoices are received. Cost variances post to dedicated over/under
+      absorption accounts. Auto-cost rules at Landed cost > Auto costs
+      define default cost templates per shipping route, vendor, and item.
+      In-transit inventory is tracked at Landed cost > In-transit goods.
+
+  - id: cap-inv-0010
+    module: InventoryManagement
+    feature: Goods in Transit and Transfer Orders
+    description: >
+      Transfer orders at Inventory management > Inbound orders > Transfer
+      order move inventory between warehouses within or across legal entities.
+      Ship and Receive steps create in-transit inventory posted to a Transit
+      warehouse and Transit GL account configured at Inventory management >
+      Setup > Inventory > Sites. For international transfers, transfer orders
+      support customs documentation and dual-currency posting. The In-transit
+      inventory inquiry shows items between ship and receive status.
+      Intercompany transfer pricing at Organization administration >
+      Intercompany > Transfer pricing determines the cost basis for
+      cross-entity transfers with automatic intercompany invoice generation.
+
+  # ---------------------------------------------------------------------------
+  # ProcurementSourcing (cap-proc-0001 – cap-proc-0010)
+  # Navigation: Procurement and sourcing > ...
+  # ---------------------------------------------------------------------------
+
+  - id: cap-proc-0001
+    module: ProcurementSourcing
+    feature: Purchase Order Approval Workflow
+    description: >
+      PO approval workflows are configured at Procurement and sourcing >
+      Setup > Procurement and sourcing workflows > Purchase order approval.
+      Workflow conditions route approvals by PO total amount, procurement
+      category, requester, vendor, or legal entity. Approval hierarchy uses
+      the Managerial reporting structure or configurable expenditure reviewers
+      per spending limit at Procurement and sourcing > Setup > Procurement
+      and sourcing workflows > Spending limits. Escalation rules auto-approve
+      or reassign after configurable timeout. Approvers receive action center
+      notifications and email with direct approve/reject links. Delegation
+      rules allow out-of-office coverage. PO change management requires
+      re-approval for modifications exceeding defined thresholds.
+
+  - id: cap-proc-0002
+    module: ProcurementSourcing
+    feature: Procurement Catalog (Internal and Punchout)
+    description: >
+      Internal procurement catalogs are configured at Procurement and
+      sourcing > Catalogs > Procurement catalogs with approved products,
+      contracted prices, and preferred vendors organized by procurement
+      category. External punchout catalogs use cXML or OCI protocol configured
+      at Procurement and sourcing > Catalogs > External catalogs to redirect
+      requesters to vendor web stores (e.g. Staples, Amazon Business, Grainger).
+      Cart items return to D365 as requisition lines inheriting procurement
+      policies. Catalog content approval workflows ensure only vetted items
+      are available. Procurement category hierarchy at Procurement and sourcing
+      > Procurement categories defines spend taxonomy for reporting and policy
+      enforcement.
+
+  - id: cap-proc-0003
+    module: ProcurementSourcing
+    feature: Purchase Agreements (Blanket Orders)
+    description: >
+      Purchase agreements are created at Procurement and sourcing > Purchase
+      agreements > Purchase agreements. Agreement types include Product
+      quantity commitment and Product value commitment. Agreements define
+      negotiated pricing, committed quantities or values, validity period,
+      and fulfillment tracking. Release orders are linked to the agreement
+      automatically when items match. The Purchase agreement fulfillment
+      report at Procurement and sourcing > Purchase agreements > Purchase
+      agreement fulfillment shows committed vs released vs remaining amounts
+      per agreement line. Expiring agreement alerts notify procurement buyers
+      via workflow notification. Agreement pricing overrides standard trade
+      agreements during PO creation.
+
+  - id: cap-proc-0004
+    module: ProcurementSourcing
+    feature: Vendor Evaluation and Scorecards
+    description: >
+      Vendor evaluation criteria are defined at Procurement and sourcing >
+      Setup > Vendor evaluation criteria and organized into criterion groups
+      (Quality, Delivery, Price, Service). Evaluation scoring uses a
+      configurable scale (e.g. 1-5 or 1-10). Scores can be entered
+      manually or calculated from transactional KPIs: on-time delivery rate
+      from purchase order confirmations, quality order pass rate, price
+      variance from contracted rates, and invoice accuracy. The Vendor
+      scorecard at Procurement and sourcing > Vendors > Vendor evaluation
+      shows aggregate scores with trend analysis. Scores feed vendor
+      classification (Preferred, Approved, Restricted, Disqualified) used
+      in sourcing decision workflows.
+
+  - id: cap-proc-0005
+    module: ProcurementSourcing
+    feature: Purchase Requisition with Budget Validation
+    description: >
+      Purchase requisitions are created at Procurement and sourcing >
+      Purchase requisitions > All purchase requisitions or via Employee
+      self-service > Purchase requisitions. Requisition lines specify
+      item, procurement category, quantity, and requested delivery date.
+      Budget checking is triggered at requisition approval per budget
+      control configuration, creating pre-encumbrances against the
+      financial dimension budget. Approval workflows route by amount,
+      category, and department. Approved requisitions are consolidated
+      and converted to purchase orders via Procurement and sourcing >
+      Purchase requisitions > Release approved purchase requisitions.
+      Demand consolidation groups similar lines across requisitions for
+      better volume pricing. Auto-created POs inherit requisition
+      financial dimensions for budget tracking continuity.
+
+  - id: cap-proc-0006
+    module: ProcurementSourcing
+    feature: Direct Delivery (Drop Shipment)
+    description: >
+      Direct delivery links a sales order line to a purchase order for
+      vendor-to-customer fulfillment without warehouse receipt. Created
+      from Sales and marketing > Sales orders > All sales orders > select
+      line > Purchase order > Direct delivery. The system creates a PO
+      with the customer's shipping address. PO and SO quantities and
+      delivery dates are synchronized. When the vendor confirms shipment,
+      the packing slip update on the PO automatically posts the SO packing
+      slip. Customer invoicing proceeds from the SO independent of the
+      vendor invoice. Intercompany direct delivery extends this to cross-
+      legal-entity drop shipments with automatic intercompany PO/SO chains.
+
+  - id: cap-proc-0007
+    module: ProcurementSourcing
+    feature: Request for Quotation (RFQ)
+    description: >
+      RFQs are created at Procurement and sourcing > Requests for quotations
+      > All requests for quotations. RFQ solicitation types include Purchase
+      order, Purchase agreement, and Sales quotation. Vendor selection uses
+      the approved vendor list or vendor search by procurement category.
+      RFQ sending generates a case per vendor with response deadline.
+      Vendors respond via Vendor collaboration portal or sealed bid
+      submission. The RFQ compare replies form at Procurement and sourcing
+      > Requests for quotations > Compare RFQ replies provides side-by-side
+      bid analysis by price, lead time, payment terms, and evaluation
+      criteria scoring. Accepted replies auto-generate purchase orders or
+      purchase agreements. Rejection reasons are recorded and notified
+      to unsuccessful vendors.
+
+  - id: cap-proc-0008
+    module: ProcurementSourcing
+    feature: Purchasing Policy Framework
+    description: >
+      Purchasing policies are configured at Procurement and sourcing >
+      Setup > Policies > Purchasing policies per legal entity or operating
+      unit. Policy rules include: Requisition control (mandatory
+      requisition before PO), Vendor selection (approved vendor list
+      enforcement), RFQ threshold (mandatory competitive bidding above
+      amount), Requisition ordering (catalog-only or free-text), and
+      Purchase order creation and demand consolidation rules. Policy
+      violations block document creation or generate warnings in the
+      message bar. The Purchasing policy audit report shows policy
+      compliance rates by buyer, department, and violation type.
+
+  - id: cap-proc-0009
+    module: ProcurementSourcing
+    feature: Procurement Spend Analytics
+    description: >
+      Navigate to Procurement and sourcing > Inquiries and reports >
+      Procurement analytics. The embedded Power BI procurement analytics
+      workspace displays spend by vendor (top-N, Pareto analysis), spend
+      by procurement category (taxonomy breakdown), spend by legal entity,
+      maverick spend rate (off-contract purchases as percentage of total),
+      purchase order cycle time (requisition-to-PO lead time), and
+      year-over-year variance analysis. Drill-through from visuals opens
+      transaction details. The Purchase order statistics report provides
+      PO counts, amounts, and status distribution. Data refreshes from
+      the Entity store aggregate measurements on a configurable schedule.
+
+  - id: cap-proc-0010
+    module: ProcurementSourcing
+    feature: Vendor Collaboration and Self-Service
+    description: >
+      Vendor collaboration is accessed via the external vendor portal
+      authenticated through Azure AD B2C. Core capabilities: PO
+      confirmation with accept/reject/modify per line and delivery date
+      negotiation; Advance Shipment Notice (ASN) creation with packing
+      structure and tracking numbers; Invoice submission creating pending
+      vendor invoices; Consignment inventory replenishment showing
+      on-hand at customer warehouse with replenishment order creation;
+      RFQ response submission with pricing and terms; New vendor
+      registration request with questionnaire and certification upload.
+      All portal activities are logged in the Vendor collaboration
+      activity log at Procurement and sourcing > Vendor collaboration >
+      Activity log for audit purposes.
+
+  # ---------------------------------------------------------------------------
+  # ProjectManagement (cap-proj-0001 – cap-proj-0010)
+  # Navigation: Project management and accounting > ...
+  # ---------------------------------------------------------------------------
+
+  - id: cap-proj-0001
+    module: ProjectManagement
+    feature: Work Breakdown Structure (WBS) Editor
+    description: >
+      Navigate to Project management and accounting > Projects > All projects
+      > select project > Plan tab > Work breakdown structure. The WBS editor
+      decomposes project scope into tasks, summary tasks, and milestones with
+      fields for effort (hours), duration (days), start/finish dates, and
+      predecessor dependencies (Finish-to-Start, Start-to-Start). Resource
+      assignment links named workers or generic resource roles to tasks.
+      The WBS drives project scheduling using forward scheduling from project
+      start date. Budget roll-up aggregates task-level cost estimates to
+      the project budget. WBS versioning at Project management and accounting
+      > Projects > WBS version tracks baseline vs current scope. WBS
+      templates enable reuse of standard project structures.
+
+  - id: cap-proj-0002
+    module: ProjectManagement
+    feature: Resource Scheduling and Capacity Management
+    description: >
+      Navigate to Project management and accounting > Projects > Resource
+      scheduling. The resource availability view displays committed, soft-
+      booked, and available capacity hours by worker across all projects
+      for a configurable date range. Resource assignment from the WBS
+      creates hard-booked commitments deducted from capacity. The Resource
+      fulfillment view matches resource requirements (role, skill, location)
+      to available workers. Capacity alerts flag over-allocated resources.
+      Project resource scheduling integrates with Dynamics 365 Project
+      Operations for advanced scenarios including multi-project resource
+      optimization and resource request approval workflows between project
+      managers and resource managers.
+
+  - id: cap-proj-0003
+    module: ProjectManagement
+    feature: Timesheet Entry and Approval
+    description: >
+      Navigate to Project management and accounting > Timesheets > My
+      timesheets. Workers enter hours against project tasks, project
+      categories, and indirect activities (vacation, training, admin)
+      by day for the weekly period. Favorite entries and copy-from-
+      previous-week accelerate data entry. Submitted timesheets route
+      to the project manager for approval via the Timesheet approval
+      workflow at Organization administration > Workflow > Project
+      management and accounting workflows. Approved hours post to project
+      cost journals at the worker's cost rate configured at Project
+      management and accounting > Setup > Prices > Cost price. Intercompany
+      timesheets allow workers to charge time to projects in other legal
+      entities. Timesheet entry is also available via the Dynamics 365
+      Finance mobile app.
+
+  - id: cap-proj-0004
+    module: ProjectManagement
+    feature: Expense Management with Policy Enforcement
+    description: >
+      Navigate to Expense management > My expenses > New expense report.
+      Expense lines capture category (airfare, hotel, meals, mileage, per
+      diem), amount, date, project, and activity with receipt image
+      attachment via OCR capture. Expense policies at Expense management >
+      Setup > Policies > Expense report policies enforce per diem rates by
+      location, daily meal limits, receipt requirements above thresholds,
+      restricted expense categories, and travel advance reconciliation.
+      Policy violations block submission or generate warnings. Approval
+      workflows route by amount, department, and project. Posted expense
+      reports allocate costs to project categories with financial dimension
+      tagging. Credit card transaction import at Expense management >
+      Setup > Credit card auto-matches transactions to expense lines.
+
+  - id: cap-proj-0005
+    module: ProjectManagement
+    feature: Project Invoicing (Time and Material / Fixed Price)
+    description: >
+      Navigate to Project management and accounting > Project invoices >
+      Project invoice proposals. Time-and-material projects bill actual
+      posted hours and expenses at contracted sales prices configured in
+      Project management and accounting > Setup > Prices > Sales price.
+      Fixed-price projects use billing rules: Milestone, Percentage of
+      completion, or Unit of delivery. Invoice proposals are generated
+      automatically via Project management and accounting > Periodic >
+      Invoices > Create invoice proposals with selection by project,
+      contract, customer, date range, and funding source. On-account
+      (advance/retainer) invoicing deducts prepayments from subsequent
+      billing. Invoice proposals require PM review and approval before
+      customer delivery and GL posting.
+
+  - id: cap-proj-0006
+    module: ProjectManagement
+    feature: WIP and Revenue Recognition (Project Accounting)
+    description: >
+      Work-in-progress accounting is configured per project group at
+      Project management and accounting > Setup > Posting > Project groups
+      with WIP methods: Completed contract, Completed percentage, No WIP,
+      or Cost value. WIP estimate processing at Project management and
+      accounting > Periodic > Estimates > Create estimate posts unbilled
+      revenue accruals and cost accruals to WIP GL accounts. The Estimate
+      elimination reverses WIP postings when the project is invoiced or
+      completed. For fixed-price projects, revenue recognition uses
+      percentage-of-completion calculations based on cost or effort ratios.
+      The Project WIP report at Project management and accounting >
+      Inquiries and reports shows WIP balances by project for period-end
+      financial reporting.
+
+  - id: cap-proj-0007
+    module: ProjectManagement
+    feature: Milestone Billing for Fixed-Price Projects
+    description: >
+      Billing milestones are defined on the project contract at Project
+      management and accounting > Project contracts > select contract >
+      Billing rules tab > Milestone billing rule. Each milestone specifies
+      an amount, scheduled completion date, and billing description. The
+      project manager marks milestones complete from the WBS or Project
+      details form. Completed milestones appear in Project management
+      and accounting > Project invoices > Project invoice proposals for
+      review and invoicing. Milestone status tracking shows Planned,
+      In progress, Complete, and Invoiced. Progress payments against
+      milestones reduce the project's remaining billable value. The
+      Project forecast report reflects milestone billing schedule for
+      cash-flow projection.
+
+  - id: cap-proj-0008
+    module: ProjectManagement
+    feature: Project Budget Control and Forecasting
+    description: >
+      Project budgets are configured at Project management and accounting >
+      Projects > All projects > select project > Plan tab > Project budget.
+      Budget lines are entered by cost category (labor, expense, item, fee)
+      and period. Budget approval routes through the Project budget approval
+      workflow. Budget revisions create new budget versions for variance
+      tracking. Budget control integration optionally blocks or warns on
+      cost postings exceeding the approved budget per cost category.
+      Forecast-to-complete updates from actual cost postings enable
+      Estimate at Completion (EAC) calculations. The Project budget vs
+      actuals report shows remaining budget by category. Cash flow
+      forecasting at Project management and accounting > Inquiries >
+      Cash flow forecast projects future receipts and expenditures.
+
+  - id: cap-proj-0009
+    module: ProjectManagement
+    feature: Earned Value Management (EVM)
+    description: >
+      Earned value metrics are calculated from WBS task progress and posted
+      cost transactions at Project management and accounting > Projects >
+      select project > Manage tab > Project statistics. Metrics include
+      Planned Value (PV/BCWS), Earned Value (EV/BCWP), and Actual Cost
+      (AC/ACWP). Derived indices: Cost Performance Index (CPI = EV/AC),
+      Schedule Performance Index (SPI = EV/PV), Cost Variance (CV = EV-AC),
+      and Schedule Variance (SV = EV-PV). Estimate at Completion (EAC)
+      projects total cost based on current CPI. Variance at Completion
+      (VAC = BAC-EAC) shows projected over/under budget. The Project
+      control workspace displays EVM trend charts for executive reporting
+      across the project portfolio.
+
+  - id: cap-proj-0010
+    module: ProjectManagement
+    feature: Intercompany Project Transactions
+    description: >
+      Intercompany project accounting is configured at Project management
+      and accounting > Setup > Intercompany > Intercompany project
+      accounting. Resources from a lending legal entity charge time and
+      expenses to projects in a borrowing legal entity. Transfer pricing
+      rules at Organization administration > Intercompany > Transfer
+      pricing define the billing rate (cost, cost plus markup, or sales
+      price). The lending entity creates intercompany vendor invoices in
+      the borrowing entity and intercompany customer invoices in the
+      lending entity automatically. Intercompany timesheet integration
+      allows workers to select projects across legal entities.
+      Consolidation elimination removes intercompany project revenue
+      and cost during financial close.
+
+  # ---------------------------------------------------------------------------
+  # FixedAssets (cap-fa-0001 – cap-fa-0010)
+  # Navigation: Fixed assets > ...
+  # ---------------------------------------------------------------------------
+
+  - id: cap-fa-0001
+    module: FixedAssets
+    feature: Fixed Asset Acquisition and Capitalization
+    description: >
+      Fixed asset acquisition is processed at Fixed assets > Fixed assets >
+      Fixed assets via acquisition transactions posted from purchase orders,
+      vendor invoices, or free-text journals. Capitalization thresholds are
+      configured per legal entity at Fixed assets > Setup > Fixed assets
+      parameters. The acquisition posting debits the fixed asset account and
+      credits AP or cash. Low-value asset expensing bypasses capitalization
+      when below the threshold. Mass acquisition from PO receipt auto-creates
+      asset records with vendor, cost, and in-service date populated from
+      the purchase order line. Asset split functionality divides a single
+      asset into multiple component assets retaining the original cost basis.
+
+  - id: cap-fa-0002
+    module: FixedAssets
+    feature: Depreciation Calculation (SL / DB / MACRS)
+    description: >
+      Depreciation profiles are configured at Fixed assets > Setup >
+      Depreciation profiles. Methods include Straight line service life,
+      Reducing balance (declining balance), Sum-of-years digits, MACRS
+      (US Modified Accelerated Cost Recovery System with half-year or
+      mid-quarter convention), and Manual. Depreciation books at Fixed
+      assets > Setup > Depreciation books assign profiles to asset groups
+      with depreciation period (monthly, quarterly, annually) and fiscal
+      calendar. The depreciation proposal at Fixed assets > Journal entries
+      > Depreciation proposal generates periodic depreciation journal entries
+      for review and posting. Multiple books per asset support tax vs
+      financial reporting differences. Bonus depreciation (Section 179,
+      first-year allowance) is configurable per depreciation book.
+
+  - id: cap-fa-0003
+    module: FixedAssets
+    feature: Asset Disposal and Retirement
+    description: >
+      Asset disposal is processed at Fixed assets > Journal entries >
+      Fixed assets journal with disposal-sale or disposal-scrap transaction
+      type. Sale disposal calculates gain or loss as proceeds minus net
+      book value (acquisition cost minus accumulated depreciation). Scrap
+      disposal writes off remaining book value to a loss account. Partial
+      disposal allows retirement of asset components while retaining the
+      remaining value. Disposal posting profiles at Fixed assets > Setup >
+      Fixed asset posting profiles define GL accounts for gain, loss,
+      accumulated depreciation reversal, and net book value write-off.
+      Mass disposal proposals enable bulk retirement of fully depreciated
+      assets. Disposal approval workflows route high-value retirements
+      through management approval.
+
+  - id: cap-fa-0004
+    module: FixedAssets
+    feature: Asset Transfer Between Dimensions
+    description: >
+      Asset transfers at Fixed assets > Journal entries > Fixed assets
+      journal with transfer transaction type move assets between financial
+      dimensions (department, cost center, location) or between legal
+      entities. Transfer postings reclassify accumulated depreciation and
+      net book value from source to destination dimension values.
+      Intercompany asset transfers create disposal in the source entity
+      and acquisition in the destination entity at net book value or fair
+      market value per transfer pricing policy. The Fixed asset transfer
+      report at Fixed assets > Inquiries and reports tracks all transfers
+      with before/after dimension values. Physical location tracking
+      fields (building, floor, room) update alongside financial transfers.
+
+  - id: cap-fa-0005
+    module: FixedAssets
+    feature: Asset Revaluation and Impairment
+    description: >
+      Asset revaluation at Fixed assets > Journal entries > Fixed assets
+      journal with write-up or write-down adjustment type adjusts the
+      carrying value of fixed assets. Revaluation can increase (write-up
+      to revaluation surplus in equity per IAS 16) or decrease (impairment
+      loss to income statement per IAS 36) the asset value. The impairment
+      test compares carrying amount to recoverable amount (higher of fair
+      value less disposal costs and value-in-use). Impairment indicators
+      trigger manual review. Revaluation adjustments update the
+      depreciation basis for remaining useful life recalculation. The
+      Asset revaluation report shows pre and post revaluation values
+      with gain/loss posting detail.
+
+  - id: cap-fa-0006
+    module: FixedAssets
+    feature: Fixed Asset Barcode and Physical Inventory
+    description: >
+      Asset barcode labels are generated from Fixed assets > Fixed assets >
+      Fixed assets using the asset number or custom barcode field. Physical
+      inventory counting at Fixed assets > Periodic tasks > Fixed asset
+      counting generates count sheets by location, department, or asset
+      group. Workers scan asset barcodes during physical counts using
+      mobile devices. Count results compare physical presence against
+      the asset register to identify missing, unregistered, or mislocated
+      assets. Discrepancy reports flag assets requiring investigation.
+      Last physical count date and counted-by worker are recorded on the
+      asset record for audit compliance.
+
+  - id: cap-fa-0007
+    module: FixedAssets
+    feature: Lease Accounting (ASC 842 / IFRS 16)
+    description: >
+      Asset leasing is configured at Asset leasing > Setup > Asset leasing
+      parameters. Lease records at Asset leasing > Leases capture lease
+      term, payment schedule, incremental borrowing rate, and lease
+      classification (operating or finance). Right-of-use (ROU) asset and
+      lease liability are calculated and posted at lease commencement.
+      Amortization schedules generate periodic ROU depreciation and interest
+      expense journal entries. Lease modification, termination, and
+      impairment scenarios recalculate remaining obligations. Transition
+      journals handle migration from ASC 840/IAS 17. The Lease schedule
+      report at Asset leasing > Inquiries shows payment schedule, ROU
+      asset balance, and lease liability balance by lease.
+
+  - id: cap-fa-0008
+    module: FixedAssets
+    feature: Depreciation Book and Value Model
+    description: >
+      Value models at Fixed assets > Setup > Value models define separate
+      depreciation tracking for financial reporting (IFRS/GAAP book) and
+      tax reporting (statutory/tax book) per asset. Each value model
+      carries independent acquisition cost, depreciation method, useful
+      life, and accumulated depreciation. Derived value models auto-post
+      tax depreciation entries when the primary book is posted. The Value
+      model comparison report at Fixed assets > Inquiries shows book value
+      differences between financial and tax treatments per asset. Value
+      models post to separate posting layers (Current, Operations, Tax)
+      in the general ledger enabling parallel financial and tax reporting.
+
+  - id: cap-fa-0009
+    module: FixedAssets
+    feature: Fixed Asset Reporting and Registers
+    description: >
+      Navigate to Fixed assets > Inquiries and reports. Standard reports
+      include Fixed asset roll-forward (opening balance, acquisitions,
+      depreciation, disposals, adjustments, closing balance), Net book
+      value report (current NBV by asset group and dimension), Asset
+      acquisition report, Depreciation analysis, and Fully depreciated
+      assets list. The Fixed asset register provides a complete transaction
+      history per asset. The Fixed asset statement reconciles the asset
+      subledger to GL control accounts. Custom report parameters filter
+      by asset group, major type, location, department, and acquisition
+      date range. Export to Excel is standard for all reports.
+
+  - id: cap-fa-0010
+    module: FixedAssets
+    feature: Asset Insurance and Maintenance Tracking
+    description: >
+      Insurance coverage is tracked per asset at Fixed assets > Fixed
+      assets > Fixed assets > Insurance tab with policy number, carrier,
+      coverage amount, premium, and renewal date. The Insurance coverage
+      analysis report at Fixed assets > Inquiries compares insured value
+      to net book value or replacement cost to identify under-insured
+      assets. Maintenance records at Fixed assets > Fixed assets > Fixed
+      assets > Maintenance tab log service history with date, cost, vendor,
+      and next scheduled maintenance. Maintenance cost is posted to
+      expense accounts separate from the asset capitalization. Maintenance
+      schedule alerts notify asset managers of upcoming service dates.
+
+  # ---------------------------------------------------------------------------
+  # SalesAndMarketing (cap-sm-0001 – cap-sm-0010)
+  # Navigation: Sales and marketing > ...
+  # ---------------------------------------------------------------------------
+
+  - id: cap-sm-0001
+    module: SalesAndMarketing
+    feature: Sales Order Processing
+    description: >
+      Navigate to Sales and marketing > Sales orders > All sales orders >
+      New. Sales order entry captures customer, delivery address, requested
+      ship/receipt dates, payment terms, and item lines with quantity, unit
+      price, and discount. Pricing is resolved from trade agreements at
+      Sales and marketing > Prices and discounts > Trade agreement journals.
+      Order confirmation generates a printed/emailed confirmation document.
+      The order lifecycle proceeds through Confirmation > Picking list >
+      Packing slip > Invoice with status tracking at each stage. Delivery
+      schedule splits lines for partial shipments. Sales order holds at
+      Sales and marketing > Setup > Sales order holds block processing for
+      credit, fraud, or manual review reasons.
+
+  - id: cap-sm-0002
+    module: SalesAndMarketing
+    feature: Sales Quotation Management
+    description: >
+      Sales quotations are created at Sales and marketing > Sales quotations
+      > All quotations for prospects or existing customers. Quotation lines
+      include items, quantities, pricing, validity period, and follow-up
+      date. Quotation templates at Sales and marketing > Setup > Quotation
+      template groups accelerate creation for standard offerings. The
+      quotation lifecycle tracks status (Created, Sent, Confirmed, Won,
+      Lost, Cancelled). Won quotations convert to sales orders with one
+      click. Lost reason codes enable win/loss analysis. The Quotation
+      statistics report at Sales and marketing > Inquiries shows conversion
+      rates, average deal size, and sales cycle duration by salesperson
+      and customer segment.
+
+  - id: cap-sm-0003
+    module: SalesAndMarketing
+    feature: Trade Agreement Pricing (Price / Discount)
+    description: >
+      Trade agreements are configured at Sales and marketing > Prices and
+      discounts > Trade agreement journals. Agreement types: Sales price
+      (base price per item-customer-quantity combination), Line discount
+      (percentage or amount per item-customer), Multiline discount
+      (cumulative volume threshold), and Total discount (order total
+      threshold). Price group hierarchies (customer, item, vendor groups)
+      determine agreement applicability. Agreement validity dates control
+      seasonal and promotional pricing. The Price simulation tool evaluates
+      net price impact before agreement activation. Smart rounding rules
+      adjust calculated prices to commercial values (e.g. x.99). Supplementary
+      items (gifts, samples) auto-add to orders meeting specified criteria.
+
+  - id: cap-sm-0004
+    module: SalesAndMarketing
+    feature: Sales Agreement (Blanket Sales Order)
+    description: >
+      Sales agreements are created at Sales and marketing > Sales agreements
+      > Sales agreements. Agreements establish committed quantities or values
+      with customers over a contract period with negotiated pricing and
+      delivery terms. Release orders are linked to the agreement for
+      fulfillment tracking. The Sales agreement fulfillment report at
+      Sales and marketing > Sales agreements > Sales agreement fulfillment
+      shows committed vs released vs remaining by agreement line. Agreement
+      confirmation generates a customer-facing document. Automatic release
+      orders can be created from the agreement on a delivery schedule.
+      Agreement utilization alerts notify sales reps when commitments
+      are approaching fulfillment or expiration.
+
+  - id: cap-sm-0005
+    module: SalesAndMarketing
+    feature: Customer Return Order (RMA)
+    description: >
+      Return merchandise authorization is created at Sales and marketing >
+      Return orders > All return orders. Return lines specify the original
+      sales order, item, quantity, return reason code, and disposition action
+      (Credit only, Replace, Repair, Return to vendor, Scrap). Return
+      quarantine orders hold received items for inspection before final
+      disposition. Credit notes are generated automatically upon return
+      receipt or disposition completion. Return cost is posted against
+      the original sales COGS or a dedicated returns expense account.
+      The Return statistics report tracks return rates by item, customer,
+      and reason code. Replacement orders auto-create new sales orders
+      linked to the return.
+
+  - id: cap-sm-0006
+    module: SalesAndMarketing
+    feature: ATP and CTP Delivery Date Control
+    description: >
+      Delivery date control methods are configured at Sales and marketing >
+      Setup > Sales order default values. Available-to-promise (ATP) calculates
+      the earliest delivery date from current on-hand inventory plus planned
+      receipts minus committed sales. Capable-to-promise (CTP) triggers a
+      real-time master planning explosion to determine if production can
+      fulfill the requested date. CTP for Planning Optimization uses finite
+      capacity scheduling to commit realistic dates. The ATP information
+      form shows available quantity by date. Sales order line delivery date
+      is validated against the calculated ATP/CTP date with a warning when
+      the requested date falls outside the feasible window.
+
+  - id: cap-sm-0007
+    module: SalesAndMarketing
+    feature: Commission Calculation and Settlement
+    description: >
+      Commission structures are configured at Sales and marketing >
+      Commissions > Commission setup. Commission groups assign rates by
+      customer group, item group, and salesperson. Rate types include
+      Percentage of revenue, Fixed amount per transaction, or Tiered
+      percentage based on volume thresholds. Commission calculation runs
+      at Sales and marketing > Periodic tasks > Calculate commission on
+      posted sales invoices. The Commission transactions inquiry shows
+      calculated commissions by salesperson, customer, and invoice.
+      Commission posting creates AP liabilities to salesperson vendor
+      accounts. Commission disputes and adjustments are tracked with
+      approval workflow before payment.
+
+  - id: cap-sm-0008
+    module: SalesAndMarketing
+    feature: Intercompany Sales Order Chain
+    description: >
+      Intercompany trading is configured at Organization administration >
+      Intercompany > Intercompany setup defining trading relationships
+      between legal entities. When a sales order is created in the selling
+      entity for an intercompany customer, the system automatically creates
+      a purchase order in the buying entity and a corresponding intercompany
+      sales order in the supplying entity. Order status, delivery notes,
+      and invoices synchronize across the chain. Transfer pricing at
+      Organization administration > Intercompany > Transfer pricing
+      determines the intercompany price. Intercompany packing slip and
+      invoice posting cascade automatically. Direct delivery intercompany
+      orders ship from the supplying entity directly to the external customer.
+
+  - id: cap-sm-0009
+    module: SalesAndMarketing
+    feature: Customer Rebate and Deduction Management
+    description: >
+      Rebate agreements are configured at Sales and marketing > Prices and
+      discounts > Rebate agreements. Rebate calculation bases include
+      quantity, amount, or weight thresholds over a defined period. Rebate
+      accruals post estimated rebate liability at invoice posting. The
+      rebate claim process at Accounts payable > Rebates > Rebate claims
+      calculates earned rebates for customer payment or credit note
+      generation. Deduction management at Accounts receivable > Deductions
+      > Deduction workbench resolves short-pays by matching customer
+      deductions to authorized rebates, trade promotions, freight
+      allowances, or billing disputes. Unresolved deductions are escalated
+      through a configurable resolution workflow.
+
+  - id: cap-sm-0010
+    module: SalesAndMarketing
+    feature: Sales Forecasting and Demand Planning Integration
+    description: >
+      Sales forecasts are entered at Sales and marketing > Sales forecasting
+      > Sales forecast lines by item, customer group, allocation key, and
+      period. Forecasts feed into master planning demand at Master planning
+      > Setup > Demand forecasting > Demand forecast parameters. The
+      Demand forecasting module uses Azure Machine Learning for statistical
+      baseline forecasts from historical sales data. Forecast accuracy
+      metrics (MAPE, bias) compare forecasts to actuals. Manual forecast
+      adjustments override statistical baselines at item-warehouse-period
+      level. Intercompany demand planning aggregates forecasts across
+      legal entities. Published forecasts create planned orders in master
+      planning to drive procurement and production scheduling.
+
+  # ---------------------------------------------------------------------------
+  # Warehouse (cap-wh-0001 – cap-wh-0010)
+  # Navigation: Warehouse management > ...
+  # ---------------------------------------------------------------------------
+
+  - id: cap-wh-0001
+    module: Warehouse
+    feature: Warehouse Management Mobile App (WMA)
+    description: >
+      The Warehouse Management mobile app connects to D365 at Warehouse
+      management > Setup > Mobile device > Mobile device menu items.
+      Workers execute receiving, put-away, picking, packing, counting,
+      and movement operations via barcode scanning on Android or iOS
+      devices. Menu item configuration defines the process flow: system-
+      directed (system selects location), user-directed (worker selects),
+      or existing work (process queued work orders). Device display fields
+      are customizable per menu item. Offline mode caches work for
+      intermittent connectivity. Detour functionality allows secondary
+      operations (license plate lookup, item inquiry) mid-process.
+      Step instructions guide workers through configurable process steps.
+
+  - id: cap-wh-0002
+    module: Warehouse
+    feature: Location Directives and Put-away Strategy
+    description: >
+      Location directives at Warehouse management > Setup > Location
+      directives define where inventory is placed during put-away,
+      picking, replenishment, and movement. Directive lines filter by
+      item, item group, order type, and quantity. Strategy options include
+      Empty location, Consolidate (same item), Fixed location, FEFO
+      (batch expiry), and Volume-based. Location profiles at Warehouse
+      management > Setup > Warehouse > Location profiles define capacity
+      limits, mixing rules (same item only, same batch only), and
+      counting requirements. Put-away cluster profiles group multiple
+      receipt lines into a single put-away trip optimizing worker travel.
+      The Location utilization report shows capacity usage by zone.
+
+  - id: cap-wh-0003
+    module: Warehouse
+    feature: Wave Processing and Pick Work Generation
+    description: >
+      Waves at Warehouse management > Waves > All waves group sales
+      order or transfer order lines for batch processing. Wave templates
+      at Warehouse management > Setup > Waves > Wave templates define
+      processing steps: wave demand allocation, replenishment, work
+      creation, label printing, and sorting. Automatic wave creation
+      triggers processing at order release. Wave allocation reserves
+      inventory from pick locations. Work creation generates pick-pack-
+      ship work orders assigned to work pools. Wave step codes enable
+      customizable process stages. The wave processing log tracks
+      allocation and work creation results. Failed wave lines are
+      flagged for manual resolution without blocking the entire wave.
+
+  - id: cap-wh-0004
+    module: Warehouse
+    feature: License Plate Receiving and Put-away
+    description: >
+      License plate (LP) receiving at Warehouse management > Mobile
+      device > Purchase order receiving creates LP-tracked inventory
+      at the receiving dock. Mixed LP receiving handles multiple items
+      on a single pallet. LP labels are printed at receipt with item,
+      quantity, batch, and barcode. System-directed put-away creates
+      work orders routing LPs to optimal locations based on location
+      directives. LP consolidation merges partial pallets at put-away.
+      The LP inquiry at Warehouse management > Inquiries > License
+      plates shows contents, location, and transaction history per
+      LP. Inbound load planning at Warehouse management > Loads >
+      Inbound loads pre-registers expected receipts for dock scheduling.
+
+  - id: cap-wh-0005
+    module: Warehouse
+    feature: Outbound Sorting and Packing Stations
+    description: >
+      Packing stations are configured at Warehouse management > Setup >
+      Packing > Packing profiles. Workers scan picked items into shipping
+      containers with weight and dimension capture. Container types at
+      Warehouse management > Setup > Containers > Container types define
+      packaging specifications. Auto-containerization at Warehouse
+      management > Setup > Containers > Container build templates
+      determines optimal box selection based on item dimensions and
+      weight constraints. Outbound sorting at Warehouse management >
+      Setup > Outbound sorting > Outbound sorting templates groups
+      packed containers by carrier, route, or customer for staging area
+      assignment. Shipping labels and packing slips print at pack
+      station close. Carrier manifest integration generates BOL and
+      tracking numbers.
+
+  - id: cap-wh-0006
+    module: Warehouse
+    feature: Replenishment Strategies
+    description: >
+      Replenishment templates at Warehouse management > Setup >
+      Replenishment > Replenishment templates define strategies: Min/Max
+      (replenish pick location when on-hand drops below minimum to the
+      maximum level), Wave demand (replenish during wave processing for
+      specific demand shortfalls), Immediate (triggered when pick work
+      encounters insufficient quantity), and Load demand (replenish for
+      load allocation shortages). Replenishment work orders move
+      inventory from bulk storage to pick face locations. Fixed location
+      replenishment supports dedicated pick slots per item. Replenishment
+      zone restrictions ensure stock moves only within defined warehouse
+      zones. The Replenishment work inquiry tracks pending and completed
+      replenishment operations.
+
+  - id: cap-wh-0007
+    module: Warehouse
+    feature: Warehouse Slotting and Location Assignment
+    description: >
+      Slotting templates at Warehouse management > Setup > Warehouse >
+      Slotting templates assign items to optimal pick locations based on
+      sales velocity (ABC classification), physical dimensions, unit of
+      measure, and ergonomic zone preferences. The slotting process at
+      Warehouse management > Periodic tasks > Warehouse slotting
+      evaluates current location assignments and generates movement work
+      to optimize layout. Slotting demand considers sales order forecast
+      and historical pick frequency. Fixed location assignment at item
+      level reserves dedicated pick positions. The Slotting utilization
+      report compares current vs recommended location assignments with
+      estimated travel time improvement.
+
+  - id: cap-wh-0008
+    module: Warehouse
+    feature: Catch Weight Management
+    description: >
+      Catch weight items are configured at Product information management
+      > Products > Released products with Catch weight enabled on the
+      Manage inventory FastTab. Catch weight units define nominal weight
+      per inventory unit with min/max tolerance. Actual weight is captured
+      at receipt, pick, and ship operations via scale integration or
+      manual entry on the WMA. Inventory tracking maintains both inventory
+      quantity (cases, each) and catch weight quantity (kg, lb). Pricing
+      can be based on inventory unit or catch weight unit. The Catch
+      weight variance report shows tolerance exceptions. Catch weight
+      tag tracking links individual weight records to serial or batch
+      numbers for traceability.
+
+  - id: cap-wh-0009
+    module: Warehouse
+    feature: Cross-docking (Planned and Opportunistic)
+    description: >
+      Planned cross-docking at Warehouse management > Setup > Cross-docking
+      > Cross-docking policies links inbound purchase orders to outbound
+      sales orders, bypassing put-away and pick processes. The cross-dock
+      planning workbench shows matchable supply and demand. Opportunistic
+      cross-docking at receiving inspects incoming inventory against open
+      demand and routes qualifying items directly to the outbound dock.
+      Cross-dock work orders move inventory from receiving to shipping
+      staging with minimal handling. Cross-docking reduces warehouse
+      storage utilization and accelerates order fulfillment for high-
+      velocity items. The Cross-dock performance report tracks cross-dock
+      rates and time savings.
+
+  - id: cap-wh-0010
+    module: Warehouse
+    feature: Warehouse Task Management and Labor Standards
+    description: >
+      Work pools at Warehouse management > Setup > Work > Work pools
+      assign work orders to teams or zones. Work priority and sequence
+      determine execution order on the WMA. Work class restrictions at
+      Warehouse management > Setup > Work > Work classes control which
+      workers can execute specific work types (pick, put, count, move).
+      Labor standards at Warehouse management > Setup > Labor standards
+      define expected time per task type (pick per line, travel per zone
+      transition, packing per container) for productivity measurement.
+      The Warehouse performance dashboard shows worker efficiency
+      against labor standards, lines per hour, and utilization rates.
+      Work audit trail tracks completion time, worker, and location
+      for every executed work line.
+
+  # ---------------------------------------------------------------------------
+  # ProductionControl (cap-prod-0001 – cap-prod-0010)
+  # Navigation: Production control > ...
+  # ---------------------------------------------------------------------------
+
+  - id: cap-prod-0001
+    module: ProductionControl
+    feature: Production Order Lifecycle
+    description: >
+      Production orders are created at Production control > Production
+      orders > All production orders. The lifecycle progresses through
+      Created > Estimated (cost calculation) > Scheduled (operation and
+      job scheduling) > Released (material issued to production floor) >
+      Started (shop floor reporting begins) > Reported as finished
+      (output quantity reported) > Ended (cost finalization and variance
+      posting). BOM and route are exploded from the product's active
+      BOM/route version at estimation. Material availability check
+      validates component stock before release. The production overview
+      dashboard shows orders by status, schedule adherence, and
+      resource utilization.
+
+  - id: cap-prod-0002
+    module: ProductionControl
+    feature: Bill of Materials (BOM) Management
+    description: >
+      BOMs are configured at Product information management > Bills of
+      materials and formulas > Bills of materials. BOM lines define
+      component items, quantities per parent, unit of measure, warehouse,
+      and scrap percentage. BOM versions control effectivity by date range
+      and quantity range enabling engineering change management. Phantom
+      BOM lines explode sub-assemblies without creating intermediate
+      production orders. BOM calculation at Inventory management >
+      Periodic tasks > Standard cost update rolls up component costs
+      through multi-level BOMs. The BOM designer provides a graphical
+      tree view with indented component hierarchy. BOM comparison at
+      Product information management > BOMs > BOM comparison shows
+      differences between BOM versions.
+
+  - id: cap-prod-0003
+    module: ProductionControl
+    feature: Route and Operation Scheduling
+    description: >
+      Routes are configured at Production control > Setup > Routes >
+      Routes. Route operations define the sequence of work center or
+      resource group operations with setup time, run time per unit,
+      overlap quantity (parallel processing), and queue time. Operations
+      scheduling assigns operations to time periods per resource group
+      capacity calendar. Job scheduling creates detailed job assignments
+      to specific resources with finite capacity constraints. The Gantt
+      chart at Production control > Inquiries > Production schedule
+      visualizes scheduled jobs with drag-and-drop rescheduling.
+      Bottleneck detection highlights capacity-constrained resources.
+      Route versions manage engineering changes to production processes.
+
+  - id: cap-prod-0004
+    module: ProductionControl
+    feature: Shop Floor Execution (Production Floor)
+    description: >
+      The production floor execution interface at Production control >
+      Manufacturing execution > Production floor execution provides
+      touch-screen job reporting for shop floor workers. Workers clock
+      in/out of jobs, report good quantity and scrap, register material
+      consumption, and record downtime with reason codes. Real-time job
+      status updates feed the production overview. Bundle job registration
+      allows simultaneous work on multiple jobs. Quality checks can be
+      integrated as registration steps. Indirect activities (cleaning,
+      maintenance, meetings) track non-productive time. The production
+      floor execution terminal supports badge or PIN authentication
+      with configurable tabs for active jobs, pending jobs, and
+      completed jobs.
+
+  - id: cap-prod-0005
+    module: ProductionControl
+    feature: Production Cost Variance Analysis
+    description: >
+      Production variances are calculated when the production order is
+      ended at Production control > Production orders > End. Variance
+      categories include: Lot size variance (fixed overhead over/under
+      absorbed), Production quantity variance (actual vs standard
+      quantity), Production price variance (actual vs standard cost per
+      unit), and Substitution variance (alternative material cost
+      difference). Variances post to dedicated GL accounts per cost
+      group at Inventory management > Setup > Inventory posting >
+      Posting. The Production variance analysis report at Production
+      control > Inquiries shows variances by order, item, cost group,
+      and period. Standard cost revaluation incorporates variance
+      feedback into future cost standards.
+
+  - id: cap-prod-0006
+    module: ProductionControl
+    feature: Formula and Co-product / By-product Management
+    description: >
+      Formulas at Product information management > Bills of materials
+      and formulas > Formulas define process manufacturing recipes with
+      ingredient quantities, potency-based concentration, and scalable
+      batch sizing. Co-products and by-products are defined on the
+      formula header with cost allocation methods (Total cost, Percentage,
+      or None for by-products). Batch order creation at Production
+      control > Production orders > Planned batch orders uses formula
+      versions with date and quantity effectivity. Potency management
+      adjusts ingredient quantities based on active ingredient
+      concentration. Formula approval workflows control recipe changes.
+      The formula designer provides a visual component hierarchy with
+      cost impact analysis.
+
+  - id: cap-prod-0007
+    module: ProductionControl
+    feature: Kanban and Lean Manufacturing
+    description: >
+      Kanban rules are configured at Production control > Kanban >
+      Kanban rules. Rule types include Manufacturing kanban (trigger
+      production), Withdrawal kanban (trigger material movement), and
+      Fixed quantity kanban (replenish to fixed level). The kanban board
+      at Production control > Kanban > Kanban board visualizes kanban
+      status (Not planned, Prepared, In progress, Completed) with drag-
+      and-drop scheduling. Production flow models at Production control
+      > Lean manufacturing > Production flows define value stream maps
+      with activity relationships. Takt time calculations balance work
+      cell loading. The lean scheduling board provides capacity planning
+      for production flow activities. Supermarket replenishment kanbans
+      maintain lean pull-based material flow.
+
+  - id: cap-prod-0008
+    module: ProductionControl
+    feature: Resource and Work Center Capacity
+    description: >
+      Resources are configured at Organization administration > Resources
+      > Resources with type (Machine, Tool, Human resource, Vendor,
+      Location). Resource capabilities define skills and certifications.
+      Work center capacity is set via working time calendars at
+      Organization administration > Setup > Calendars > Working time
+      templates with shifts, breaks, and efficiency percentages.
+      Resource groups at Production control > Setup > Resource groups
+      pool resources for scheduling. Finite capacity scheduling respects
+      calendar availability and prevents over-booking. The Capacity
+      load inquiry at Production control > Inquiries shows resource
+      utilization percentage by period. Resource maintenance schedules
+      block capacity during planned downtime.
+
+  - id: cap-prod-0009
+    module: ProductionControl
+    feature: Quality Control in Production
+    description: >
+      Quality associations at Inventory management > Setup > Quality
+      management > Quality associations trigger automatic quality orders
+      at production events: Before report-as-finished, After report-as-
+      finished, and After end. Sampling plans define inspection quantities
+      (fixed, percentage, or AQL-based per lot size). In-process quality
+      checks are registered via the production floor execution interface.
+      Non-conformance orders at Inventory management > Quality management
+      > Non-conformances track defects with root cause analysis, corrective
+      action, and disposition. Statistical process control (SPC) charts
+      monitor test variable trends. Quality certificate generation
+      provides customer-facing compliance documentation per production
+      batch.
+
+  - id: cap-prod-0010
+    module: ProductionControl
+    feature: Subcontracting (Outside Operations)
+    description: >
+      Subcontracted operations are defined on the production route with
+      resource type Vendor at Production control > Setup > Routes >
+      Routes. When a production order is released, a subcontracting
+      purchase order is auto-created at Procurement and sourcing >
+      Purchase orders for the vendor resource. Material can be shipped
+      to the subcontractor via a transfer order or direct material
+      provision. The subcontractor reports completion quantity which
+      triggers the route operation feedback. Subcontracting cost is
+      posted as an outside operation cost in the production order.
+      The Subcontracting inquiry at Production control > Inquiries >
+      Subcontracting shows outstanding subcontracted operations with
+      vendor, expected completion, and material status.
+
+  # ---------------------------------------------------------------------------
+  # HumanResources (cap-hr-0001 – cap-hr-0010)
+  # Navigation: Human resources > ...
+  # ---------------------------------------------------------------------------
+
+  - id: cap-hr-0001
+    module: HumanResources
+    feature: Employee Hire and Onboarding
+    description: >
+      Worker hiring is processed at Human resources > Workers > Employees
+      > Hire new worker. The hiring wizard captures personal information,
+      employment details (position, department, legal entity, start date),
+      compensation group, and benefit enrollment eligibility. The
+      onboarding checklist at Human resources > Tasks > Onboarding
+      checklists assigns setup activities (IT equipment request, badge
+      creation, training enrollment, policy acknowledgment) to HR,
+      manager, and new hire with due dates and tracking. Position
+      assignment links the worker to the organizational hierarchy.
+      Personnel actions at Human resources > Workers > Personnel actions
+      track hire, transfer, promotion, and termination with approval
+      workflow and effective dating.
+
+  - id: cap-hr-0002
+    module: HumanResources
+    feature: Leave and Absence Management
+    description: >
+      Leave types are configured at Human resources > Leave and absence
+      > Leave and absence types (Vacation, Sick, Personal, FMLA,
+      Parental, etc.). Accrual plans at Human resources > Leave and
+      absence > Leave and absence plans define earning rates, maximum
+      balances, carry-over limits, and waiting periods. Employees submit
+      leave requests via Employee self-service > Leave > Time off
+      requests with calendar view showing team availability. Manager
+      approval workflows route requests to the direct supervisor. The
+      Leave and absence workspace shows balances, pending requests,
+      and team calendar. Absence registration integrates with payroll
+      for absence pay calculation. Buy/sell leave policies allow
+      employees to purchase additional vacation or sell unused days.
+
+  - id: cap-hr-0003
+    module: HumanResources
+    feature: Compensation Management (Fixed and Variable)
+    description: >
+      Fixed compensation plans at Human resources > Compensation > Fixed
+      compensation plans define pay structures with grade/band, step
+      increments, minimum/midpoint/maximum ranges, and currency.
+      Compensation events (merit increase, promotion, market adjustment)
+      process mass pay changes through approval workflows with budget
+      control. Variable compensation plans at Human resources >
+      Compensation > Variable compensation plans manage bonuses,
+      commissions, stock awards, and profit-sharing with performance-
+      based allocation. Compensation process at Human resources >
+      Compensation > Process events applies approved changes to employee
+      records. The Compensation analysis workspace shows pay equity,
+      comp-ratio distribution, and budget impact analysis.
+
+  - id: cap-hr-0004
+    module: HumanResources
+    feature: Benefits Administration and Enrollment
+    description: >
+      Benefit plans are configured at Human resources > Benefits >
+      Plans with types: Medical, Dental, Vision, Life insurance,
+      Disability, FSA/HSA, Retirement (401k/pension), and Flex credits.
+      Eligibility rules determine which employees qualify based on
+      employment type, legal entity, department, union affiliation, and
+      tenure. Open enrollment at Human resources > Benefits > Open
+      enrollment allows mass enrollment during annual enrollment periods.
+      Life events (hire, marriage, birth, termination) trigger special
+      enrollment windows. Benefits cost is calculated per pay period and
+      integrated with payroll deductions. The Benefits workspace shows
+      enrollment summary, coverage elections, and upcoming life events.
+      Affordable Care Act (ACA) reporting generates Forms 1095-B/C.
+
+  - id: cap-hr-0005
+    module: HumanResources
+    feature: Performance Management and Goals
+    description: >
+      Performance journals at Human resources > Performance > Performance
+      journal log achievements, feedback, and development activities
+      throughout the review period. Performance goals at Human resources >
+      Performance > Goal define measurable objectives with target metrics,
+      weight, and due date aligned to organizational goals. Performance
+      reviews at Human resources > Performance > Reviews combine journal
+      entries, goal progress, competency ratings, and manager/employee
+      comments into a formal evaluation document. Review workflows route
+      through self-assessment, manager assessment, calibration, and
+      final sign-off stages. The Performance analytics workspace shows
+      rating distributions, goal completion rates, and review cycle
+      completion status.
+
+  - id: cap-hr-0006
+    module: HumanResources
+    feature: Learning and Training Management
+    description: >
+      Courses are configured at Human resources > Courses > Courses with
+      type (Classroom, Online, Self-paced), instructor, location, capacity,
+      and schedule. Course prerequisites define required certifications
+      or prior course completions. Worker course registration at Human
+      resources > Courses > Course registrations tracks enrollment,
+      attendance, and completion. Certification tracking at Human resources
+      > Workers > Certifications records professional certifications
+      with issue date, expiration, and renewal requirements. Expiring
+      certification alerts notify workers and managers before lapse.
+      The Training compliance report shows completion rates by course,
+      department, and certification requirement for regulatory
+      compliance tracking.
+
+  - id: cap-hr-0007
+    module: HumanResources
+    feature: Position Management and Org Hierarchy
+    description: >
+      Positions are created at Human resources > Positions > Positions
+      with job title, department, reporting-to position, compensation
+      region, and headcount authorization. Position hierarchy builds
+      the organizational reporting structure used for workflow approvals,
+      spending limits, and security access. Position budgeting tracks
+      authorized vs filled positions with compensation cost per position.
+      Department hierarchy at Organization administration > Organizations
+      > Organization hierarchies defines the organizational structure
+      for legal, operational, and reporting purposes. Mass position
+      update at Human resources > Positions > Mass update allows bulk
+      changes to department, job, or compensation assignments across
+      multiple positions.
+
+  - id: cap-hr-0008
+    module: HumanResources
+    feature: Payroll Integration and Pay Statement
+    description: >
+      Payroll position details at Human resources > Workers > Employment
+      > Payroll tab configure pay cycle, pay period, work calendar, and
+      default earning codes per worker. Earning codes at Payroll > Setup
+      > Earning codes define pay types (Regular, Overtime, Holiday, Bonus)
+      with GL account mapping and tax treatment. Benefit deduction and
+      employer contribution codes integrate with benefits enrollment.
+      Pay statements at Payroll > Pay statements show gross earnings,
+      deductions, taxes, and net pay per pay period. Payroll processing
+      at Payroll > Periodic tasks > Process payroll runs generate pay
+      statements for review and approval before payment file generation.
+      Year-end processing generates W-2 (US), T4 (Canada), and P60 (UK)
+      tax forms.
+
+  - id: cap-hr-0009
+    module: HumanResources
+    feature: Workplace Safety and Incident Tracking
+    description: >
+      Injury and illness cases are recorded at Human resources > Workers
+      > Injury and illness with incident date, location, type, body
+      part, and severity classification. OSHA 300 log at Human resources
+      > Reports > OSHA log generates the required US workplace injury
+      and illness record. Case tracking follows incident from initial
+      report through investigation, corrective action, and closure.
+      Workers compensation claim integration links incidents to
+      insurance carrier reporting. Hazard identification records at
+      Human resources > Workplace safety > Hazards track environmental
+      and equipment risks. Safety training requirements are linked to
+      job functions and enforced through the course management module.
+
+  - id: cap-hr-0010
+    module: HumanResources
+    feature: Employee Self-Service Portal
+    description: >
+      Employee self-service is accessed at Employee self-service workspace
+      providing personal information updates (address, emergency contacts,
+      bank accounts), leave balance viewing and time-off requests, pay
+      statement and tax form access, benefit enrollment and life event
+      declaration, expense report submission, timesheet entry, performance
+      goal and journal management, course registration, and company
+      directory search. Manager self-service extends with team calendar,
+      leave approval, performance review management, position requests,
+      and team analytics. The self-service portal uses role-based
+      security to control feature visibility per employment type.
+      Mobile access is supported through the Finance and Operations
+      mobile app.
+
+  # ---------------------------------------------------------------------------
+  # MasterPlanning (cap-mp-0001 – cap-mp-0010)
+  # Navigation: Master planning > ...
+  # ---------------------------------------------------------------------------
+
+  - id: cap-mp-0001
+    module: MasterPlanning
+    feature: Master Planning Run (MRP / MPS)
+    description: >
+      Master planning is executed at Master planning > Master planning >
+      Run > Master planning. The MRP (Material Requirements Planning) run
+      nets demand (sales orders, forecasts, safety stock, min/max levels)
+      against supply (on-hand, purchase orders, production orders, transfer
+      orders) to generate planned orders. MPS (Master Production Schedule)
+      plans finished goods against the forecast. Planning parameters at
+      Master planning > Setup > Master planning parameters define planning
+      horizon (coverage time fence), freeze time fence, and action message
+      preferences. Net change planning processes only items with demand or
+      supply changes since the last run. Regenerative planning replans all
+      items. Planning Optimization provides cloud-based near-real-time
+      planning with multi-threaded execution.
+
+  - id: cap-mp-0002
+    module: MasterPlanning
+    feature: Planned Order Management (Firming)
+    description: >
+      Planned orders generated by master planning are viewed at Master
+      planning > Planned orders > Planned purchase orders / Planned
+      production orders / Planned transfer orders. Firming converts
+      planned orders to actual purchase orders, production orders, or
+      transfer orders. Auto-firming at Master planning > Setup > Plans >
+      Coverage groups > Auto-firm time fence automatically firms planned
+      orders within the specified horizon. The firming process respects
+      lead times, vendor selection, and consolidation rules (merge multiple
+      planned orders to the same vendor into one PO). The Planned order
+      pegging inquiry shows demand-supply linkage explaining why each
+      planned order was created. Net requirements at item level show
+      supply/demand balance over time.
+
+  - id: cap-mp-0003
+    module: MasterPlanning
+    feature: Safety Stock and Reorder Point Planning
+    description: >
+      Safety stock levels are configured at item coverage settings at
+      Master planning > Setup > Coverage > Item coverage per item-
+      warehouse combination. Coverage codes include Min/Max (maintain
+      stock between minimum and maximum levels), Period (net requirements
+      per coverage period), Requirement (lot-for-lot), and Manual.
+      Reorder point triggers planned replenishment when projected on-hand
+      falls below the minimum quantity. Safety stock journals at Master
+      planning > Master planning > Safety stock > Safety stock calculation
+      compute statistical safety stock from historical demand variability
+      and desired service level. Dynamic safety stock adjusts minimum
+      levels based on seasonal demand patterns.
+
+  - id: cap-mp-0004
+    module: MasterPlanning
+    feature: Demand Forecasting with Azure ML
+    description: >
+      Statistical demand forecasting at Master planning > Demand
+      forecasting > Generate statistical baseline forecast uses Azure
+      Machine Learning models trained on historical sales transactions.
+      Forecasting methods include ETS (Exponential Smoothing), ARIMA,
+      and Seasonal patterns. Forecast granularity can be set by item,
+      item allocation key, customer group, and warehouse. The demand
+      forecast review at Master planning > Demand forecasting > Review
+      adjusted demand forecast allows planners to override statistical
+      values with market intelligence. Forecast accuracy reports
+      calculate MAPE (Mean Absolute Percentage Error), MAD, and bias
+      metrics comparing forecasts to actuals. Published forecasts feed
+      master planning as dependent or independent demand.
+
+  - id: cap-mp-0005
+    module: MasterPlanning
+    feature: Coverage Groups and Time Fences
+    description: >
+      Coverage groups at Master planning > Setup > Coverage > Coverage
+      groups define planning behavior per item: coverage time fence
+      (how far ahead to plan), freeze time fence (planned orders within
+      this horizon are not replanned), firming time fence, action message
+      time fence, and capacity time fence. Coverage group assignment
+      to items determines whether MRP uses Min/Max, Period, or
+      Requirement netting logic. Positive and negative days control
+      how far MRP looks for existing supply to cover demand before
+      creating new planned orders. These settings balance planning
+      stability against responsiveness. Coverage groups can be assigned
+      at item-warehouse level for location-specific planning behavior.
+
+  - id: cap-mp-0006
+    module: MasterPlanning
+    feature: Action and Futures Messages
+    description: >
+      Action messages are generated during master planning at Master
+      planning > Master planning > Action messages. Types include
+      Advance (move planned order earlier), Postpone (move later),
+      Increase (raise planned quantity), Decrease (reduce quantity),
+      and Derived actions (changes cascading from dependent demand).
+      Futures messages at Master planning > Master planning > Futures
+      messages flag planned orders that cannot meet the required date
+      within the lead time and propose the earliest feasible date.
+      The action message time fence controls how far ahead actions are
+      calculated. Planners process action messages to update planned
+      orders, or dismiss them with reason codes. Batch action processing
+      applies selected actions automatically within configurable rules.
+
+  - id: cap-mp-0007
+    module: MasterPlanning
+    feature: Intercompany Planning
+    description: >
+      Intercompany planning at Master planning > Setup > Intercompany
+      planning > Intercompany planning groups chains supply across legal
+      entities. Downstream demand in the selling entity generates planned
+      intercompany purchase orders, which create planned intercompany
+      sales orders in the supplying entity, which in turn generates
+      planned production or purchase orders. The intercompany supply
+      chain is planned in a single regenerative run across all group
+      members. Intercompany planned orders show the originating demand
+      source. Firming intercompany planned orders auto-creates actual
+      intercompany PO/SO pairs. Safety stock at hub entities absorbs
+      demand variability from downstream entities.
+
+  - id: cap-mp-0008
+    module: MasterPlanning
+    feature: Planning Optimization (Cloud MRP)
+    description: >
+      Planning Optimization is enabled at Master planning > Setup >
+      Planning Optimization > Planning Optimization parameters. It
+      runs MRP as an Azure-hosted microservice providing near-real-time
+      planning execution (minutes instead of hours for large datasets).
+      Planning Optimization supports multi-threaded parallel processing
+      across items and warehouses. Fit analysis at Master planning >
+      Planning Optimization > Fit analysis validates that current master
+      planning configuration is compatible. Incremental planning
+      processes only changed demand/supply events. Planning Optimization
+      supports all standard coverage codes, safety stock, action messages,
+      and intercompany planning. Migration from deprecated MRP engine
+      requires fit analysis verification and dual-run comparison testing.
+
+  - id: cap-mp-0009
+    module: MasterPlanning
+    feature: Supply Schedule and Net Requirements
+    description: >
+      The Net requirements inquiry at Master planning > Requirements >
+      Net requirements shows the supply/demand balance timeline for a
+      specific item-warehouse combination. Each line shows the transaction
+      type (sales order, purchase order, production order, forecast,
+      safety stock), quantity, date, and running available balance. The
+      Supply schedule at Master planning > Master planning > Supply
+      schedule provides a multi-item Gantt view of planned and firm
+      supply against demand. Explosion (pegging) traces demand through
+      multi-level BOM structures to identify root demand sources.
+      The Calculated delays report flags items where planned supply
+      dates fall after required dates.
+
+  - id: cap-mp-0010
+    module: MasterPlanning
+    feature: Finite Capacity Scheduling (CTP)
+    description: >
+      Capable-to-promise (CTP) at Sales and marketing > Sales orders >
+      Delivery alternatives triggers a real-time planning explosion with
+      finite capacity scheduling to determine the earliest feasible
+      delivery date considering material availability and resource
+      capacity. CTP for Planning Optimization schedules operations
+      against resource calendars and existing load. Finite capacity
+      planning at the route operation level respects work center
+      calendars, shift patterns, and maintenance windows. The Capacity
+      reservations inquiry shows resource loading from CTP commitments.
+      CTP results update the sales order confirmed ship date. Capacity
+      load visualization in the Gantt chart shows the impact of CTP
+      commitments on the production schedule.
