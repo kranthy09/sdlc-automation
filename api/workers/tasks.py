@@ -93,6 +93,120 @@ def _write_batch_state(batch_id: str, **fields: str) -> None:
         r.close()
 
 
+def _build_journey_data(final_state: dict[str, Any]) -> list[dict[str, Any]]:
+    """Join Phase 1–5 data by atom_id into per-atom journey dicts."""
+    validated_atoms = final_state.get("validated_atoms") or []
+    contexts = final_state.get("retrieval_contexts") or []
+    match_results = final_state.get("match_results") or []
+    classifications = final_state.get("classifications") or []
+    vb = final_state.get("validated_batch")
+
+    atom_by_id = {a.atom_id: a for a in validated_atoms}
+    ctx_by_id = {c.atom.atom_id: c for c in contexts}
+    mr_by_id = {m.atom.atom_id: m for m in match_results}
+    cls_by_id = {c.atom_id: c for c in classifications}
+
+    # Determine reviewed atoms from validated_batch
+    reviewed_ids: set[str] = set()
+    if vb:
+        for r in vb.results:
+            if hasattr(r, "reviewer_override") and r.reviewer_override:
+                reviewed_ids.add(r.atom_id)
+
+    journeys: list[dict[str, Any]] = []
+    all_atom_ids = list(cls_by_id.keys()) or list(atom_by_id.keys())
+
+    for atom_id in all_atom_ids:
+        atom = atom_by_id.get(atom_id)
+        ctx = ctx_by_id.get(atom_id)
+        mr = mr_by_id.get(atom_id)
+        cls = cls_by_id.get(atom_id)
+
+        if not cls:
+            continue
+
+        ingest = {
+            "atom_id": atom_id,
+            "requirement_text": cls.requirement_text,
+            "module": cls.module,
+            "intent": atom.intent if atom else "FUNCTIONAL",
+            "priority": atom.priority if atom else "SHOULD",
+            "entity_hints": atom.entity_hints if atom else [],
+            "specificity_score": atom.specificity_score if atom else 0.0,
+            "completeness_score": atom.completeness_score if atom else 0.0,
+            "content_type": atom.content_type if atom else "text",
+            "source_refs": atom.source_refs if atom else [],
+        }
+
+        retrieve = {
+            "capabilities": [
+                {
+                    "name": cap.feature,
+                    "score": cap.composite_score,
+                    "navigation": cap.navigation,
+                }
+                for cap in (ctx.capabilities[:5] if ctx else [])
+            ],
+            "ms_learn_refs": [
+                {"title": ref.title, "score": ref.score}
+                for ref in (ctx.ms_learn_refs[:3] if ctx else [])
+            ],
+            "prior_fitments": [
+                {
+                    "wave": pf.wave,
+                    "country": pf.country,
+                    "classification": pf.classification,
+                }
+                for pf in (ctx.prior_fitments if ctx else [])
+            ],
+            "retrieval_confidence": ctx.retrieval_confidence if ctx else "LOW",
+        }
+
+        match = {
+            "signal_breakdown": mr.signal_breakdown if mr else {},
+            "composite_score": mr.top_composite_score if mr else 0.0,
+            "route": str(mr.route) if mr else "",
+            "anomaly_flags": mr.anomaly_flags if mr else [],
+        }
+
+        d365_nav = (
+            mr.ranked_capabilities[0].navigation
+            if mr and mr.ranked_capabilities
+            else ""
+        )
+        classify = {
+            "classification": str(cls.classification),
+            "confidence": cls.confidence,
+            "rationale": cls.rationale,
+            "route_used": str(cls.route_used),
+            "llm_calls_used": cls.llm_calls_used,
+            "d365_capability": cls.d365_capability_ref or "",
+            "d365_navigation": d365_nav,
+        }
+
+        output = {
+            "classification": str(cls.classification),
+            "confidence": cls.confidence,
+            "config_steps": cls.config_steps,
+            "configuration_steps": cls.configuration_steps,
+            "gap_description": cls.gap_description,
+            "gap_type": cls.gap_type,
+            "dev_effort": cls.dev_effort,
+            "reviewer_override": atom_id in reviewed_ids,
+        }
+
+        journeys.append({
+            "atom_id": atom_id,
+            "ingest": ingest,
+            "retrieve": retrieve,
+            "match": match,
+            "classify": classify,
+            "output": output,
+        })
+
+    return journeys
+
+
 def _finish_complete(batch_id: str, final_state: dict[str, Any]) -> None:
     """Write completed batch results to Redis.
 
@@ -154,6 +268,11 @@ def _finish_complete(batch_id: str, final_state: dict[str, Any]) -> None:
             "d365_capability": r.d365_capability_ref or "",
             "d365_navigation": d365_navigation,
             "evidence": evidence,
+            "config_steps": r.config_steps,
+            "gap_description": r.gap_description,
+            "configuration_steps": r.configuration_steps,
+            "dev_effort": r.dev_effort,
+            "gap_type": r.gap_type,
         })
 
         # Accumulate by_module counts (REVIEW_REQUIRED not counted)
@@ -169,6 +288,8 @@ def _finish_complete(batch_id: str, final_state: dict[str, Any]) -> None:
             else:
                 mod["gap"] += 1
 
+    journey_data = _build_journey_data(final_state)
+
     _write_batch_state(
         batch_id,
         status="complete",
@@ -182,6 +303,7 @@ def _finish_complete(batch_id: str, final_state: dict[str, Any]) -> None:
                 "by_module": by_module,
             }
         ),
+        journey=json.dumps(journey_data),
         report_path=vb.report_path or "",
         completed_at=datetime.now(UTC).isoformat(),
     )
@@ -251,6 +373,12 @@ def _finish_hitl(
             "ai_confidence": c.confidence,
             "ai_rationale": c.rationale,
             "review_reason": review_reason,
+            "module": c.module,
+            "config_steps": c.config_steps,
+            "gap_description": c.gap_description,
+            "configuration_steps": c.configuration_steps,
+            "dev_effort": c.dev_effort,
+            "gap_type": c.gap_type,
             "evidence": {
                 "capabilities": [
                     {
@@ -303,7 +431,14 @@ def _finish_hitl(
             "rationale": c.rationale,
             "d365_capability": c.d365_capability_ref or "",
             "d365_navigation": d365_navigation,
+            "config_steps": c.config_steps,
+            "configuration_steps": c.configuration_steps,
+            "gap_description": c.gap_description,
+            "gap_type": c.gap_type,
+            "dev_effort": c.dev_effort,
         })
+
+    journey_data = _build_journey_data(final_state)
 
     _write_batch_state(
         batch_id,
@@ -316,6 +451,7 @@ def _finish_hitl(
             "partial_fit": partial_fit_count,
             "gap": gap_count,
         }),
+        journey=json.dumps(journey_data),
     )
     _emit(
         batch_id,

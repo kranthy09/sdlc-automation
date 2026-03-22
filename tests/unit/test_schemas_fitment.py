@@ -180,6 +180,43 @@ class TestClassificationResult:
         assert r.config_steps is None
         assert r.gap_description is None
         assert r.caveats is None
+        assert r.configuration_steps is None
+        assert r.dev_effort is None
+        assert r.gap_type is None
+
+    def test_gap_fields_round_trip(self) -> None:
+        r = ClassificationResult(
+            **{
+                **_VALID_RESULT_KWARGS,
+                "classification": FitLabel.GAP,
+                "dev_effort": "M",
+                "gap_type": "Extension",
+            }
+        )
+        assert r.dev_effort == "M"
+        assert r.gap_type == "Extension"
+
+    def test_partial_fit_configuration_steps(self) -> None:
+        r = ClassificationResult(
+            **{
+                **_VALID_RESULT_KWARGS,
+                "classification": FitLabel.PARTIAL_FIT,
+                "configuration_steps": [
+                    "Enable three-way matching",
+                    "Configure tolerance groups",
+                ],
+            }
+        )
+        assert r.configuration_steps == [
+            "Enable three-way matching",
+            "Configure tolerance groups",
+        ]
+
+    def test_dev_effort_invalid_value_raises(self) -> None:
+        with pytest.raises(ValidationError):
+            ClassificationResult(
+                **{**_VALID_RESULT_KWARGS, "dev_effort": "XL"}
+            )
 
     def test_llm_calls_default(self) -> None:
         r = ClassificationResult(**_VALID_RESULT_KWARGS)

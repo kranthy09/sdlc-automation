@@ -3,8 +3,6 @@ LLM client — the single gateway for all Anthropic API calls.
 
 Design rules (enforced here, nowhere else):
   - Retry logic lives ONLY here; nodes must never duplicate it.
-  - Every call is wrapped in record_call("llm", "invoke") for Prometheus.
-  - Token cost is emitted as a Prometheus counter after every successful call.
   - All output is parsed into a caller-provided Pydantic schema via tool use.
   - Retryable errors: RateLimitError, InternalServerError, APIConnectionError,
     APITimeoutError.  All others raise LLMError immediately (no retry).
@@ -22,19 +20,14 @@ Usage:
 
 from __future__ import annotations
 
-import datetime
 import time
 from typing import Any, TypeVar
 
 import anthropic
-from langfuse import Langfuse
-from prometheus_client import REGISTRY as _DEFAULT_REGISTRY
-from prometheus_client import CollectorRegistry, Counter
 from pydantic import BaseModel
 
 from platform.config.settings import get_settings
 from platform.observability.logger import get_logger
-from platform.observability.metrics import record_call
 from platform.schemas.product import ProductConfig
 
 log = get_logger(__name__)
@@ -51,23 +44,6 @@ _RETRYABLE: tuple[type[Exception], ...] = (
     anthropic.APIConnectionError,
     anthropic.APITimeoutError,
 )
-
-# ---------------------------------------------------------------------------
-# Cost table — USD per million tokens
-# ---------------------------------------------------------------------------
-
-_INPUT_COST_PER_M: dict[str, float] = {
-    "claude-sonnet-4-6": 3.0,
-    "claude-opus-4-6": 15.0,
-    "claude-haiku-4-5": 0.25,
-}
-_OUTPUT_COST_PER_M: dict[str, float] = {
-    "claude-sonnet-4-6": 15.0,
-    "claude-opus-4-6": 75.0,
-    "claude-haiku-4-5": 1.25,
-}
-_DEFAULT_INPUT_COST = 3.0
-_DEFAULT_OUTPUT_COST = 15.0
 
 
 # ---------------------------------------------------------------------------
@@ -89,39 +65,20 @@ class LLMError(Exception):
 
 
 class LLMClient:
-    """Anthropic API client with retry, structured output, and observability.
+    """Anthropic API client with retry and structured output.
 
     Args:
         max_retries: Number of retry attempts on transient errors (default 3).
-        registry:    Prometheus CollectorRegistry for the cost counter.
-                     Inject a fresh CollectorRegistry() in tests for isolation.
     """
 
     def __init__(
         self,
         *,
         max_retries: int = 3,
-        registry: CollectorRegistry | None = None,
     ) -> None:
-        _registry = registry if registry is not None else _DEFAULT_REGISTRY
         self._max_retries = max_retries
-        self._cost_counter = Counter(
-            "platform_llm_token_cost_usd_total",
-            "Estimated LLM token cost in USD, labelled by model and token direction",
-            ["model", "direction"],
-            registry=_registry,
-        )
         settings = get_settings()
         self._client = anthropic.Anthropic(api_key=settings.anthropic_api_key.get_secret_value())
-        self._langfuse: Langfuse | None = (
-            Langfuse(
-                public_key=settings.langfuse_public_key,
-                secret_key=settings.langfuse_secret_key.get_secret_value(),
-                host=settings.langfuse_base_url,
-            )
-            if settings.langfuse_public_key
-            else None
-        )
 
     def complete(
         self,
@@ -167,17 +124,15 @@ class LLMClient:
                 attempt=attempt,
                 max_retries=self._max_retries,
             )
-            _t0 = datetime.datetime.utcnow()
             try:
-                with record_call("llm", "invoke"):
-                    response = self._client.messages.create(  # type: ignore[call-overload]
-                        model=model,
-                        max_tokens=max_tokens,
-                        temperature=temperature,
-                        tools=[tool],
-                        tool_choice={"type": "tool", "name": "output"},
-                        messages=[{"role": "user", "content": prompt}],
-                    )
+                response = self._client.messages.create(  # type: ignore[call-overload]
+                    model=model,
+                    max_tokens=max_tokens,
+                    temperature=temperature,
+                    tools=[tool],
+                    tool_choice={"type": "tool", "name": "output"},
+                    messages=[{"role": "user", "content": prompt}],
+                )
             except _RETRYABLE as exc:
                 last_exc = exc
                 log.warning(
@@ -204,36 +159,16 @@ class LLMClient:
             if tool_block is None:
                 raise LLMError(f"LLM response contained no tool_use block (model={model!r})")
 
-            _t1 = datetime.datetime.utcnow()
             result: T = output_schema.model_validate(tool_block.input)
 
-            # Emit cost metrics
             in_tokens: int = response.usage.input_tokens
             out_tokens: int = response.usage.output_tokens
-            in_cost = in_tokens * _INPUT_COST_PER_M.get(model, _DEFAULT_INPUT_COST) / 1_000_000
-            out_cost = out_tokens * _OUTPUT_COST_PER_M.get(model, _DEFAULT_OUTPUT_COST) / 1_000_000
-            self._cost_counter.labels(model=model, direction="input").inc(in_cost)
-            self._cost_counter.labels(model=model, direction="output").inc(out_cost)
-
             log.info(
                 "llm_success",
                 model=model,
                 input_tokens=in_tokens,
                 output_tokens=out_tokens,
-                cost_usd=round(in_cost + out_cost, 6),
             )
-
-            if self._langfuse is not None:
-                self._langfuse.generation(
-                    name="llm-complete",
-                    model=model,
-                    model_parameters={"temperature": temperature, "max_tokens": max_tokens},
-                    input=[{"role": "user", "content": prompt}],
-                    output=result.model_dump(),
-                    usage={"input": in_tokens, "output": out_tokens},
-                    start_time=_t0,
-                    end_time=_t1,
-                )
 
             return result
 

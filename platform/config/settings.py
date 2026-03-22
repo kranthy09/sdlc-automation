@@ -52,13 +52,6 @@ class Settings(BaseSettings):
     qdrant_url: str  # e.g. http://localhost:6333
 
     # ------------------------------------------------------------------
-    # Observability — Langfuse (self-hosted)
-    # ------------------------------------------------------------------
-    langfuse_base_url: str = "https://cloud.langfuse.com"
-    langfuse_public_key: str = ""
-    langfuse_secret_key: SecretStr = SecretStr("")
-
-    # ------------------------------------------------------------------
     # AI model defaults (overridden per-product via ProductConfig)
     # ------------------------------------------------------------------
     default_llm_model: str = "claude-sonnet-4-6"

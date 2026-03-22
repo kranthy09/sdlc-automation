@@ -26,10 +26,16 @@ from fastapi import APIRouter, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 
 from api.models import (
+    AtomJourney,
     AutoApprovedItem,
     BatchHistoryResponse,
     BatchRecord,
     BatchSummary,
+    JourneyResponse,
+    PhaseProgressItem,
+    ProgressClassificationItem,
+    ProgressResponse,
+    PublicResultsResponse,
     ResultItem,
     ResultsResponse,
     ReviewDecisionRequest,
@@ -46,6 +52,7 @@ from platform.schemas.errors import UnsupportedFormatError
 log = structlog.get_logger(__name__)
 
 router = APIRouter(tags=["dynafit"])
+public_router = APIRouter(tags=["public"])
 
 UPLOAD_DIR = Path(os.getenv("UPLOAD_DIR", "/tmp/dynafit_uploads"))
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
@@ -62,11 +69,10 @@ def _dispatch(batch_id: str, upload_id: str, config: dict[str, Any]) -> None:
     try:
         from api.workers.tasks import run_dynafit_pipeline  # noqa: PLC0415
 
-        # countdown=3: browser WebSocket must subscribe before Phase 1
-        # publishes. Redis Pub/Sub has no persistence — early events lost.
-        run_dynafit_pipeline.apply_async(
-            args=[batch_id, upload_id, config], countdown=3
-        )
+        # Phase state is durably persisted to the batch Redis hash by
+        # RedisPubSub.publish(), so no countdown delay is needed —
+        # the WebSocket catch-up replays persisted state on connect.
+        run_dynafit_pipeline.delay(batch_id, upload_id, config)
     except ImportError:
         log.warning("celery_not_ready", batch_id=batch_id)
 
@@ -164,6 +170,11 @@ def _sync_from_redis(batch: dict[str, Any], batch_id: str) -> None:
     if "auto_approved" in data and not batch.get("auto_approved"):
         try:
             batch["auto_approved"] = json.loads(data["auto_approved"])
+        except json.JSONDecodeError:
+            pass
+    if "journey" in data and not batch.get("journey"):
+        try:
+            batch["journey"] = json.loads(data["journey"])
         except json.JSONDecodeError:
             pass
 
@@ -266,6 +277,7 @@ def run_pipeline(body: RunRequest) -> RunResponse:
         "batch_id": batch_id,
         "upload_id": body.upload_id,
         "upload_filename": up["filename"],
+        "product": up["product"],
         "country": up["country"],
         "wave": up["wave"],
         "status": "queued",
@@ -319,6 +331,7 @@ def list_batches(
             BatchRecord(
                 batch_id=b["batch_id"],
                 upload_filename=b["upload_filename"],
+                product=b.get("product", "d365_fo"),
                 country=b["country"],
                 wave=b["wave"],
                 status=b["status"],
@@ -364,6 +377,101 @@ def get_results(
         limit=limit,
         results=[ResultItem(**r) for r in results[start:start + limit]],
         summary=BatchSummary(**batch["summary"]),
+    )
+
+
+# ---------------------------------------------------------------------------
+# 4b. Journey (per-atom pipeline traceability)
+# ---------------------------------------------------------------------------
+
+
+@router.get("/d365_fo/dynafit/{batch_id}/journey")
+def get_journey(
+    batch_id: str,
+    atom_id: str | None = None,
+) -> JourneyResponse:
+    batch = _get_batch(batch_id)
+    if batch["status"] not in ("complete", "review_required"):
+        raise HTTPException(
+            status_code=409,
+            detail="Journey data available only for completed batches",
+        )
+    journey: list[dict[str, Any]] = batch.get("journey", [])
+    if atom_id:
+        journey = [j for j in journey if j["atom_id"] == atom_id]
+    return JourneyResponse(
+        batch_id=batch_id,
+        atoms=[AtomJourney(**j) for j in journey],
+    )
+
+
+# ---------------------------------------------------------------------------
+# 4c. Pipeline progress (durable phase state from Redis hash)
+# ---------------------------------------------------------------------------
+
+PHASE_NAMES = ["Ingestion", "RAG", "Matching", "Classification", "Validation"]
+
+
+@router.get("/d365_fo/dynafit/{batch_id}/progress")
+def get_progress(batch_id: str) -> ProgressResponse:
+    batch = _get_batch(batch_id)
+
+    # Read persisted phase states + classifications from Redis hash
+    persisted: dict[str, dict] = {}
+    persisted_cls: list[dict] = []
+    try:
+        r = _redis.from_url(REDIS_URL)
+        try:
+            raw = r.hget(f"batch:{batch_id}", "phases")
+            raw_cls = r.hget(
+                f"batch:{batch_id}", "classifications",
+            )
+        finally:
+            r.close()
+        if raw:
+            persisted = json.loads(raw)
+        if raw_cls:
+            persisted_cls = json.loads(raw_cls)
+    except Exception:
+        pass
+
+    # Build 5-phase list, merging persisted data with defaults
+    phases: list[PhaseProgressItem] = []
+    for i in range(1, 6):
+        key = str(i)
+        if key in persisted:
+            p = persisted[key]
+            phases.append(PhaseProgressItem(
+                phase=i,
+                phase_name=p.get("phase_name", PHASE_NAMES[i - 1]),
+                status=p.get("status", "pending"),
+                current_step=p.get("current_step"),
+                progress_pct=p.get("progress_pct", 0),
+                atoms_produced=p.get("atoms_produced", 0),
+                atoms_validated=p.get("atoms_validated", 0),
+                atoms_flagged=p.get("atoms_flagged", 0),
+                latency_ms=p.get("latency_ms"),
+            ))
+        else:
+            phases.append(PhaseProgressItem(
+                phase=i,
+                phase_name=PHASE_NAMES[i - 1],
+            ))
+
+    classifications = [
+        ProgressClassificationItem(
+            atom_id=c["atom_id"],
+            classification=c["classification"],
+            confidence=c["confidence"],
+        )
+        for c in persisted_cls
+    ]
+
+    return ProgressResponse(
+        batch_id=batch_id,
+        status=batch["status"],
+        phases=phases,
+        classifications=classifications,
     )
 
 
@@ -470,4 +578,67 @@ def download_report(batch_id: str) -> FileResponse:
         path=report_path,
         media_type="application/zip",
         filename=f"fdd_report_{batch_id}.zip",
+    )
+
+
+# ---------------------------------------------------------------------------
+# 8. Public results (shareable read-only — no product prefix)
+# ---------------------------------------------------------------------------
+
+
+@public_router.get("/batches/{batch_id}/results")
+def get_public_results(batch_id: str) -> PublicResultsResponse:
+    batch = _get_batch(batch_id)
+    results: list[dict[str, Any]] = batch["results"]
+    return PublicResultsResponse(
+        batch_id=batch_id,
+        product=batch.get("product", "d365_fo"),
+        country=batch["country"],
+        wave=batch["wave"],
+        submitted_at=batch["created_at"],
+        reviewed_by=None,
+        summary=BatchSummary(**batch["summary"]),
+        requirements=[ResultItem(**r) for r in results],
+    )
+
+
+# ---------------------------------------------------------------------------
+# 9. Public batch listing (dashboard — no product prefix)
+# ---------------------------------------------------------------------------
+
+
+@public_router.get("/batches")
+def list_all_batches(
+    limit: int = 20,
+    status: str | None = None,
+    page: int = 1,
+) -> BatchHistoryResponse:
+    batches = list(_batches.values())
+    for b in batches:
+        _sync_from_redis(b, b["batch_id"])
+    if status:
+        batches = [
+            b for b in batches if b["status"] == status
+        ]
+    total = len(batches)
+    start = (page - 1) * limit
+    page_batches = batches[start : start + limit]
+    return BatchHistoryResponse(
+        batches=[
+            BatchRecord(
+                batch_id=b["batch_id"],
+                upload_filename=b["upload_filename"],
+                product=b.get("product", "d365_fo"),
+                country=b["country"],
+                wave=b["wave"],
+                status=b["status"],
+                summary=BatchSummary(**b["summary"]),
+                created_at=b["created_at"],
+                completed_at=b.get("completed_at"),
+            )
+            for b in page_batches
+        ],
+        total=total,
+        page=page,
+        limit=limit,
     )

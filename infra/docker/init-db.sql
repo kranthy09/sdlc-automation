@@ -11,15 +11,6 @@ BEGIN
 END
 $$;
 
--- Create Langfuse database (LLM observability — open-source, self-hosted)
-DO $$
-BEGIN
-    IF NOT EXISTS (SELECT FROM pg_database WHERE datname = 'langfuse') THEN
-        PERFORM dblink_exec('dbname=postgres', 'CREATE DATABASE langfuse OWNER platform');
-    END IF;
-END
-$$;
-
 -- ---------------------------------------------------------------------------
 -- Base application schema (idempotent — safe to re-run)
 -- Mirrors platform/storage/postgres.py _DDL so the schema exists before
@@ -52,7 +43,13 @@ CREATE TABLE IF NOT EXISTS fitments (
     embedding         vector(384),
     created_at        TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
     -- V1: capability reference for audit and future retrieval use
-    d365_capability_ref TEXT
+    d365_capability_ref TEXT,
+    -- V2: classification detail fields
+    config_steps        TEXT,
+    gap_description     TEXT,
+    configuration_steps JSONB,
+    dev_effort          TEXT,
+    gap_type            TEXT
 );
 
 CREATE INDEX IF NOT EXISTS fitments_hnsw
@@ -72,3 +69,4 @@ CREATE TABLE IF NOT EXISTS schema_migrations (
 
 INSERT INTO schema_migrations (version) VALUES ('V0__base_schema')               ON CONFLICT DO NOTHING;
 INSERT INTO schema_migrations (version) VALUES ('V1__add_fitments_capability_ref') ON CONFLICT DO NOTHING;
+INSERT INTO schema_migrations (version) VALUES ('V2__add_fitments_classification_fields') ON CONFLICT DO NOTHING;

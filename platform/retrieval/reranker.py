@@ -9,8 +9,6 @@ Scores documents against a query with a cross-encoder model, applies sigmoid
 to convert raw logits to [0, 1] scores, and returns top-k candidates sorted
 by descending relevance.
 
-Every rerank call is wrapped in record_call("reranker", "rerank") for Prometheus.
-
 Usage:
     from platform.retrieval.reranker import Reranker
 
@@ -29,10 +27,7 @@ import math
 from dataclasses import dataclass
 from typing import Any
 
-from prometheus_client import CollectorRegistry
-
 from platform.observability.logger import get_logger
-from platform.observability.metrics import MetricsRecorder
 
 log = get_logger(__name__)
 
@@ -81,7 +76,6 @@ class Reranker:
 
     Args:
         model_name: fastembed model ID (e.g. "Xenova/ms-marco-MiniLM-L-6-v2").
-        registry:   Prometheus CollectorRegistry for metric isolation in tests.
         _model:     Pre-loaded model instance — for testing only; skips lazy load.
     """
 
@@ -89,11 +83,9 @@ class Reranker:
         self,
         model_name: str,
         *,
-        registry: CollectorRegistry | None = None,
         _model: Any = None,
     ) -> None:
         self._model_name = model_name
-        self._recorder = MetricsRecorder(registry)
         self._model: Any = _model
 
     def _get_model(self) -> Any:
@@ -126,9 +118,8 @@ class Reranker:
         if not candidates:
             return []
         try:
-            with self._recorder.record_call("reranker", "rerank"):
-                docs = [text for _, text in candidates]
-                raw: list[Any] = list(self._get_model().rerank(query, docs))
+            docs = [text for _, text in candidates]
+            raw: list[Any] = list(self._get_model().rerank(query, docs))
             results = [
                 RerankResult(id=cid, score=_sigmoid(float(logit)))
                 for (cid, _), logit in zip(candidates, raw, strict=True)

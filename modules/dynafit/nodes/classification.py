@@ -52,6 +52,7 @@ from ..events import (
     publish_classification_event,
     publish_phase_complete,
     publish_phase_start,
+    publish_step_progress,
 )
 from ..product_config import get_product_config
 from ..prompts.loader import render_prompt
@@ -87,7 +88,12 @@ class LLMClassificationOutput(BaseModel):
     rationale: str
     d365_capability_ref: str = ""
     config_steps: str = ""  # populated by LLM when verdict=PARTIAL_FIT
+    configuration_steps: list[str] = Field(
+        default_factory=list,
+    )  # PARTIAL_FIT: numbered config actions
     gap_description: str = ""  # populated by LLM when verdict=GAP
+    dev_effort: Literal["S", "M", "L"] | None = None  # GAP only
+    gap_type: str = ""  # GAP: Extension / Integration / New feature
     caveats: str = ""
 
 
@@ -180,8 +186,9 @@ class ClassificationNode:
         }
 
         t0 = time.monotonic()
+        n = len(match_results)
         classifications: list[ClassificationResult] = []
-        for mr in match_results:
+        for i, mr in enumerate(match_results):
             result = self._classify_one(
                 mr,
                 priors_by_atom.get(mr.atom.atom_id, []),
@@ -189,6 +196,13 @@ class ClassificationNode:
             )
             publish_classification_event(batch_id, result, self._get_redis())
             classifications.append(result)
+            publish_step_progress(
+                batch_id, self._get_redis(),
+                phase=4,
+                step=f"Classifying requirements ({i + 1}/{n})",
+                completed=i + 1,
+                total=n,
+            )
         elapsed_ms = (time.monotonic() - t0) * 1000
 
         counts: Counter[FitLabel] = Counter(r.classification for r in classifications)
@@ -385,7 +399,10 @@ class ClassificationNode:
             rationale=out.rationale,
             d365_capability_ref=out.d365_capability_ref or None,
             config_steps=out.config_steps or None,
+            configuration_steps=out.configuration_steps or None,
             gap_description=out.gap_description or None,
+            dev_effort=out.dev_effort,
+            gap_type=out.gap_type or None,
             caveats=out.caveats or None,
             route_used=mr.route,
             llm_calls_used=llm_calls,

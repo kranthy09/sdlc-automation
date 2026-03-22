@@ -5,8 +5,6 @@ Converts text to a sparse (term-index, IDF-weight) vector compatible with
 Qdrant's sparse vector field. Used alongside dense embeddings for hybrid RRF
 retrieval.
 
-Every encode call is wrapped in record_call("bm25", "encode") for Prometheus.
-
 Usage:
     from platform.retrieval.bm25 import BM25Retriever
 
@@ -28,10 +26,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from prometheus_client import CollectorRegistry
-
 from platform.observability.logger import get_logger
-from platform.observability.metrics import MetricsRecorder
 
 log = get_logger(__name__)
 
@@ -62,7 +57,6 @@ class BM25Retriever:
 
     Args:
         corpus:   Documents used to build vocabulary and IDF weights.
-        registry: Prometheus CollectorRegistry — inject a fresh one in tests.
         _index:   Pre-built BM25Okapi index — for testing only; bypasses build.
     """
 
@@ -70,10 +64,8 @@ class BM25Retriever:
         self,
         corpus: list[str],
         *,
-        registry: CollectorRegistry | None = None,
         _index: Any = None,
     ) -> None:
-        self._recorder = MetricsRecorder(registry)
         tokenized = [_tokenize(doc) for doc in corpus]
         self._vocab: dict[str, int] = _build_vocab(tokenized)
         self._index: Any = _index if _index is not None else _build_index(tokenized)
@@ -94,18 +86,17 @@ class BM25Retriever:
             BM25Error: If encoding fails for any reason.
         """
         try:
-            with self._recorder.record_call("bm25", "encode"):
-                tokens = _tokenize(text)
-                indices: list[int] = []
-                values: list[float] = []
-                seen: set[str] = set()
-                for token in tokens:
-                    if token in self._vocab and token not in seen:
-                        seen.add(token)
-                        idf = float(self._index.idf.get(token, 0.0))
-                        if idf > 0.0:
-                            indices.append(self._vocab[token])
-                            values.append(idf)
+            tokens = _tokenize(text)
+            indices: list[int] = []
+            values: list[float] = []
+            seen: set[str] = set()
+            for token in tokens:
+                if token in self._vocab and token not in seen:
+                    seen.add(token)
+                    idf = float(self._index.idf.get(token, 0.0))
+                    if idf > 0.0:
+                        indices.append(self._vocab[token])
+                        values.append(idf)
             log.debug("bm25_encode", n_terms=len(indices))
             return indices, values
         except BM25Error:

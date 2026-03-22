@@ -17,7 +17,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from enum import StrEnum
-from typing import Annotated, Self
+from typing import Annotated, Literal, Self
 
 from pydantic import Field, model_validator
 
@@ -70,6 +70,7 @@ class MatchResult(PlatformModel):
     route: RouteLabel
     top_composite_score: Annotated[float, Field(ge=0.0, le=1.0)]
     anomaly_flags: list[str] = Field(default_factory=list)
+    signal_breakdown: dict[str, float] = Field(default_factory=dict)
 
     @model_validator(mode="after")
     def scores_align_with_capabilities(self) -> Self:
@@ -107,6 +108,13 @@ class ClassificationResult(PlatformModel):
 
     # Populated when classification=GAP
     gap_description: str | None = None
+
+    # Structured config actions for PARTIAL_FIT (from LLM tool-use)
+    configuration_steps: list[str] | None = None
+
+    # GAP t-shirt sizing and categorisation
+    dev_effort: Literal["S", "M", "L"] | None = None
+    gap_type: str | None = None
 
     # Country-specific caveats or uncertainty notes
     caveats: str | None = None

@@ -1,5 +1,3 @@
-import { useRef } from 'react'
-import { useVirtualizer } from '@tanstack/react-virtual'
 import { ChevronUp, ChevronDown } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { ResultRow } from './ResultRow'
@@ -15,6 +13,7 @@ const COLS = [
 ] as const
 
 interface ResultsTableProps {
+  batchId: string
   results: FitmentResult[]
   total: number
   query: ResultsQuery
@@ -23,18 +22,10 @@ interface ResultsTableProps {
   onPage: (page: number) => void
 }
 
-export function ResultsTable({ results, total, query, loading, onSort, onPage }: ResultsTableProps) {
-  const parentRef = useRef<HTMLDivElement>(null)
+export function ResultsTable({ batchId, results, total, query, loading, onSort, onPage }: ResultsTableProps) {
   const page = query.page ?? 1
   const limit = query.limit ?? 25
   const totalPages = Math.ceil(total / limit)
-
-  const rowVirtualizer = useVirtualizer({
-    count: results.length,
-    getScrollElement: () => parentRef.current,
-    estimateSize: () => 44,
-    overscan: 5,
-  })
 
   return (
     <div className="rounded-xl border border-bg-border bg-bg-surface overflow-hidden">
@@ -76,25 +67,10 @@ export function ResultsTable({ results, total, query, loading, onSort, onPage }:
           <p className="text-sm text-text-muted">No results match the current filters.</p>
         </div>
       ) : (
-        <div
-          ref={parentRef}
-          className="overflow-y-auto"
-          style={{ height: Math.min(results.length * 44, 440) }}
-        >
-          <div style={{ height: rowVirtualizer.getTotalSize(), position: 'relative' }}>
-            {rowVirtualizer.getVirtualItems().map((vRow) => (
-              <ResultRow
-                key={results[vRow.index].atom_id}
-                result={results[vRow.index]}
-                style={{
-                  position: 'absolute',
-                  top: vRow.start,
-                  left: 0,
-                  right: 0,
-                }}
-              />
-            ))}
-          </div>
+        <div className="max-h-[600px] overflow-y-auto">
+          {results.map((r) => (
+            <ResultRow key={r.atom_id} result={r} batchId={batchId} />
+          ))}
         </div>
       )}
 

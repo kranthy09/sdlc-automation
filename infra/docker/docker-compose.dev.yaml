@@ -1,14 +1,12 @@
-# Full dev stack — backing services + observability + API + Worker + UI
-# make dev-full      → start (builds images)
-# make dev-full-down → stop
+# Dev stack — backing services + API + Worker + UI
+# make dev      → start (builds images)
+# make dev-down → stop
 #
 # URLs once running:
 #   UI          http://localhost:5173
 #   API docs    http://localhost:8000/api/docs
 #   API health  http://localhost:8000/health
 #   Qdrant      http://localhost:6333/dashboard
-#   Langfuse    http://localhost:3000
-#   Grafana     http://localhost:3001
 
 services:
   # ------------------------------------------------------------------
@@ -59,61 +57,6 @@ services:
       timeout: 10s
       retries: 5
 
-  langfuse:
-    image: langfuse/langfuse:2
-    container_name: platform_langfuse
-    ports:
-      - "3000:3000"
-    environment:
-      DATABASE_URL: ${LANGFUSE_DATABASE_URL}
-      NEXTAUTH_SECRET: ${LANGFUSE_NEXTAUTH_SECRET}
-      NEXTAUTH_URL: ${LANGFUSE_NEXTAUTH_URL}
-      SALT: ${LANGFUSE_SALT}
-      TELEMETRY_ENABLED: ${LANGFUSE_TELEMETRY_ENABLED}
-    depends_on:
-      postgres:
-        condition: service_healthy
-    restart: on-failure
-
-  celery-exporter:
-    image: danihodovic/celery-exporter:latest
-    container_name: platform_celery_exporter
-    command: ["--broker-url=redis://redis:6379/0"]
-    ports:
-      - "9808:9808"
-    depends_on:
-      redis:
-        condition: service_healthy
-    restart: unless-stopped
-
-  prometheus:
-    image: prom/prometheus:latest
-    container_name: platform_prometheus
-    ports:
-      - "9090:9090"
-    volumes:
-      - ./prometheus.yml:/etc/prometheus/prometheus.yml
-      - prometheus_data:/prometheus
-    command:
-      - "--config.file=/etc/prometheus/prometheus.yml"
-      - "--storage.tsdb.retention.time=15d"
-    restart: unless-stopped
-
-  grafana:
-    image: grafana/grafana:latest
-    container_name: platform_grafana
-    ports:
-      - "3001:3000"
-    environment:
-      GF_SECURITY_ADMIN_USER: ${GF_SECURITY_ADMIN_USER}
-      GF_SECURITY_ADMIN_PASSWORD: ${GF_SECURITY_ADMIN_PASSWORD}
-      GF_USERS_ALLOW_SIGN_UP: ${GF_USERS_ALLOW_SIGN_UP}
-    volumes:
-      - grafana_data:/var/lib/grafana
-    depends_on:
-      - prometheus
-    restart: unless-stopped
-
   # ------------------------------------------------------------------
   # API (FastAPI + uvicorn)
   # ------------------------------------------------------------------
@@ -121,6 +64,7 @@ services:
     build:
       context: ../..
       dockerfile: Dockerfile
+    image: enterprise-ai-backend
     container_name: platform_api
     # Override CMD to enable hot-reload in dev, scoped to source dirs only.
     # Scoping avoids spurious reloads from .venv or build artefacts.
@@ -140,8 +84,6 @@ services:
       - /app/platform
       - --reload-dir
       - /app/modules
-      - --reload-dir
-      - /app/agents
     ports:
       - "8000:8000"
     env_file:
@@ -155,7 +97,6 @@ services:
       - ../../api:/app/api:ro
       - ../../platform:/app/platform:ro
       - ../../modules:/app/modules:ro
-      - ../../agents:/app/agents:ro
       - ../../infra:/app/infra:ro
       - ../../knowledge_bases:/app/knowledge_bases:ro
       - reports:/app/reports
@@ -179,9 +120,8 @@ services:
   # Celery worker
   # ------------------------------------------------------------------
   worker:
-    build:
-      context: ../..
-      dockerfile: Dockerfile
+    image: enterprise-ai-backend
+    pull_policy: never
     container_name: platform_worker
     command: ["uv", "run", "celery", "-A", "api.workers.tasks", "worker", "--loglevel=info", "--concurrency=2"]
     env_file:
@@ -196,11 +136,12 @@ services:
       - ../../api:/app/api:ro
       - ../../platform:/app/platform:ro
       - ../../modules:/app/modules:ro
-      - ../../agents:/app/agents:ro
       - uploads:/tmp/dynafit_uploads
       - reports:/app/reports
       - fastembed_cache:/tmp/fastembed_cache
     depends_on:
+      api:
+        condition: service_healthy
       redis:
         condition: service_healthy
       postgres:
@@ -236,8 +177,6 @@ volumes:
   pg_data:
   redis_data:
   qdrant_data:
-  prometheus_data:
-  grafana_data:
   reports:
   uploads:
   fastembed_cache:

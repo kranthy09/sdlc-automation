@@ -19,11 +19,22 @@ COPY pyproject.toml uv.lock ./
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --frozen --no-dev --extra ml
 
-# Copy application source
-COPY . .
-
-# Pre-download fastembed models (reads model names from product configs).
+# Pre-download fastembed models BEFORE copying all source so this layer is
+# cached unless product_config.py or ProductConfig schema changes.
+# Only the minimal files needed for model discovery are copied here.
+COPY modules/__init__.py modules/__init__.py
+COPY modules/dynafit/__init__.py modules/dynafit/__init__.py
+COPY modules/dynafit/product_config.py modules/dynafit/product_config.py
+COPY platform/__init__.py platform/__init__.py
+COPY platform/schemas/__init__.py platform/schemas/__init__.py
+COPY platform/schemas/product.py platform/schemas/product.py
+COPY infra/__init__.py infra/__init__.py
+COPY infra/scripts/__init__.py infra/scripts/__init__.py
+COPY infra/scripts/download_models.py infra/scripts/download_models.py
 RUN uv run python -m infra.scripts.download_models
+
+# Copy application source (code changes only invalidate from here down)
+COPY . .
 
 EXPOSE 8000
 

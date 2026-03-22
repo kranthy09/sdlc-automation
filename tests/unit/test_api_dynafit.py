@@ -36,12 +36,70 @@ async def client() -> AsyncClient:  # type: ignore[return]
         yield c  # type: ignore[misc]
 
 
+def _make_journey(atom_id: str = "REQ-AP-001") -> dict:
+    return {
+        "atom_id": atom_id,
+        "ingest": {
+            "atom_id": atom_id,
+            "requirement_text": "Three-way matching",
+            "module": "AccountsPayable",
+            "intent": "FUNCTIONAL",
+            "priority": "MUST",
+            "entity_hints": ["invoice", "three-way-match"],
+            "specificity_score": 0.78,
+            "completeness_score": 85.0,
+            "content_type": "text",
+            "source_refs": ["row_14"],
+        },
+        "retrieve": {
+            "capabilities": [
+                {"name": "AP Invoice matching", "score": 0.91, "navigation": "AP > Invoices"}
+            ],
+            "ms_learn_refs": [{"title": "Invoice matching", "score": 0.85}],
+            "prior_fitments": [{"wave": 2, "country": "UK", "classification": "FIT"}],
+            "retrieval_confidence": "HIGH",
+        },
+        "match": {
+            "signal_breakdown": {
+                "embedding_cosine": 0.88,
+                "entity_overlap": 0.60,
+                "token_ratio": 0.72,
+                "historical_alignment": 1.0,
+                "rerank_score": 0.79,
+            },
+            "composite_score": 0.92,
+            "route": "FAST_TRACK",
+            "anomaly_flags": [],
+        },
+        "classify": {
+            "classification": "FIT",
+            "confidence": 0.94,
+            "rationale": "D365 supports it natively.",
+            "route_used": "FAST_TRACK",
+            "llm_calls_used": 1,
+            "d365_capability": "AP Invoice matching",
+            "d365_navigation": "AP > Invoices",
+        },
+        "output": {
+            "classification": "FIT",
+            "confidence": 0.94,
+            "config_steps": None,
+            "configuration_steps": None,
+            "gap_description": None,
+            "gap_type": None,
+            "dev_effort": None,
+            "reviewer_override": False,
+        },
+    }
+
+
 @pytest.fixture
 def seeded_batch() -> str:
     routes_module._batches["bat_abc123"] = {
         "batch_id": "bat_abc123",
         "upload_id": "upl_test01",
         "upload_filename": "reqs.pdf",
+        "product": "d365_fo",
         "country": "DE",
         "wave": 3,
         "status": "complete",
@@ -56,6 +114,11 @@ def seeded_batch() -> str:
                 "wave": 3,
                 "rationale": "D365 supports it natively.",
                 "reviewer_override": False,
+                "config_steps": None,
+                "gap_description": None,
+                "configuration_steps": None,
+                "dev_effort": None,
+                "gap_type": None,
             }
         ],
         "review_items": [
@@ -66,9 +129,16 @@ def seeded_batch() -> str:
                 "ai_confidence": 0.58,
                 "ai_rationale": "No standard composite scoring.",
                 "review_reason": "low_confidence",
+                "module": "AccountsPayable",
+                "config_steps": None,
+                "gap_description": "No standard feature.",
+                "configuration_steps": None,
+                "dev_effort": "M",
+                "gap_type": "Extension",
                 "reviewed": False,
             }
         ],
+        "journey": [_make_journey("REQ-AP-001")],
         "summary": {"total": 1, "fit": 1, "partial_fit": 0, "gap": 0},
         "report_path": None,
         "created_at": "2026-03-21T10:00:00+00:00",
@@ -204,3 +274,168 @@ async def test_list_batches(client: AsyncClient, seeded_batch: str) -> None:
     assert len(body["batches"]) == 1
     assert body["batches"][0]["status"] == "complete"
     assert body["batches"][0]["country"] == "DE"
+    assert body["batches"][0]["product"] == "d365_fo"
+
+
+# ---------------------------------------------------------------------------
+# Public results endpoint
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+async def test_public_results(
+    client: AsyncClient, seeded_batch: str
+) -> None:
+    resp = await client.get(f"/api/batches/{seeded_batch}/results")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["batch_id"] == seeded_batch
+    assert body["product"] == "d365_fo"
+    assert body["country"] == "DE"
+    assert body["wave"] == 3
+    assert body["summary"]["fit"] == 1
+    assert len(body["requirements"]) == 1
+    assert body["requirements"][0]["classification"] == "FIT"
+
+
+@pytest.mark.unit
+async def test_public_results_unknown_batch(
+    client: AsyncClient,
+) -> None:
+    resp = await client.get("/api/batches/bat_missing/results")
+    assert resp.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# Public batches listing
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+async def test_public_batches_listing(
+    client: AsyncClient, seeded_batch: str
+) -> None:
+    resp = await client.get("/api/batches")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert len(body["batches"]) == 1
+    assert body["batches"][0]["batch_id"] == seeded_batch
+
+
+@pytest.mark.unit
+async def test_public_batches_filter_status(
+    client: AsyncClient, seeded_batch: str
+) -> None:
+    resp = await client.get("/api/batches?status=queued")
+    assert resp.status_code == 200
+    assert len(resp.json()["batches"]) == 0
+
+    resp = await client.get("/api/batches?status=complete")
+    assert resp.status_code == 200
+    assert len(resp.json()["batches"]) == 1
+
+
+# ---------------------------------------------------------------------------
+# New fields in results / review
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+async def test_result_item_new_fields(
+    client: AsyncClient, seeded_batch: str
+) -> None:
+    resp = await client.get(
+        f"{BASE}/d365_fo/dynafit/{seeded_batch}/results"
+    )
+    r = resp.json()["results"][0]
+    assert r["config_steps"] is None
+    assert r["gap_description"] is None
+    assert r["configuration_steps"] is None
+    assert r["dev_effort"] is None
+    assert r["gap_type"] is None
+
+
+@pytest.mark.unit
+async def test_review_item_new_fields(
+    client: AsyncClient, seeded_batch: str
+) -> None:
+    resp = await client.get(
+        f"{BASE}/d365_fo/dynafit/{seeded_batch}/review"
+    )
+    item = resp.json()["items"][0]
+    assert item["module"] == "AccountsPayable"
+    assert item["dev_effort"] == "M"
+    assert item["gap_type"] == "Extension"
+    assert item["gap_description"] == "No standard feature."
+
+
+# ---------------------------------------------------------------------------
+# Journey endpoint
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+async def test_get_journey(
+    client: AsyncClient, seeded_batch: str
+) -> None:
+    resp = await client.get(
+        f"{BASE}/d365_fo/dynafit/{seeded_batch}/journey"
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["batch_id"] == seeded_batch
+    assert len(body["atoms"]) == 1
+    atom = body["atoms"][0]
+    assert atom["atom_id"] == "REQ-AP-001"
+    assert atom["ingest"]["module"] == "AccountsPayable"
+    assert atom["ingest"]["intent"] == "FUNCTIONAL"
+    assert atom["retrieve"]["retrieval_confidence"] == "HIGH"
+    assert len(atom["retrieve"]["capabilities"]) == 1
+    assert atom["match"]["route"] == "FAST_TRACK"
+    assert "embedding_cosine" in atom["match"]["signal_breakdown"]
+    assert atom["classify"]["classification"] == "FIT"
+    assert atom["output"]["classification"] == "FIT"
+
+
+@pytest.mark.unit
+async def test_get_journey_filter_atom_id(
+    client: AsyncClient, seeded_batch: str
+) -> None:
+    resp = await client.get(
+        f"{BASE}/d365_fo/dynafit/{seeded_batch}/journey",
+        params={"atom_id": "REQ-AP-001"},
+    )
+    assert resp.status_code == 200
+    assert len(resp.json()["atoms"]) == 1
+
+    resp = await client.get(
+        f"{BASE}/d365_fo/dynafit/{seeded_batch}/journey",
+        params={"atom_id": "NONEXISTENT"},
+    )
+    assert resp.status_code == 200
+    assert len(resp.json()["atoms"]) == 0
+
+
+@pytest.mark.unit
+async def test_journey_not_available_for_queued(
+    client: AsyncClient,
+) -> None:
+    routes_module._batches["bat_queued"] = {
+        "batch_id": "bat_queued",
+        "upload_id": "upl_x",
+        "upload_filename": "r.pdf",
+        "product": "d365_fo",
+        "country": "DE",
+        "wave": 1,
+        "status": "queued",
+        "results": [],
+        "review_items": [],
+        "summary": {"total": 0, "fit": 0, "partial_fit": 0, "gap": 0},
+        "report_path": None,
+        "created_at": "2026-03-21T10:00:00+00:00",
+        "completed_at": None,
+    }
+    resp = await client.get(
+        f"{BASE}/d365_fo/dynafit/bat_queued/journey"
+    )
+    assert resp.status_code == 409

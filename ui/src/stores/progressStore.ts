@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import type {
   Classification,
+  ProgressResponse,
   ResultsResponse,
   ReviewResponse,
   WSClassification,
@@ -45,6 +46,7 @@ interface CompleteSummary {
   partial_fit: number
   gap: number
   reportUrl: string
+  resultsUrl: string
   latencyTotalMs: number
 }
 
@@ -60,6 +62,7 @@ interface ProgressState {
   init: (batchId: string) => void
   dispatch: (msg: WSMessage) => void
   hydrate: (resultsData: ResultsResponse, reviewData?: ReviewResponse | null) => void
+  hydrateFromProgress: (data: ProgressResponse) => void
   reset: () => void
 }
 
@@ -82,9 +85,18 @@ function buildInitialPhases(): PhaseState[] {
 }
 
 function applyPhaseStart(phases: PhaseState[], msg: WSPhaseStart): PhaseState[] {
-  return phases.map((p) =>
-    p.phase === msg.phase ? { ...p, status: 'active', phaseName: msg.phase_name } : p,
-  )
+  // Pipeline is strictly sequential: if phase N starts, all phases < N must be complete.
+  // Mark any prior phase still showing as 'active' or 'pending' as 'complete' —
+  // their phase_complete events may have been missed during a WebSocket reconnect.
+  return phases.map((p) => {
+    if (p.phase === msg.phase) {
+      return { ...p, status: 'active', phaseName: msg.phase_name }
+    }
+    if (p.phase < msg.phase && p.status !== 'complete') {
+      return { ...p, status: 'complete', progressPct: 100 }
+    }
+    return p
+  })
 }
 
 function applyStepProgress(phases: PhaseState[], msg: WSStepProgress): PhaseState[] {
@@ -97,19 +109,24 @@ function applyStepProgress(phases: PhaseState[], msg: WSStepProgress): PhaseStat
 }
 
 function applyPhaseComplete(phases: PhaseState[], msg: WSPhaseComplete): PhaseState[] {
-  return phases.map((p) =>
-    p.phase === msg.phase
-      ? {
-          ...p,
-          status: 'complete',
-          progressPct: 100,
-          atomsProduced: msg.atoms_produced,
-          atomsValidated: msg.atoms_validated,
-          atomsFlagged: msg.atoms_flagged,
-          latencyMs: msg.latency_ms,
-        }
-      : p,
-  )
+  return phases.map((p) => {
+    if (p.phase === msg.phase) {
+      return {
+        ...p,
+        status: 'complete',
+        progressPct: 100,
+        atomsProduced: msg.atoms_produced,
+        atomsValidated: msg.atoms_validated,
+        atomsFlagged: msg.atoms_flagged,
+        latencyMs: msg.latency_ms,
+      }
+    }
+    // Same sequential guarantee: if phase N completes, prior phases must be done
+    if (p.phase < msg.phase && p.status !== 'complete') {
+      return { ...p, status: 'complete', progressPct: 100 }
+    }
+    return p
+  })
 }
 
 function applyClassification(
@@ -186,6 +203,7 @@ export const useProgressStore = create<ProgressState>((set) => ({
               partial_fit: msg.partial_fit_count,
               gap: msg.gap_count,
               reportUrl: msg.report_url ?? '',
+              resultsUrl: msg.results_url ?? '',
               latencyTotalMs: 0,
             },
           }
@@ -228,6 +246,7 @@ export const useProgressStore = create<ProgressState>((set) => ({
             partial_fit,
             gap,
             reportUrl: '',
+            resultsUrl: '',
             latencyTotalMs: 0,
           },
         }
@@ -263,6 +282,46 @@ export const useProgressStore = create<ProgressState>((set) => ({
         }
       }
       return {}
+    }),
+
+  hydrateFromProgress: (data) =>
+    set((state) => {
+      const phases = state.phases.map((p) => {
+        const match = data.phases.find((dp) => dp.phase === p.phase)
+        if (!match || match.status === 'pending') return p
+        return {
+          ...p,
+          status: match.status as PhaseState['status'],
+          phaseName: match.phase_name,
+          currentStep: match.current_step,
+          progressPct: match.progress_pct,
+          atomsProduced: match.atoms_produced,
+          atomsValidated: match.atoms_validated,
+          atomsFlagged: match.atoms_flagged,
+          latencyMs: match.latency_ms,
+        }
+      })
+
+      // Merge persisted classifications (don't lose WS ones)
+      let classifications = state.classifications
+      if (data.classifications?.length) {
+        const existing = new Set(classifications.map((c) => c.atomId))
+        const newRows: LiveClassificationRow[] = data.classifications
+          .filter((c) => !existing.has(c.atom_id))
+          .map((c) => ({
+            atomId: c.atom_id,
+            requirementText: '',
+            classification: c.classification,
+            confidence: c.confidence,
+            module: '',
+            rationale: '',
+          }))
+        if (newRows.length > 0) {
+          classifications = [...classifications, ...newRows]
+        }
+      }
+
+      return { phases, classifications }
     }),
 
   reset: () =>

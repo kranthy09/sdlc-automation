@@ -1,6 +1,6 @@
 import { useState } from 'react'
-import { CheckCircle2, PenLine, Flag, ChevronDown, ChevronUp } from 'lucide-react'
-import { cn, formatConfidence } from '@/lib/utils'
+import { CheckCircle2, PenLine, Flag, ChevronDown, ChevronUp, Wrench, Code2 } from 'lucide-react'
+import { cn, formatConfidence, confidenceTier, CONFIDENCE_TIER_COLOR } from '@/lib/utils'
 import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
 import { OverrideForm } from './OverrideForm'
@@ -18,13 +18,27 @@ const REASON_COLOR: Record<ReviewItem['review_reason'], string> = {
   anomaly: 'text-accent-glow border-accent/30 bg-accent/5',
 }
 
+const DEV_EFFORT_LABEL: Record<string, string> = {
+  S: 'Small',
+  M: 'Medium',
+  L: 'Large',
+}
+
+const DEV_EFFORT_COLOR: Record<string, string> = {
+  S: 'bg-fit-muted text-fit-text border-fit/30',
+  M: 'bg-partial-muted text-partial-text border-partial/30',
+  L: 'bg-gap-muted text-gap-text border-gap/30',
+}
+
 interface ReviewCardProps {
   item: ReviewItem
   submitting: boolean
+  selected?: boolean
+  onToggleSelect?: () => void
   onDecide: (decision: ReviewDecision, overrideClass?: Classification, reason?: string) => void
 }
 
-export function ReviewCard({ item, submitting, onDecide }: ReviewCardProps) {
+export function ReviewCard({ item, submitting, selected, onToggleSelect, onDecide }: ReviewCardProps) {
   const [showEvidence, setShowEvidence] = useState(false)
   const [overrideMode, setOverrideMode] = useState(false)
   const [overrideClass, setOverrideClass] = useState<Classification | null>(null)
@@ -34,12 +48,33 @@ export function ReviewCard({ item, submitting, onDecide }: ReviewCardProps) {
     ? overrideClass !== null && overrideReason.trim().length > 0
     : true
 
+  const tier = confidenceTier(item.ai_confidence)
+
   return (
-    <div className="rounded-xl border border-bg-border bg-bg-surface">
-      {/* Header */}
+    <div
+      className={cn(
+        'rounded-xl border bg-bg-surface transition-colors',
+        selected ? 'border-accent/50 ring-1 ring-accent/20' : 'border-bg-border',
+      )}
+    >
+      {/* Header row: checkbox + module + classification + confidence */}
       <div className="p-5">
-        {/* Review reason pill */}
-        <div className="mb-3 flex items-center gap-2">
+        <div className="mb-3 flex items-center gap-2 flex-wrap">
+          {onToggleSelect && (
+            <input
+              type="checkbox"
+              checked={selected ?? false}
+              onChange={onToggleSelect}
+              className="h-4 w-4 rounded border-bg-border text-accent focus:ring-accent"
+            />
+          )}
+          {/* Module tag */}
+          {item.module && (
+            <span className="inline-flex items-center rounded-md border border-bg-border bg-bg-raised px-2 py-0.5 text-xs font-medium text-text-secondary">
+              {item.module}
+            </span>
+          )}
+          {/* Review reason pill */}
           <span
             className={cn(
               'inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium',
@@ -49,6 +84,13 @@ export function ReviewCard({ item, submitting, onDecide }: ReviewCardProps) {
             {REASON_LABEL[item.review_reason]}
           </span>
           <span className="font-mono text-xs text-text-muted">{item.atom_id}</span>
+          {/* Classification badge + confidence — push right */}
+          <div className="ml-auto flex items-center gap-2">
+            <Badge variant={item.ai_classification} />
+            <span className={cn('text-sm font-semibold', CONFIDENCE_TIER_COLOR[tier])}>
+              {formatConfidence(item.ai_confidence)}
+            </span>
+          </div>
         </div>
 
         {/* Requirement text */}
@@ -56,18 +98,55 @@ export function ReviewCard({ item, submitting, onDecide }: ReviewCardProps) {
           {item.requirement_text}
         </p>
 
-        {/* AI result */}
-        <div className="mt-3 flex items-center gap-3">
-          <Badge variant={item.ai_classification} />
-          <span className="text-sm text-text-muted">
-            {formatConfidence(item.ai_confidence)} confidence
-          </span>
-        </div>
-
         {/* AI rationale */}
         <blockquote className="mt-3 border-l-2 border-bg-border pl-3 text-sm italic text-text-secondary">
           {item.ai_rationale}
         </blockquote>
+
+        {/* PARTIAL_FIT: Configuration steps */}
+        {item.ai_classification === 'PARTIAL_FIT' && item.configuration_steps && item.configuration_steps.length > 0 && (
+          <div className="mt-4 rounded-lg border border-partial/20 bg-partial-muted/10 p-3">
+            <div className="mb-2 flex items-center gap-1.5 text-xs font-medium text-partial-text">
+              <Wrench className="h-3.5 w-3.5" />
+              Configuration Steps
+            </div>
+            <ol className="space-y-1 pl-5 list-decimal text-sm text-text-primary">
+              {item.configuration_steps.map((step, i) => (
+                <li key={i}>{step}</li>
+              ))}
+            </ol>
+          </div>
+        )}
+
+        {/* GAP: Dev effort + gap type + gap description */}
+        {item.ai_classification === 'GAP' && (item.dev_effort || item.gap_type || item.gap_description) && (
+          <div className="mt-4 rounded-lg border border-gap/20 bg-gap-muted/10 p-3">
+            <div className="mb-2 flex items-center gap-1.5 text-xs font-medium text-gap-text">
+              <Code2 className="h-3.5 w-3.5" />
+              Gap Details
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              {item.dev_effort && (
+                <span
+                  className={cn(
+                    'inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold',
+                    DEV_EFFORT_COLOR[item.dev_effort],
+                  )}
+                >
+                  Effort: {DEV_EFFORT_LABEL[item.dev_effort] ?? item.dev_effort}
+                </span>
+              )}
+              {item.gap_type && (
+                <span className="inline-flex items-center rounded-full border border-bg-border bg-bg-raised px-2.5 py-0.5 text-xs font-medium text-text-secondary">
+                  {item.gap_type}
+                </span>
+              )}
+            </div>
+            {item.gap_description && (
+              <p className="mt-2 text-sm text-text-secondary">{item.gap_description}</p>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Evidence accordion */}

@@ -2,6 +2,8 @@ import { apiClient } from './client'
 import type {
   BatchesQuery,
   BatchesResponse,
+  JourneyResponse,
+  ProgressResponse,
   ResultsQuery,
   ResultsResponse,
   ReviewResponse,
@@ -79,7 +81,24 @@ export async function downloadReport(batchId: string): Promise<Blob> {
   return res.data
 }
 
-// ─── 7. Batch history ─────────────────────────────────────────────────────────
+// ─── 7. Get journey ──────────────────────────────────────────────────────────
+export async function getJourney(
+  batchId: string,
+  atomId?: string,
+): Promise<JourneyResponse> {
+  const res = await apiClient.get<JourneyResponse>(`/d365_fo/dynafit/${batchId}/journey`, {
+    params: atomId ? { atom_id: atomId } : undefined,
+  })
+  return res.data
+}
+
+// ─── 8. Pipeline progress (durable phase state) ─────────────────────────────
+export async function getProgress(batchId: string): Promise<ProgressResponse> {
+  const res = await apiClient.get<ProgressResponse>(`/d365_fo/dynafit/${batchId}/progress`)
+  return res.data
+}
+
+// ─── 9. Batch history ─────────────────────────────────────────────────────────
 export async function getBatches(query: BatchesQuery = {}): Promise<BatchesResponse> {
   const res = await apiClient.get<BatchesResponse>('/d365_fo/dynafit/batches', { params: query })
   return res.data

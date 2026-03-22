@@ -182,6 +182,29 @@ class TestCompleteEvent:
         )
         assert e.report_url is None
 
+    def test_results_url(self) -> None:
+        e = CompleteEvent(
+            batch_id="b-1",
+            total=10,
+            fit_count=5,
+            partial_fit_count=3,
+            gap_count=2,
+            review_count=0,
+            results_url="/results/b-1",
+        )
+        assert e.results_url == "/results/b-1"
+
+    def test_results_url_default_none(self) -> None:
+        e = CompleteEvent(
+            batch_id="b-1",
+            total=5,
+            fit_count=5,
+            partial_fit_count=0,
+            gap_count=0,
+            review_count=0,
+        )
+        assert e.results_url is None
+
     def test_frozen(self) -> None:
         e = CompleteEvent(
             batch_id="b-1",

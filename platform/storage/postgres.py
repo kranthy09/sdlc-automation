@@ -13,8 +13,6 @@ Reviewer overrides (reviewer_override=True) are re-sorted to the front of
 get_similar_fitments results so Phase 4 treats consultant decisions as the
 strongest available classification evidence.
 
-Every SQL call is wrapped in record_call("postgres", ...) for Prometheus.
-
 Usage:
     from platform.storage.postgres import PostgresStore
 
@@ -34,14 +32,12 @@ Usage:
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
-from prometheus_client import CollectorRegistry
-
 from platform.observability.logger import get_logger
-from platform.observability.metrics import MetricsRecorder
 from platform.schemas.fitment import ClassificationResult, FitLabel
 from platform.schemas.requirement import RawUpload
 from platform.schemas.retrieval import PriorFitment
@@ -121,6 +117,12 @@ _DDL: list[str] = [
     """,
     # V1 migration — idempotent; ensures column exists on both fresh and existing DBs.
     "ALTER TABLE fitments ADD COLUMN IF NOT EXISTS d365_capability_ref TEXT",
+    # V2 migration — classification detail columns.
+    "ALTER TABLE fitments ADD COLUMN IF NOT EXISTS config_steps TEXT",
+    "ALTER TABLE fitments ADD COLUMN IF NOT EXISTS gap_description TEXT",
+    "ALTER TABLE fitments ADD COLUMN IF NOT EXISTS configuration_steps JSONB",
+    "ALTER TABLE fitments ADD COLUMN IF NOT EXISTS dev_effort TEXT",
+    "ALTER TABLE fitments ADD COLUMN IF NOT EXISTS gap_type TEXT",
 ]
 
 
@@ -134,7 +136,6 @@ class PostgresStore:
 
     Args:
         url:      Async SQLAlchemy DSN — postgresql+asyncpg://user:pw@host/db.
-        registry: Prometheus CollectorRegistry. Inject a fresh one in tests.
         _engine:  Pre-built async engine — for testing only; bypasses lazy init.
     """
 
@@ -142,11 +143,9 @@ class PostgresStore:
         self,
         url: str,
         *,
-        registry: CollectorRegistry | None = None,
         _engine: Any = None,
     ) -> None:
         self._url = url
-        self._recorder = MetricsRecorder(registry)
         self._engine: Any = _engine
 
     # ------------------------------------------------------------------
@@ -176,10 +175,9 @@ class PostgresStore:
 
         engine = self._get_engine()
         try:
-            with self._recorder.record_call("postgres", "ensure_schema"):
-                async with engine.begin() as conn:
-                    for stmt in _DDL:
-                        await conn.execute(text(stmt))
+            async with engine.begin() as conn:
+                for stmt in _DDL:
+                    await conn.execute(text(stmt))
             log.info("postgres_schema_ready")
         except Exception as exc:
             raise PostgresError(f"ensure_schema failed: {exc}", cause=exc) from exc
@@ -208,9 +206,8 @@ class PostgresStore:
         }
         engine = self._get_engine()
         try:
-            with self._recorder.record_call("postgres", "save_upload"):
-                async with engine.begin() as conn:
-                    await conn.execute(stmt, params)
+            async with engine.begin() as conn:
+                await conn.execute(stmt, params)
             log.debug("postgres_upload_saved", upload_id=upload.upload_id)
         except PostgresError:
             raise
@@ -226,9 +223,8 @@ class PostgresStore:
         stmt = text("UPDATE uploads SET status = :status WHERE upload_id = :upload_id")
         engine = self._get_engine()
         try:
-            with self._recorder.record_call("postgres", "update_upload"):
-                async with engine.begin() as conn:
-                    await conn.execute(stmt, {"status": status, "upload_id": upload_id})
+            async with engine.begin() as conn:
+                await conn.execute(stmt, {"status": status, "upload_id": upload_id})
             log.debug("postgres_upload_status_updated", upload_id=upload_id, status=status)
         except PostgresError:
             raise
@@ -275,12 +271,16 @@ class PostgresStore:
             INSERT INTO fitments
                 (atom_id, upload_id, product_id, module, country, wave,
                  classification, confidence, rationale,
-                 reviewer_override, consultant, embedding, d365_capability_ref)
+                 reviewer_override, consultant, embedding,
+                 d365_capability_ref, config_steps, gap_description,
+                 configuration_steps, dev_effort, gap_type)
             VALUES
                 (:atom_id, :upload_id, :product_id, :module, :country, :wave,
                  :classification, :confidence, :rationale,
                  :reviewer_override, :consultant, CAST(:embedding AS vector),
-                 :d365_capability_ref)
+                 :d365_capability_ref, :config_steps, :gap_description,
+                 CAST(:configuration_steps AS JSONB),
+                 :dev_effort, :gap_type)
             """
         )
         params: dict[str, Any] = {
@@ -297,12 +297,20 @@ class PostgresStore:
             "consultant": consultant,
             "embedding": _vec_str(embedding),
             "d365_capability_ref": result.d365_capability_ref,
+            "config_steps": result.config_steps,
+            "gap_description": result.gap_description,
+            "configuration_steps": (
+                json.dumps(result.configuration_steps)
+                if result.configuration_steps
+                else None
+            ),
+            "dev_effort": result.dev_effort,
+            "gap_type": result.gap_type,
         }
         engine = self._get_engine()
         try:
-            with self._recorder.record_call("postgres", "save_fitment"):
-                async with engine.begin() as conn:
-                    await conn.execute(stmt, params)
+            async with engine.begin() as conn:
+                await conn.execute(stmt, params)
             log.debug("postgres_fitment_saved", atom_id=result.atom_id)
         except PostgresError:
             raise
@@ -362,9 +370,8 @@ class PostgresStore:
 
         engine = self._get_engine()
         try:
-            with self._recorder.record_call("postgres", "get_similar_fitments"):
-                async with engine.connect() as conn:
-                    rows = (await conn.execute(text(sql), params)).mappings().all()
+            async with engine.connect() as conn:
+                rows = (await conn.execute(text(sql), params)).mappings().all()
             fitments = [_row_to_prior(r) for r in rows]
             # Reviewer overrides to the front; stable sort preserves similarity order within tier.
             fitments.sort(key=lambda f: 0 if f.reviewer_override else 1)

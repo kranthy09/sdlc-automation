@@ -23,7 +23,7 @@ lock:
 # Testing
 # ---------------------------------------------------------------------------
 test:
-	uv run python -m pytest -x --cov=platform --cov=modules --cov=agents -v
+	uv run python -m pytest -x --cov=platform --cov=modules -v
 
 test-unit:
 	uv run python -m pytest -m unit -v
@@ -43,7 +43,7 @@ test-golden:
 lint:
 	uv run ruff check .
 	uv run ruff format --check .
-	uv run mypy platform/ agents/ modules/ api/
+	uv run mypy platform/ modules/ api/
 
 format:
 	uv run ruff check --fix .
@@ -63,8 +63,6 @@ dev:
 	@echo "  API docs    → http://localhost:8000/api/docs"
 	@echo "  API health  → http://localhost:8000/health"
 	@echo "  Qdrant      → http://localhost:6333/dashboard"
-	@echo "  Langfuse    → http://localhost:3000"
-	@echo "  Grafana     → http://localhost:3001"
 	@echo ""
 
 dev-down:

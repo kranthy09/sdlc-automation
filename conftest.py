@@ -23,8 +23,6 @@ elif sys.path[0] != _root:
 # sys.modules so they stay cached and never re-import it after the clear below.
 import wsgiref.simple_server  # noqa: F401, E402
 
-import prometheus_client  # noqa: F401, E402
-
 # Python caches the stdlib `platform` module in sys.modules at startup before
 # conftest.py runs. Clear it so subsequent imports resolve to our platform/
 # package (a proper directory package with __init__.py) instead of the stdlib

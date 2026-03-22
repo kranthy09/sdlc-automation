@@ -3,6 +3,15 @@ import { cn } from '@/lib/utils'
 import { Progress } from '@/components/ui/Progress'
 import type { PhaseState } from '@/stores/progressStore'
 
+/** Shown under the phase name when active but no step_progress has arrived yet */
+const PHASE_DESCRIPTIONS: Record<number, string> = {
+  1: 'Parsing document & extracting requirements...',
+  2: 'Embedding & retrieving D365 capabilities...',
+  3: 'Scoring signals & routing atoms...',
+  4: 'Running LLM classification...',
+  5: 'Validating results & checking quality...',
+}
+
 const STATUS_DOT: Record<PhaseState['status'], React.ReactNode> = {
   pending: <span className="h-5 w-5 rounded-full border-2 border-pending bg-bg-raised" />,
   active: <Loader2 className="h-5 w-5 animate-spin text-active" />,
@@ -70,8 +79,10 @@ export function PhaseTimeline({ phases }: PhaseTimelineProps) {
               {phase.status === 'active' && (
                 <Progress value={phase.progressPct} className="h-1" />
               )}
-              {phase.status === 'active' && phase.currentStep && (
-                <p className="truncate text-[10px] text-text-muted">{phase.currentStep}</p>
+              {phase.status === 'active' && (
+                <p className="truncate text-[10px] text-text-muted">
+                  {phase.currentStep || PHASE_DESCRIPTIONS[phase.phase] || 'Processing...'}
+                </p>
               )}
             </div>
           </div>

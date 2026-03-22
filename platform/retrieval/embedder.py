@@ -7,8 +7,6 @@ Produces float vectors using any fastembed-compatible model
 fastembed uses ONNX Runtime instead of PyTorch — ~50 MB install vs ~500 MB.
 Model weights are downloaded on first use to fastembed's cache directory.
 
-Every encode call is wrapped in record_call("embedder", "encode") for Prometheus.
-
 Usage:
 
     from platform.retrieval.embedder import Embedder
@@ -21,10 +19,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from prometheus_client import CollectorRegistry
-
 from platform.observability.logger import get_logger
-from platform.observability.metrics import MetricsRecorder
 
 log = get_logger(__name__)
 
@@ -55,7 +50,6 @@ class Embedder:
 
     Args:
         model_name: HuggingFace model ID (e.g. "BAAI/bge-small-en-v1.5").
-        registry:   Prometheus CollectorRegistry for metric isolation in tests.
         _model:     Pre-loaded model instance — for testing only; skips lazy load.
     """
 
@@ -63,11 +57,9 @@ class Embedder:
         self,
         model_name: str,
         *,
-        registry: CollectorRegistry | None = None,
         _model: Any = None,
     ) -> None:
         self._model_name = model_name
-        self._recorder = MetricsRecorder(registry)
         self._model: Any = _model
 
     def _get_model(self) -> Any:
@@ -91,8 +83,7 @@ class Embedder:
             EmbedderError: If the model fails to load or encode.
         """
         try:
-            with self._recorder.record_call("embedder", "encode"):
-                vec: Any = next(iter(self._get_model().embed([text])))
+            vec: Any = next(iter(self._get_model().embed([text])))
             log.debug("embedder_encode", model=self._model_name, dim=len(vec))
             result: list[float] = vec.tolist()
             return result
@@ -116,8 +107,7 @@ class Embedder:
             EmbedderError: If the model fails to load or encode.
         """
         try:
-            with self._recorder.record_call("embedder", "encode"):
-                vecs: list[Any] = list(self._get_model().embed(texts))
+            vecs: list[Any] = list(self._get_model().embed(texts))
             log.debug("embedder_encode_batch", model=self._model_name, n=len(texts))
             result: list[list[float]] = [v.tolist() for v in vecs]
             return result

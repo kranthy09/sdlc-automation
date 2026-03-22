@@ -4,14 +4,12 @@ from contextlib import asynccontextmanager
 from typing import AsyncIterator
 
 from fastapi import FastAPI, WebSocket
-from prometheus_client import make_asgi_app
-from starlette.routing import Mount
 
 import structlog
 
 from api.middleware.cors import add_cors
 from api.middleware.logging import RequestLoggingMiddleware
-from api.routes.dynafit import router as dynafit_router
+from api.routes.dynafit import public_router, router as dynafit_router
 from api.websocket.progress import progress_handler
 from platform.config.settings import get_settings
 from platform.storage.postgres import PostgresStore
@@ -87,13 +85,13 @@ app = FastAPI(
     version="0.1.0",
     docs_url="/api/docs",
     redoc_url="/api/redoc",
-    routes=[Mount("/metrics", make_asgi_app())],
     lifespan=lifespan,
 )
 
 add_cors(app)
 app.add_middleware(RequestLoggingMiddleware)
 app.include_router(dynafit_router, prefix="/api/v1")
+app.include_router(public_router, prefix="/api")
 
 
 @app.websocket("/api/v1/ws/progress/{batch_id}")

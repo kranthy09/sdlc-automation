@@ -28,13 +28,8 @@ from pathlib import Path
 LAYER_RULES: list[tuple[str, list[str], str]] = [
     (
         "platform",
-        ["agents", "modules", "api"],
-        "platform/ cannot import from agents/, modules/, or api/",
-    ),
-    (
-        "agents",
         ["modules", "api"],
-        "agents/ cannot import from modules/ or api/",
+        "platform/ cannot import from modules/ or api/",
     ),
 ]
 

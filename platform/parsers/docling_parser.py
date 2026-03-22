@@ -9,9 +9,6 @@ Engines (all MIT-licensed, no ML models):
 
 No table extraction. No image extraction. Text only.
 
-Every ``parse()`` call is wrapped in ``record_call("docling", "parse")`` so
-the Prometheus metric label is unchanged — zero impact on dashboards.
-
 Usage::
 
     from platform.parsers.docling_parser import DoclingParser
@@ -27,10 +24,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from prometheus_client import CollectorRegistry
-
 from platform.observability.logger import get_logger
-from platform.observability.metrics import MetricsRecorder
 from platform.schemas.errors import ParseError  # noqa: F401 — re-exported
 
 __all__ = [
@@ -96,14 +90,10 @@ class ParseResult:
 
 
 class DoclingParser:
-    """PDF/DOCX/TXT parser backed by pypdf and python-docx.
+    """PDF/DOCX/TXT parser backed by pypdf and python-docx."""
 
-    Args:
-        registry: Prometheus CollectorRegistry — inject a fresh one in tests.
-    """
-
-    def __init__(self, *, registry: CollectorRegistry | None = None) -> None:
-        self._recorder = MetricsRecorder(registry)
+    def __init__(self) -> None:
+        pass
 
     def parse(self, path: Path) -> ParseResult:
         """Parse a document file into prose chunks.
@@ -118,15 +108,14 @@ class DoclingParser:
             ``ParseError``: If the file cannot be read or parsed.
         """
         try:
-            with self._recorder.record_call("docling", "parse"):
-                suffix = path.suffix.lower()
-                if suffix == ".pdf":
-                    items = _extract_pdf(path)
-                elif suffix == ".docx":
-                    items = _extract_docx(path)
-                else:
-                    items = _extract_txt(path)
-                prose = _chunk(items)
+            suffix = path.suffix.lower()
+            if suffix == ".pdf":
+                items = _extract_pdf(path)
+            elif suffix == ".docx":
+                items = _extract_docx(path)
+            else:
+                items = _extract_txt(path)
+            prose = _chunk(items)
         except ParseError:
             raise
         except Exception as exc:

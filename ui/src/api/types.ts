@@ -63,6 +63,11 @@ export interface FitmentResult {
   wave: number
   reviewer_override: boolean
   evidence: FitmentEvidence
+  config_steps: string | null
+  gap_description: string | null
+  configuration_steps: string[] | null
+  dev_effort: 'S' | 'M' | 'L' | null
+  gap_type: string | null
 }
 
 export interface ModuleSummary {
@@ -118,7 +123,13 @@ export interface ReviewItem {
   ai_confidence: number
   ai_rationale: string
   review_reason: 'low_confidence' | 'conflict' | 'anomaly'
+  module: string
   evidence: ReviewItemEvidence
+  config_steps: string | null
+  gap_description: string | null
+  configuration_steps: string[] | null
+  dev_effort: 'S' | 'M' | 'L' | null
+  gap_type: string | null
 }
 
 export interface AutoApprovedItem {
@@ -130,6 +141,11 @@ export interface AutoApprovedItem {
   rationale: string
   d365_capability: string
   d365_navigation: string
+  config_steps: string | null
+  configuration_steps: string[] | null
+  gap_description: string | null
+  gap_type: string | null
+  dev_effort: 'S' | 'M' | 'L' | null
 }
 
 export interface ReviewResponse {
@@ -164,6 +180,7 @@ export interface BatchSummary {
 export interface Batch {
   batch_id: string
   upload_filename: string
+  product: string
   country: string
   wave: number
   status: BatchStatus
@@ -185,6 +202,122 @@ export interface BatchesResponse {
   total: number
   page: number
   limit: number
+}
+
+// ─── Journey (requirement traceability) ──────────────────────────────────────
+
+export interface JourneyIngest {
+  atom_id: string
+  requirement_text: string
+  module: string
+  intent: string
+  priority: string
+  entity_hints: string[]
+  specificity_score: number
+  completeness_score: number
+  content_type: string
+  source_refs: string[]
+}
+
+export interface JourneyCapability {
+  name: string
+  score: number
+  navigation: string
+}
+
+export interface JourneyDocRef {
+  title: string
+  score: number
+}
+
+export interface PriorFitment {
+  wave: number
+  country: string
+  classification: string
+}
+
+export interface JourneyRetrieve {
+  capabilities: JourneyCapability[]
+  ms_learn_refs: JourneyDocRef[]
+  prior_fitments: PriorFitment[]
+  retrieval_confidence: 'HIGH' | 'MEDIUM' | 'LOW'
+}
+
+export interface SignalBreakdown {
+  embedding_cosine: number
+  entity_overlap: number
+  token_ratio: number
+  historical_alignment: number
+  rerank_score: number
+}
+
+export interface JourneyMatch {
+  signal_breakdown: SignalBreakdown
+  composite_score: number
+  route: string
+  anomaly_flags: string[]
+}
+
+export interface JourneyClassify {
+  classification: Classification
+  confidence: number
+  rationale: string
+  route_used: string
+  llm_calls_used: number
+  d365_capability: string
+  d365_navigation: string
+}
+
+export interface JourneyOutput {
+  classification: Classification
+  confidence: number
+  config_steps: string | null
+  configuration_steps: string[] | null
+  gap_description: string | null
+  gap_type: string | null
+  dev_effort: string | null
+  reviewer_override: boolean
+}
+
+export interface AtomJourney {
+  atom_id: string
+  ingest: JourneyIngest
+  retrieve: JourneyRetrieve
+  match: JourneyMatch
+  classify: JourneyClassify
+  output: JourneyOutput
+}
+
+export interface JourneyResponse {
+  batch_id: string
+  atoms: AtomJourney[]
+}
+
+// ─── Pipeline progress (durable phase state) ─────────────────────────────────
+
+export interface PhaseProgressItem {
+  phase: number
+  phase_name: string
+  status: 'pending' | 'active' | 'complete'
+  current_step: string | null
+  progress_pct: number
+  atoms_produced: number
+  atoms_validated: number
+  atoms_flagged: number
+  latency_ms: number | null
+}
+
+export interface ProgressClassificationItem {
+  atom_id: string
+  classification: Classification
+  confidence: number
+}
+
+export interface ProgressResponse {
+  batch_id: string
+  status: string
+  phases: PhaseProgressItem[]
+  classifications: ProgressClassificationItem[]
 }
 
 // ─── WebSocket message types ──────────────────────────────────────────────────
@@ -249,6 +382,7 @@ export interface WSComplete {
   gap_count: number
   review_count: number
   report_url: string | null
+  results_url: string | null
 }
 
 export interface WSError {

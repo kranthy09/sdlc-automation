@@ -1,9 +1,8 @@
 import { useState } from 'react'
-import { useParams } from 'react-router-dom'
-import { Download } from 'lucide-react'
+import { useNavigate, useParams } from 'react-router-dom'
+import { ArrowLeft, Download, FileSpreadsheet } from 'lucide-react'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { SummaryCards } from '@/components/results/SummaryCards'
-import { DistributionChart } from '@/components/results/DistributionChart'
 import { ResultsFilters } from '@/components/results/ResultsFilters'
 import { ResultsTable } from '@/components/results/ResultsTable'
 import { Button } from '@/components/ui/Button'
@@ -15,6 +14,7 @@ import type { ResultsQuery } from '@/api/types'
 
 export default function ResultsPage() {
   const { batchId } = useParams<{ batchId: string }>()
+  const navigate = useNavigate()
   const { addNotification } = useUIStore()
   const [query, setQuery] = useState<ResultsQuery>({
     sort: 'confidence',
@@ -46,10 +46,30 @@ export default function ResultsPage() {
       a.click()
       URL.revokeObjectURL(url)
     } catch {
-      addNotification({ type: 'error', message: 'Report download failed.' })
+      addNotification({ type: 'error', message: 'Report download failed. Use CSV export instead.' })
     } finally {
       setDownloading(false)
     }
+  }
+
+  const handleExportCsv = () => {
+    if (!data?.results.length) return
+    const headers = ['Req ID', 'Requirement', 'Module', 'Classification', 'Confidence', 'D365 Capability', 'D365 Navigation', 'Rationale', 'Config Steps', 'Gap Description', 'Gap Type', 'Dev Effort']
+    const escape = (v: string) => `"${(v ?? '').replace(/"/g, '""')}"`
+    const rows = data.results.map((r) => [
+      r.atom_id, escape(r.requirement_text), r.module, r.classification,
+      r.confidence, escape(r.d365_capability), escape(r.d365_navigation),
+      escape(r.rationale), escape(r.config_steps ?? ''),
+      escape(r.gap_description ?? ''), r.gap_type ?? '', r.dev_effort ?? '',
+    ].join(','))
+    const csv = [headers.join(','), ...rows].join('\n')
+    const blob = new Blob([csv], { type: 'text/csv' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `fdd_results_${batchId}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
   }
 
   return (
@@ -58,15 +78,30 @@ export default function ResultsPage() {
         title="Fitment Results"
         description={`Batch ${batchId}`}
         action={
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={handleDownload}
-            loading={downloading}
-          >
-            <Download className="h-3.5 w-3.5" />
-            Download Excel
-          </Button>
+          <div className="flex gap-2">
+            <Button variant="ghost" size="sm" onClick={() => navigate(-1)}>
+              <ArrowLeft className="h-3.5 w-3.5" />
+              Back
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleDownload}
+              loading={downloading}
+            >
+              <Download className="h-3.5 w-3.5" />
+              Download Excel
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleExportCsv}
+              disabled={!data?.results.length}
+            >
+              <FileSpreadsheet className="h-3.5 w-3.5" />
+              Export CSV
+            </Button>
+          </div>
         }
       />
 
@@ -82,18 +117,15 @@ export default function ResultsPage() {
           <SummaryCards total={data.total} summary={data.summary} />
         ) : null}
 
-        {/* Chart + filters row */}
+        {/* Filters */}
         {data && (
-          <div className="grid grid-cols-3 gap-4">
-            <DistributionChart summary={data.summary} total={data.total} />
-            <div className="col-span-2 flex flex-col justify-start gap-3">
-              <p className="text-xs font-medium uppercase tracking-wide text-text-muted">Filters</p>
-              <ResultsFilters
-                query={query}
-                summary={data.summary}
-                onChange={setQuery}
-              />
-            </div>
+          <div>
+            <p className="mb-2 text-xs font-medium uppercase tracking-wide text-text-muted">Filters</p>
+            <ResultsFilters
+              query={query}
+              summary={data.summary}
+              onChange={setQuery}
+            />
           </div>
         )}
 
@@ -102,6 +134,7 @@ export default function ResultsPage() {
           <Skeleton className="h-96 rounded-xl" />
         ) : data ? (
           <ResultsTable
+            batchId={batchId!}
             results={data.results}
             total={data.total}
             query={query}

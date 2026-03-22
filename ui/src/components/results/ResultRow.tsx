@@ -3,18 +3,21 @@ import { ChevronRight } from 'lucide-react'
 import { cn, formatConfidence, CONFIDENCE_TIER_COLOR, confidenceTier } from '@/lib/utils'
 import { Badge } from '@/components/ui/Badge'
 import { EvidencePanel } from './EvidencePanel'
+import { useJourney } from '@/hooks/useJourney'
 import type { FitmentResult } from '@/api/types'
 
 interface ResultRowProps {
   result: FitmentResult
-  style?: React.CSSProperties
+  batchId: string
 }
 
-export function ResultRow({ result, style }: ResultRowProps) {
+export function ResultRow({ result, batchId }: ResultRowProps) {
   const [open, setOpen] = useState(false)
+  const { data: journeyData } = useJourney(batchId, open ? result.atom_id : undefined)
+  const atomJourney = journeyData?.atoms?.[0] ?? null
 
   return (
-    <div style={style} className="border-b border-bg-border/50 last:border-0">
+    <div className="border-b border-bg-border/50 last:border-0">
       {/* Summary row */}
       <button
         onClick={() => setOpen((o) => !o)}
@@ -51,10 +54,16 @@ export function ResultRow({ result, style }: ResultRowProps) {
       {open && (
         <div className="border-t border-bg-border/50 bg-bg-raised/30 animate-fade-in">
           <EvidencePanel
-            evidence={result.evidence}
+            journey={atomJourney}
+            rationale={result.rationale}
             d365Capability={result.d365_capability}
             d365Navigation={result.d365_navigation}
-            rationale={result.rationale}
+            classification={result.classification}
+            configSteps={result.config_steps}
+            configurationSteps={result.configuration_steps}
+            gapDescription={result.gap_description}
+            devEffort={result.dev_effort}
+            gapType={result.gap_type}
           />
         </div>
       )}

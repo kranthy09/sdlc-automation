@@ -83,6 +83,11 @@ class ResultItem(BaseModel):
     d365_capability: str = ""
     d365_navigation: str = ""
     evidence: EvidenceItem = Field(default_factory=EvidenceItem)
+    config_steps: str | None = None
+    gap_description: str | None = None
+    configuration_steps: list[str] | None = None
+    dev_effort: str | None = None
+    gap_type: str | None = None
 
 
 class ResultsResponse(BaseModel):
@@ -102,7 +107,13 @@ class ReviewItem(BaseModel):
     ai_confidence: float
     ai_rationale: str
     review_reason: str
+    module: str = ""
     evidence: ReviewItemEvidence = Field(default_factory=ReviewItemEvidence)
+    config_steps: str | None = None
+    gap_description: str | None = None
+    configuration_steps: list[str] | None = None
+    dev_effort: str | None = None
+    gap_type: str | None = None
 
 
 class AutoApprovedItem(BaseModel):
@@ -114,6 +125,11 @@ class AutoApprovedItem(BaseModel):
     rationale: str
     d365_capability: str = ""
     d365_navigation: str = ""
+    config_steps: str | None = None
+    configuration_steps: list[str] | None = None
+    gap_description: str | None = None
+    gap_type: str | None = None
+    dev_effort: str | None = None
 
 
 class ReviewQueueResponse(BaseModel):
@@ -140,6 +156,7 @@ class ReviewDecisionResponse(BaseModel):
 class BatchRecord(BaseModel):
     batch_id: str
     upload_filename: str
+    product: str = ""
     country: str
     wave: int
     status: str
@@ -153,3 +170,119 @@ class BatchHistoryResponse(BaseModel):
     total: int
     page: int
     limit: int
+
+
+class PublicResultsResponse(BaseModel):
+    batch_id: str
+    product: str
+    country: str
+    wave: int
+    submitted_at: str
+    reviewed_by: str | None = None
+    summary: BatchSummary
+    requirements: list[ResultItem]
+
+
+# ---------------------------------------------------------------------------
+# Journey (requirement traceability across pipeline phases)
+# ---------------------------------------------------------------------------
+
+
+class JourneyIngest(BaseModel):
+    atom_id: str
+    requirement_text: str
+    module: str
+    intent: str
+    priority: str
+    entity_hints: list[str] = Field(default_factory=list)
+    specificity_score: float = 0.0
+    completeness_score: float = 0.0
+    content_type: str = "text"
+    source_refs: list[str] = Field(default_factory=list)
+
+
+class JourneyCapability(BaseModel):
+    name: str
+    score: float
+    navigation: str
+
+
+class JourneyDocRef(BaseModel):
+    title: str
+    score: float
+
+
+class JourneyRetrieve(BaseModel):
+    capabilities: list[JourneyCapability] = Field(default_factory=list)
+    ms_learn_refs: list[JourneyDocRef] = Field(default_factory=list)
+    prior_fitments: list[PriorFitmentItem] = Field(default_factory=list)
+    retrieval_confidence: str = "LOW"
+
+
+class JourneyMatch(BaseModel):
+    signal_breakdown: dict[str, float] = Field(default_factory=dict)
+    composite_score: float = 0.0
+    route: str = ""
+    anomaly_flags: list[str] = Field(default_factory=list)
+
+
+class JourneyClassify(BaseModel):
+    classification: str
+    confidence: float
+    rationale: str
+    route_used: str
+    llm_calls_used: int = 1
+    d365_capability: str = ""
+    d365_navigation: str = ""
+
+
+class JourneyOutput(BaseModel):
+    classification: str
+    confidence: float
+    config_steps: str | None = None
+    configuration_steps: list[str] | None = None
+    gap_description: str | None = None
+    gap_type: str | None = None
+    dev_effort: str | None = None
+    reviewer_override: bool = False
+
+
+class AtomJourney(BaseModel):
+    atom_id: str
+    ingest: JourneyIngest
+    retrieve: JourneyRetrieve
+    match: JourneyMatch
+    classify: JourneyClassify
+    output: JourneyOutput
+
+
+class JourneyResponse(BaseModel):
+    batch_id: str
+    atoms: list[AtomJourney]
+
+
+class PhaseProgressItem(BaseModel):
+    phase: int
+    phase_name: str
+    status: Literal["pending", "active", "complete"] = "pending"
+    current_step: str | None = None
+    progress_pct: int = 0
+    atoms_produced: int = 0
+    atoms_validated: int = 0
+    atoms_flagged: int = 0
+    latency_ms: float | None = None
+
+
+class ProgressClassificationItem(BaseModel):
+    atom_id: str
+    classification: str
+    confidence: float
+
+
+class ProgressResponse(BaseModel):
+    batch_id: str
+    status: str
+    phases: list[PhaseProgressItem]
+    classifications: list[ProgressClassificationItem] = Field(
+        default_factory=list,
+    )

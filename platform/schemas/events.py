@@ -90,6 +90,7 @@ class CompleteEvent(PlatformModel):
     gap_count: Annotated[int, Field(ge=0)]
     review_count: Annotated[int, Field(ge=0)]
     report_url: str | None = None
+    results_url: str | None = None
     timestamp: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 

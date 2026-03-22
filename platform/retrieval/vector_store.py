@@ -5,8 +5,6 @@ Supports two collection types driven by CollectionConfig:
   - Dense-only:  VectorParams(size=N, distance=COSINE)
   - Hybrid:      named "dense" + "sparse" vectors with RRF fusion
 
-Every Qdrant call is wrapped in record_call("qdrant", ...) for Prometheus.
-
 String point IDs (e.g. "cap-ap-0001") are hashed to deterministic UUIDs
 internally — Qdrant requires UUID or int IDs. The original ID is stored in
 the payload under "_id" and restored on every SearchHit so callers see their
@@ -47,10 +45,7 @@ import uuid
 from dataclasses import dataclass, field
 from typing import Any
 
-from prometheus_client import CollectorRegistry
-
 from platform.observability.logger import get_logger
-from platform.observability.metrics import MetricsRecorder
 
 log = get_logger(__name__)
 
@@ -135,11 +130,10 @@ class SearchHit:
 
 
 class VectorStore:
-    """Qdrant-backed vector store with Prometheus observability.
+    """Qdrant-backed vector store.
 
     Args:
         url:      Qdrant server URL, e.g. "http://localhost:6333".
-        registry: Prometheus CollectorRegistry — inject a fresh one in tests.
         _client:  Pre-built QdrantClient — for testing only; bypasses lazy init.
     """
 
@@ -147,11 +141,9 @@ class VectorStore:
         self,
         url: str,
         *,
-        registry: CollectorRegistry | None = None,
         _client: Any = None,
     ) -> None:
         self._url = url
-        self._recorder = MetricsRecorder(registry)
         self._client: Any = _client
 
     # ------------------------------------------------------------------
@@ -279,10 +271,9 @@ class VectorStore:
                 )
             )
         try:
-            with self._recorder.record_call("qdrant", "upsert"):
-                self._get_client().upsert(
-                    collection_name=collection, points=qdrant_points
-                )
+            self._get_client().upsert(
+                collection_name=collection, points=qdrant_points
+            )
             log.debug(
                 "vector_store_upsert", collection=collection, n=len(points)
             )
@@ -303,11 +294,10 @@ class VectorStore:
 
         qdrant_ids = [_to_qdrant_id(i) for i in ids]
         try:
-            with self._recorder.record_call("qdrant", "delete"):
-                self._get_client().delete(
-                    collection_name=collection,
-                    points_selector=PointIdsList(points=qdrant_ids),
-                )
+            self._get_client().delete(
+                collection_name=collection,
+                points_selector=PointIdsList(points=qdrant_ids),
+            )
             log.debug(
                 "vector_store_delete_points", collection=collection, n=len(ids)
             )
@@ -350,10 +340,9 @@ class VectorStore:
         """
         try:
             qdrant_filter = _build_filter(payload_filter)
-            with self._recorder.record_call("qdrant", "search"):
-                response = self._run_query(
-                    collection, dense_vector, top_k, qdrant_filter, sparse
-                )
+            response = self._run_query(
+                collection, dense_vector, top_k, qdrant_filter, sparse
+            )
             hits = [_to_hit(p) for p in response.points]
             log.debug(
                 "vector_store_search",

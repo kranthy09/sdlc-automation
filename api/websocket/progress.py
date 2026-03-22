@@ -5,11 +5,12 @@ Subscribes to Redis progress:{batch_id} and streams typed JSON events
 to the connected browser. Stops automatically on CompleteEvent, ErrorEvent,
 or ReviewRequiredEvent (RedisPubSub handles terminal-event detection).
 
-Catch-up on reconnect: before subscribing to pub/sub, the handler checks the
-Redis batch hash for a terminal state. If the pipeline already completed or
-requires review, it replays a synthetic terminal event immediately so the UI
-doesn't hang indefinitely when the WebSocket reconnects after events were
-published (Redis pub/sub has no message persistence).
+Catch-up on reconnect:
+  1. Replay persisted phase states from the batch Redis hash -- these are
+     durably written by RedisPubSub.publish() for every phase lifecycle
+     event, so no phase_start or phase_complete is ever lost.
+  2. Check for terminal state (complete / review_required) -- if the
+     pipeline already finished, send a synthetic terminal event and close.
 
 If the client disconnects mid-stream the handler cleans up the Redis
 subscription and exits.
@@ -24,28 +25,125 @@ import structlog
 from fastapi import WebSocket, WebSocketDisconnect
 
 from platform.config.settings import get_settings
-from platform.schemas.events import CompleteEvent, ReviewRequiredEvent
+from platform.schemas.events import (
+    CompleteEvent,
+    PhaseCompleteEvent,
+    PhaseStartEvent,
+    ReviewRequiredEvent,
+    StepProgressEvent,
+)
 from platform.storage.redis_pub import RedisPubSub
 
 log = structlog.get_logger(__name__)
 
 
-async def _replay_terminal_if_done(
-    websocket: WebSocket, batch_id: str, redis_url: str
-) -> bool:
-    """Check Redis batch hash for a terminal state and send a synthetic event.
+async def _replay_phases(
+    websocket: WebSocket,
+    batch: dict[str, str],
+    batch_id: str,
+) -> None:
+    """Replay persisted phase states as synthetic WS events.
 
-    Returns True if a terminal event was sent (caller should close and return).
+    Sends PhaseStartEvent + StepProgressEvent + PhaseCompleteEvent for
+    every phase whose state is recorded in the batch hash ``phases``
+    field.  This brings a newly-connected (or reconnected) client
+    fully up to date without relying on pub/sub message history.
+    """
+    raw_phases = batch.get("phases")
+    if not raw_phases:
+        return
+
+    try:
+        phases: dict[str, dict] = json.loads(raw_phases)
+    except (json.JSONDecodeError, TypeError):
+        return
+
+    # Replay in phase order (1..5)
+    for phase_num in sorted(phases, key=int):
+        p = phases[phase_num]
+        phase = int(phase_num)
+        status = p.get("status", "pending")
+        name = p.get("phase_name", "")
+
+        if status == "pending":
+            continue
+
+        # Always send phase_start for active or complete phases
+        start_evt = PhaseStartEvent(
+            batch_id=batch_id,
+            phase=phase,
+            phase_name=name,
+        )
+        await websocket.send_text(
+            start_evt.model_dump_json(),
+        )
+
+        # Send step progress if there's a current step
+        step = p.get("current_step")
+        pct = p.get("progress_pct", 0)
+        if step and status == "active":
+            # Approximate completed/total from pct
+            total = 100
+            completed = pct
+            step_evt = StepProgressEvent(
+                batch_id=batch_id,
+                phase=phase,
+                step=step,
+                completed=completed,
+                total=total,
+            )
+            await websocket.send_text(
+                step_evt.model_dump_json(),
+            )
+
+        if status == "complete":
+            complete_evt = PhaseCompleteEvent(
+                batch_id=batch_id,
+                phase=phase,
+                phase_name=name,
+                atoms_produced=p.get("atoms_produced", 0),
+                atoms_validated=p.get("atoms_validated", 0),
+                atoms_flagged=p.get("atoms_flagged", 0),
+                latency_ms=p.get("latency_ms", 0),
+            )
+            await websocket.send_text(
+                complete_evt.model_dump_json(),
+            )
+
+    replayed = len(phases)
+    log.info(
+        "ws_replayed_phases",
+        batch_id=batch_id,
+        phases_replayed=replayed,
+    )
+
+
+async def _catch_up(
+    websocket: WebSocket,
+    batch_id: str,
+    redis_url: str,
+) -> bool:
+    """Replay persisted state and check for terminal events.
+
+    Returns True if a terminal event was sent (caller should close).
     """
     try:
-        r = aioredis.from_url(redis_url, decode_responses=True)
+        r = aioredis.from_url(
+            redis_url, decode_responses=True,
+        )
         try:
-            batch: dict[str, str] = await r.hgetall(f"batch:{batch_id}")
+            batch: dict[str, str] = await r.hgetall(
+                f"batch:{batch_id}",
+            )
         finally:
             await r.aclose()
     except Exception:
-        return False  # Redis unavailable — fall through to live pub/sub
+        return False
 
+    # 1. Replay all persisted phase states
+    await _replay_phases(websocket, batch, batch_id)
+
+    # 2. Check for terminal state
     status = batch.get("status")
 
     if status == "complete":
@@ -58,54 +156,81 @@ async def _replay_terminal_if_done(
             gap_count=summary.get("gap", 0),
             review_count=0,
             report_url=batch.get("report_path") or None,
+            results_url=f"/results/{batch_id}",
         )
-        await websocket.send_text(event.model_dump_json())
-        log.info("ws_replayed_complete", batch_id=batch_id)
+        await websocket.send_text(
+            event.model_dump_json(),
+        )
+        log.info(
+            "ws_replayed_complete",
+            batch_id=batch_id,
+        )
         return True
 
     if status == "review_required":
-        review_items = json.loads(batch.get("review_items", "[]"))
-        reasons_counts: dict[str, int] = {}
-        for item in review_items:
-            rr = item.get("review_reason", "low_confidence")
-            reasons_counts[rr] = reasons_counts.get(rr, 0) + 1
-        if not reasons_counts:
-            reasons_counts = {"low_confidence": len(review_items)}
+        items = json.loads(
+            batch.get("review_items", "[]"),
+        )
+        reasons: dict[str, int] = {}
+        for item in items:
+            rr = item.get(
+                "review_reason", "low_confidence",
+            )
+            reasons[rr] = reasons.get(rr, 0) + 1
+        if not reasons:
+            reasons = {"low_confidence": len(items)}
         event = ReviewRequiredEvent(
             batch_id=batch_id,
-            review_items=len(review_items),
-            reasons=reasons_counts,
+            review_items=len(items),
+            reasons=reasons,
             review_url=f"/review/{batch_id}",
         )
-        await websocket.send_text(event.model_dump_json())
-        log.info("ws_replayed_review_required", batch_id=batch_id)
+        await websocket.send_text(
+            event.model_dump_json(),
+        )
+        log.info(
+            "ws_replayed_review_required",
+            batch_id=batch_id,
+        )
         return True
 
     return False
 
 
-async def progress_handler(websocket: WebSocket, batch_id: str) -> None:
-    """Accept the WebSocket and forward Redis events until pipeline completes."""
+async def progress_handler(
+    websocket: WebSocket, batch_id: str,
+) -> None:
+    """Accept the WS and forward Redis events until done."""
     await websocket.accept()
     settings = get_settings()
     log.info("ws_connected", batch_id=batch_id)
 
-    # Catch-up: replay terminal state for reconnecting clients who missed events
-    if await _replay_terminal_if_done(websocket, batch_id, settings.redis_url):
+    # Catch-up: replay persisted phases + terminal state
+    if await _catch_up(
+        websocket, batch_id, settings.redis_url,
+    ):
         await websocket.close()
         return
 
     pubsub = RedisPubSub(settings.redis_url)
     try:
         async for event in pubsub.subscribe(batch_id):
-            await websocket.send_text(event.model_dump_json())
-        # Pubsub loop exited normally — pipeline reached a terminal event.
-        # Close with 1000 so the client knows not to reconnect.
+            await websocket.send_text(
+                event.model_dump_json(),
+            )
+        # Pubsub loop exited normally -- terminal event.
         await websocket.close(1000)
     except WebSocketDisconnect:
-        log.info("ws_client_disconnected", batch_id=batch_id)
+        log.info(
+            "ws_client_disconnected",
+            batch_id=batch_id,
+        )
     except Exception as exc:
-        log.error("ws_error", batch_id=batch_id, error=str(exc))
+        log.error(
+            "ws_error",
+            batch_id=batch_id,
+            error=str(exc),
+        )
     finally:
         await pubsub.close()
         log.info("ws_closed", batch_id=batch_id)

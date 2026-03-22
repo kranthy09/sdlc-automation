@@ -195,7 +195,19 @@ class MatchingNode:
         )
 
         t0 = time.monotonic()
-        match_results = [self._score_context(ctx) for ctx in contexts]
+        n = len(contexts)
+        total_steps = n + 1  # n scoring + 1 routing summary
+
+        match_results = []
+        for i, ctx in enumerate(contexts):
+            match_results.append(self._score_context(ctx))
+            publish_step_progress(
+                batch_id, self._get_redis(),
+                phase=3,
+                step=f"Scoring requirements ({i + 1}/{n})",
+                completed=i + 1,
+                total=total_steps,
+            )
 
         fast_track = sum(1 for r in match_results if r.route == RouteLabel.FAST_TRACK)
         deep_reason = sum(1 for r in match_results if r.route == RouteLabel.DEEP_REASON)
@@ -203,13 +215,13 @@ class MatchingNode:
 
         publish_step_progress(
             batch_id, self._get_redis(),
-            phase=3, step="score", completed=1, total=2,
-        )
-        publish_step_progress(
-            batch_id, self._get_redis(),
             phase=3,
-            step=f"route: fast_track={fast_track} deep_reason={deep_reason} gap_confirm={gap_confirm}",
-            completed=2, total=2,
+            step=(
+                f"Routing: {fast_track} fast,"
+                f" {deep_reason} deep,"
+                f" {gap_confirm} gap"
+            ),
+            completed=total_steps, total=total_steps,
         )
 
         elapsed_ms = (time.monotonic() - t0) * 1000
@@ -271,8 +283,8 @@ class MatchingNode:
         has_fit_prior = any(pf.classification == "FIT" for pf in priors)
         hist_signal = 1.0 if has_history else 0.0
 
-        # (composite, anomaly_flags, updated_cap, original_index)
-        scored: list[tuple[float, list[str], RankedCapability, int]] = []
+        # (composite, anomaly_flags, updated_cap, original_index, signals)
+        scored: list[tuple[float, list[str], RankedCapability, int, dict[str, float]]] = []
 
         for i, cap in enumerate(caps):
             cap_lookup_text = f"{cap.feature} {cap.description}"
@@ -293,7 +305,7 @@ class MatchingNode:
                 flags.append(anomaly)
 
             updated_cap = cap.model_copy(update={"composite_score": composite})
-            scored.append((composite, flags, updated_cap, i))
+            scored.append((composite, flags, updated_cap, i, signals))
 
         # Sort highest composite first
         scored.sort(key=lambda x: x[0], reverse=True)
@@ -311,13 +323,14 @@ class MatchingNode:
                 if float(cap_norms[orig_a] @ cap_norms[orig_b]) > _DEDUP_THRESHOLD:
                     keep[b_out] = False
 
-        final = [(s, f, c) for (s, f, c, _), ok in zip(scored, keep) if ok]
+        final = [(s, f, c, sig) for (s, f, c, _, sig), ok in zip(scored, keep) if ok]
 
-        final_scores = [s for s, _, _ in final]
-        final_caps = [c for _, _, c in final]
-        all_flags = [flag for _, flags, _ in final for flag in flags]
+        final_scores = [s for s, _, _, _ in final]
+        final_caps = [c for _, _, c, _ in final]
+        all_flags = [flag for _, flags, _, _ in final for flag in flags]
 
         top_score = final_scores[0] if final_scores else 0.0
+        top_signals = final[0][3] if final else {}
         route = _assign_route(top_score, has_history)
 
         return MatchResult(
@@ -327,6 +340,7 @@ class MatchingNode:
             route=route,
             top_composite_score=top_score,
             anomaly_flags=all_flags,
+            signal_breakdown=top_signals,
         )
 
 

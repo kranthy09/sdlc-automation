@@ -28,8 +28,6 @@ import hashlib
 import time
 from typing import Any
 
-from prometheus_client import CollectorRegistry
-
 from platform.config.settings import get_settings
 from platform.observability.logger import get_logger
 from platform.retrieval.bm25 import BM25Retriever
@@ -405,27 +403,36 @@ class RetrievalNode:
         reranker = self._get_reranker(config.reranker_model)
         postgres = self._get_postgres()
 
+        n = len(atoms)
+        # total steps: 1 (embed) + n (retrieve per atom) + 1 (rerank)
+        total_steps = n + 2
+
         # Batch embed (one model call for all atoms)
         atom_texts = [a.requirement_text for a in atoms]
         dense_vecs = embedder.embed_batch(atom_texts)
         publish_step_progress(
             batch_id, redis,
-            phase=2, step="embed", completed=1, total=3,
+            phase=2, step="Embedding requirements",
+            completed=1, total=total_steps,
         )
 
         # Batch BM25 — IDF weights are meaningful across the whole requirement set.
-        # Fresh registry per invocation prevents Prometheus duplicate-counter errors
-        # when the node is called multiple times in the same process (e.g. tests).
-        bm25 = BM25Retriever(corpus=atom_texts, registry=CollectorRegistry())
+        bm25 = BM25Retriever(corpus=atom_texts)
 
-        contexts = [
-            self._retrieve_one(atom, dense_vec, bm25, store, reranker, postgres, config)
-            for atom, dense_vec in zip(atoms, dense_vecs, strict=True)
-        ]
-        publish_step_progress(
-            batch_id, redis,
-            phase=2, step="retrieve", completed=2, total=3,
-        )
+        contexts = []
+        for i, (atom, dense_vec) in enumerate(
+            zip(atoms, dense_vecs, strict=True)
+        ):
+            contexts.append(
+                self._retrieve_one(atom, dense_vec, bm25, store, reranker, postgres, config)
+            )
+            publish_step_progress(
+                batch_id, redis,
+                phase=2,
+                step=f"Retrieving capabilities ({i + 1}/{n})",
+                completed=2 + i,
+                total=total_steps,
+            )
 
         # Warn if Qdrant returned nothing — capability KB likely not seeded
         if all(not ctx.capabilities for ctx in contexts):
@@ -437,13 +444,14 @@ class RetrievalNode:
             publish_step_progress(
                 batch_id, redis,
                 phase=2,
-                step="warning: capability KB empty — seed Qdrant before running",
-                completed=3, total=3,
+                step="Warning: capability KB empty — seed Qdrant",
+                completed=total_steps, total=total_steps,
             )
         else:
             publish_step_progress(
                 batch_id, redis,
-                phase=2, step="rerank", completed=3, total=3,
+                phase=2, step="Reranking results",
+                completed=total_steps, total=total_steps,
             )
 
         return contexts

@@ -253,6 +253,7 @@ class ValidationNode:
                     gap_count=final_batch.gap_count,
                     review_count=final_batch.review_count,
                     report_url=report_path,
+                    results_url=f"/results/{batch_id}",
                 )
             )
         )

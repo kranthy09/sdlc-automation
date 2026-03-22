@@ -1,11 +1,21 @@
 import { cn, formatDuration } from '@/lib/utils'
+import { Progress } from '@/components/ui/Progress'
 import type { PhaseState } from '@/stores/progressStore'
+
+const PHASE_ACTIVITY: Record<number, string> = {
+  1: 'Parsing & atomising requirements',
+  2: 'Embedding & capability retrieval',
+  3: 'Signal scoring & routing',
+  4: 'LLM classification',
+  5: 'Quality validation',
+}
 
 interface PhaseStatsCardProps {
   phase: PhaseState
 }
 
 export function PhaseStatsCard({ phase }: PhaseStatsCardProps) {
+  const isActive = phase.status === 'active'
   const isComplete = phase.status === 'complete'
   const isError = phase.status === 'error'
 
@@ -13,11 +23,13 @@ export function PhaseStatsCard({ phase }: PhaseStatsCardProps) {
     <div
       className={cn(
         'rounded-xl border p-4 transition-all',
-        isComplete
-          ? 'border-fit/20 bg-fit-muted/10'
-          : isError
-            ? 'border-gap/20 bg-gap-muted/10'
-            : 'border-bg-border bg-bg-surface opacity-40',
+        isActive
+          ? 'border-accent/30 bg-accent/5'
+          : isComplete
+            ? 'border-fit/20 bg-fit-muted/10'
+            : isError
+              ? 'border-gap/20 bg-gap-muted/10'
+              : 'border-bg-border bg-bg-surface opacity-40',
       )}
     >
       <div className="mb-3 flex items-center justify-between">
@@ -31,11 +43,27 @@ export function PhaseStatsCard({ phase }: PhaseStatsCardProps) {
       <p
         className={cn(
           'mb-2 text-sm font-medium',
-          isComplete ? 'text-fit-text' : isError ? 'text-gap-text' : 'text-text-secondary',
+          isActive
+            ? 'text-accent-glow'
+            : isComplete
+              ? 'text-fit-text'
+              : isError
+                ? 'text-gap-text'
+                : 'text-text-secondary',
         )}
       >
         {phase.phaseName}
       </p>
+
+      {isActive && (
+        <div className="space-y-2">
+          <Progress value={phase.progressPct} className="h-1.5" />
+          <p className="truncate text-xs text-text-muted">
+            {phase.currentStep || PHASE_ACTIVITY[phase.phase] || 'Processing...'}
+          </p>
+          <p className="text-xs font-medium text-accent-glow">{phase.progressPct}%</p>
+        </div>
+      )}
 
       {isComplete && (
         <div className="space-y-1 text-xs text-text-muted">

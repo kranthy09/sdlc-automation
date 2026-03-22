@@ -49,7 +49,6 @@ from typing import Any, cast
 from unittest.mock import AsyncMock, MagicMock
 
 import numpy as np
-from prometheus_client import CollectorRegistry
 from pydantic import BaseModel
 
 from platform.llm.client import LLMClient
@@ -142,7 +141,7 @@ def make_embedder(*, dim: int = 384) -> Embedder:
         return np.zeros(dim, dtype=np.float32)
 
     mock_model.encode.side_effect = _encode
-    return Embedder("test-model", _model=mock_model, registry=CollectorRegistry())
+    return Embedder("test-model", _model=mock_model)
 
 
 def make_vector_store(hits: list[SearchHit] | None = None) -> VectorStore:
@@ -177,7 +176,7 @@ def make_vector_store(hits: list[SearchHit] | None = None) -> VectorStore:
     mock_response.points = mock_points
     mock_client.query_points.return_value = mock_response
 
-    return VectorStore("http://localhost:6333", _client=mock_client, registry=CollectorRegistry())
+    return VectorStore("http://localhost:6333", _client=mock_client)
 
 
 def make_postgres_store(
@@ -350,6 +349,9 @@ def make_classification_result(**overrides: Any) -> ClassificationResult:
         "confidence": 0.92,
         "rationale": "D365 standard AP module supports three-way matching natively.",
         "d365_capability_ref": "cap-ap-0001",
+        "configuration_steps": None,
+        "dev_effort": None,
+        "gap_type": None,
         "route_used": RouteLabel.FAST_TRACK,
         "llm_calls_used": 1,
     }
