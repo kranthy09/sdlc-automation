@@ -1,6 +1,6 @@
 .PHONY: setup lock test test-unit test-integration test-module test-golden \
         lint format validate-contracts \
-        dev dev-down db-migrate \
+        dev dev-down dev-logs dev-ps db-migrate \
         seed-kb seed-kb-lite smoke-test run \
         ui ui-install test-ui test-ui-docker test-ui-coverage type-check-ui ci
 
@@ -68,6 +68,12 @@ dev:
 dev-down:
 	$(COMPOSE) down
 
+dev-logs:
+	$(COMPOSE) logs -f
+
+dev-ps:
+	$(COMPOSE) ps
+
 # Run pending SQL migrations inside the api container (on the Docker network).
 # Tracks applied versions in schema_migrations — never re-runs a migration.
 # Requires: make dev (stack must be up).
@@ -114,5 +120,5 @@ type-check-ui:
 # ---------------------------------------------------------------------------
 # CI gate
 # ---------------------------------------------------------------------------
-ci: lint validate-contracts test
+ci: lint validate-contracts test type-check-ui test-ui
 	@echo "CI passed — all gates green"

@@ -1,11 +1,9 @@
-# Enterprise AI Platform
+# AI Platform
 
-An enterprise-grade AI agent platform for automating ERP implementation workflows.
+An AI agent platform for automating ERP implementation workflows.
 Built as a layered monorepo — platform infrastructure first, product modules on top.
 
 **Module 1: DYNAFIT** — Requirement Fitment Engine for Microsoft D365 F&O.
-The platform is designed to onboard future modules (SAP S/4HANA, Salesforce, Power Platform) with zero changes to core infrastructure.
-
 ---
 
 ## Architecture

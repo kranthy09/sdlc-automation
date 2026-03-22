@@ -7,37 +7,24 @@ on:
     branches: [main, develop]
 
 # ---------------------------------------------------------------------------
-# Two-job pipeline — each job unlocks when its layer is ready:
+# Three-job pipeline:
 #
-#   quality     Lint + contracts + unit tests   (no services, always fast)
-#   integration Integration tests               (Postgres, Redis, Qdrant)
-#               Runs after quality passes.
-#               Handles "no tests collected yet" (exit 5) gracefully so
-#               the job doesn't block PRs while Layer 2 is being built.
-#               When the first integration test is committed, it runs for real.
+#   quality      Lint + contracts + unit tests   (no services, fast)
+#   integration  Integration tests               (Postgres, Redis, Qdrant)
+#   ui           TypeScript type-check + Vitest   (Node.js, no services)
 #
-# Layer gate (update this comment as layers complete):
+# All layers complete:
 #   Layer 0  DONE — scaffold + CI
-#   Layer 1  DONE — all schemas
-#   Layer 2  DONE — all 13 platform utilities + guardrail utilities (Session A)
-#              2.1 settings, 2.2 logger, 2.3 metrics, 2.4 llm_client,
-#              2.5 embedder, 2.6 vector_store, 2.7 bm25, 2.8 reranker,
-#              2.9 format_detector, 2.10 docling_parser, 2.11 postgres,
-#              2.12 redis_pub, 2.13 factories
-#              2.A file_validator (G1-lite), 2.B injection_scanner (G3-lite)
-#   Layer 3  IN PROGRESS — DYNAFIT 5-phase LangGraph pipeline
-#              done:    Session A (guardrail utils), Session B (state + graph scaffold),
-#                       Session C (Phase 1 ingestion), Session D (Phase 2 RAG),
-#                       Session E (Phase 3 semantic matching)
-#              pending: Session F (Phase 4 LLM classification + G8/G9),
-#                       Session G (Phase 5 validation + HITL + G10-lite)
-#   Layer 4  pending — FastAPI + Celery workers + React UI
+#   Layer 1  DONE — platform schemas
+#   Layer 2  DONE — 13 platform utilities + guardrail utilities
+#   Layer 3  DONE — DYNAFIT 5-phase LangGraph pipeline
+#   Layer 4  DONE — FastAPI + Celery + WebSocket + React UI
 # ---------------------------------------------------------------------------
 
-# ---------------------------------------------------------------------------
-# Job 1 — fast, no services
-# ---------------------------------------------------------------------------
 jobs:
+  # ---------------------------------------------------------------------------
+  # Job 1 — fast, no services
+  # ---------------------------------------------------------------------------
   quality:
     name: Lint + Contracts + Unit Tests
     runs-on: ubuntu-latest
@@ -56,7 +43,6 @@ jobs:
         run: uv python install 3.12 && uv python pin 3.12
 
       - name: Install dependencies
-        # core + dev only — no heavy ML stack (added in integration job)
         run: uv sync --extra dev
 
       - name: Lint (ruff + mypy)
@@ -111,22 +97,11 @@ jobs:
       qdrant:
         image: qdrant/qdrant:latest
         ports: ["6333:6333"]
-        # No --health-cmd: qdrant/qdrant uses a minimal Debian-slim image that
-        # does not include wget or curl. A "Wait for Qdrant" step below polls
-        # the REST endpoint from the runner (curl is always on ubuntu-latest).
 
     env:
       POSTGRES_URL: postgresql+asyncpg://platform:test_password@localhost/ai_platform_test
       REDIS_URL: redis://localhost:6379/0
       QDRANT_URL: http://localhost:6333
-      # ANTHROPIC_API_KEY intentionally omitted:
-      #   - unit tests monkeypatch it
-      #   - @pytest.mark.llm tests are skipped in CI
-      # Add it here (from secrets) when Layer 3 golden fixture tests are built.
-      #
-      # LANGFUSE_PUBLIC_KEY / LANGFUSE_SECRET_KEY intentionally omitted:
-      #   - Langfuse tracing fires only on live LLM calls (@pytest.mark.llm, skipped in CI)
-      #   - No Langfuse service in CI runners — tracing is a dev/prod concern only
 
     steps:
       - name: Checkout
@@ -142,15 +117,10 @@ jobs:
         run: uv python install 3.12 && uv python pin 3.12
 
       - name: Install dependencies (core + dev + ML extras)
-        # ML extras required for retrieval integration tests (qdrant-client,
-        # sentence-transformers). Cached by uv after first run.
+        # ML extras: qdrant-client, fastembed (ONNX Runtime), rank-bm25, spacy, rapidfuzz
         run: uv sync --extra dev --extra ml
 
       - name: Wait for Qdrant
-        # Postgres and Redis have built-in health checks in their images.
-        # Qdrant does not, so we poll its /healthz endpoint from the runner.
-        # --retry-connrefused retries on "connection refused" (service not up yet).
-        # 30 retries × 2s delay = up to 60s before giving up.
         run: |
           curl --retry 30 --retry-delay 2 --retry-connrefused \
                --silent --fail --output /dev/null \
@@ -158,25 +128,44 @@ jobs:
           echo "Qdrant is ready."
 
       - name: Integration tests
-        # Exit code 5 = "no tests collected" — only real-infra tests are marked
-        # @pytest.mark.integration; Layer 3 phase tests use @pytest.mark.unit.
-        # Exit 5 is still acceptable until Session F/G add live-infra integration tests.
         run: |
-          if uv run pytest -m integration -v --tb=short \
-              --cov=platform --cov=modules --cov=agents \
-              --cov-report=xml; then
-            echo "Integration tests passed."
-          else
-            code=$?
-            if [ "$code" -eq 5 ]; then
-              echo "No integration tests collected yet — Layer 2 in progress."
-            else
-              exit "$code"
-            fi
-          fi
+          uv run pytest -m integration -v --tb=short \
+            --cov=platform --cov=modules --cov=agents \
+            --cov-report=xml
 
       - name: Upload coverage
         uses: codecov/codecov-action@v4
         if: always()
         with:
           fail_ci_if_error: false
+
+  # ---------------------------------------------------------------------------
+  # Job 3 — UI type-check + tests (runs in parallel with integration)
+  # ---------------------------------------------------------------------------
+  ui:
+    name: UI Type Check + Tests
+    runs-on: ubuntu-latest
+    needs: quality
+    defaults:
+      run:
+        working-directory: ui
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: ui/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: TypeScript type-check
+        run: npm run type-check
+
+      - name: Vitest tests
+        run: npm test
