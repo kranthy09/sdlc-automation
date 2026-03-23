@@ -31,12 +31,12 @@ from typing import Any
 
 from platform.guardrails.file_validator import validate_file
 from platform.guardrails.injection_scanner import scan_for_injection
+from platform.guardrails.pii_redactor import redact_pii
 from platform.llm.client import LLMClient
 from platform.observability.logger import get_logger
 from platform.parsers.docling_parser import DoclingParser
 from platform.schemas.product import ProductConfig
 from platform.schemas.requirement import RawUpload, RequirementAtom
-from platform.storage.redis_pub import RedisPubSub
 
 from ..events import (
     publish_phase_complete,
@@ -126,7 +126,6 @@ def _build_classified_requirements(
     llm: LLMClient,
     config: ProductConfig,
     *,
-    redis: RedisPubSub | None = None,
     batch_id: str = "",
 ) -> list[_ClassifiedRequirement]:
     """Run batch atomisation + classification on all raw texts.
@@ -149,7 +148,6 @@ def _build_classified_requirements(
 
     publish_step_progress(
         batch_id,
-        redis,
         phase=1,
         step="atomize",
         completed=2,
@@ -213,12 +211,10 @@ class IngestionNode:
         llm_client: LLMClient | None = None,
         parser: DoclingParser | None = None,
         embedder: Any | None = None,
-        redis: RedisPubSub | None = None,
     ) -> None:
         self._llm = llm_client
         self._parser = parser
         self._embedder = embedder
-        self._redis = redis
 
     # ------------------------------------------------------------------
     # Lazy infra
@@ -234,20 +230,13 @@ class IngestionNode:
             self._parser = DoclingParser()
         return self._parser
 
-    def _get_embedder(self) -> Any:
+    def _get_embedder(self, product_id: str) -> Any:
         if self._embedder is None:
             from platform.retrieval.embedder import Embedder  # noqa: PLC0415
 
-            config = get_product_config("d365_fo")
+            config = get_product_config(product_id)
             self._embedder = Embedder(config.embedding_model)
         return self._embedder
-
-    def _get_redis(self) -> RedisPubSub:
-        if self._redis is None:
-            from platform.config.settings import get_settings  # noqa: PLC0415
-
-            self._redis = RedisPubSub(get_settings().redis_url)
-        return self._redis
 
     # ------------------------------------------------------------------
     # LangGraph entry point
@@ -273,7 +262,6 @@ class IngestionNode:
         # 0. Announce phase start
         publish_phase_start(
             batch_id,
-            self._get_redis(),
             phase=1,
             phase_name="Ingestion",
         )
@@ -310,7 +298,6 @@ class IngestionNode:
             )
         publish_step_progress(
             batch_id,
-            self._get_redis(),
             phase=1,
             step="parse",
             completed=1,
@@ -336,13 +323,27 @@ class IngestionNode:
             else []
         )
 
-        # 5. Atomise + classify (LLM)
+        # 4b. G2 — PII redaction (before any text reaches an LLM)
+        combined_redaction_map: dict[str, str] = {}
+        redacted_texts: list[tuple[str, str]] = []
+        for idx, (text, source_ref) in enumerate(raw_texts):
+            pii_result = redact_pii(text, prefix=f"T{idx}_")
+            redacted_texts.append((pii_result.redacted_text, source_ref))
+            combined_redaction_map.update(pii_result.redaction_map)
+
+        if combined_redaction_map:
+            log.info(
+                "pii_redacted",
+                batch_id=batch_id,
+                pii_entities=len(combined_redaction_map),
+            )
+
+        # 5. Atomise + classify (LLM) — uses redacted text
         classified = _build_classified_requirements(
-            raw_texts,
+            redacted_texts,
             upload,
             self._get_llm(),
             config,
-            redis=self._get_redis(),
             batch_id=batch_id,
         )
         if not classified:
@@ -353,11 +354,10 @@ class IngestionNode:
         # 6. Deduplicate
         unique, duplicates = _deduplicate_requirements(
             classified,
-            self._get_embedder(),
+            self._get_embedder(upload.product_id),
         )
         publish_step_progress(
             batch_id,
-            self._get_redis(),
             phase=1,
             step="deduplicate",
             completed=3,
@@ -372,7 +372,6 @@ class IngestionNode:
         )
         publish_step_progress(
             batch_id,
-            self._get_redis(),
             phase=1,
             step="quality",
             completed=4,
@@ -390,12 +389,14 @@ class IngestionNode:
             atoms_in=len(raw_texts),
             atoms_out=len(validated),
             flagged=len(flagged),
-            guardrails_triggered=(["G3_injection_flagged"] if extra_errors else []),
+            guardrails_triggered=(
+                (["G3_injection_flagged"] if extra_errors else [])
+                + (["G2_pii_redacted"] if combined_redaction_map else [])
+            ),
             latency_ms=round(elapsed_ms, 1),
         )
         publish_phase_complete(
             batch_id,
-            self._get_redis(),
             phase=1,
             phase_name="Ingestion",
             atoms_produced=len(validated),
@@ -404,12 +405,15 @@ class IngestionNode:
             latency_ms=round(elapsed_ms, 1),
         )
 
-        return {
+        result: dict[str, Any] = {
             "atoms": [r.atom for r in unique],
             "validated_atoms": validated,
             "flagged_atoms": flagged,
             "errors": extra_errors,
         }
+        if combined_redaction_map:
+            result["pii_redaction_map"] = combined_redaction_map
+        return result
 
     # ------------------------------------------------------------------
     # Document parsing
@@ -447,11 +451,14 @@ class IngestionNode:
 # ---------------------------------------------------------------------------
 
 _node: IngestionNode | None = None
+_node_lock = __import__("threading").Lock()
 
 
 def ingestion_node(state: DynafitState) -> dict[str, Any]:
     """LangGraph Phase 1 node — delegates to cached IngestionNode."""
     global _node
     if _node is None:
-        _node = IngestionNode()
+        with _node_lock:
+            if _node is None:
+                _node = IngestionNode()
     return _node(state)

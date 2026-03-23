@@ -36,6 +36,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
+from platform.guardrails.response_pii_scanner import scan_response_pii
 from platform.llm.client import LLMClient, LLMError
 from platform.observability.logger import get_logger
 from platform.schemas.fitment import (
@@ -46,8 +47,6 @@ from platform.schemas.fitment import (
 )
 from platform.schemas.product import ProductConfig
 from platform.schemas.retrieval import PriorFitment
-from platform.storage.redis_pub import RedisPubSub
-
 from ..events import (
     publish_classification_event,
     publish_phase_complete,
@@ -124,23 +123,14 @@ class ClassificationNode:
         *,
         llm_client: LLMClient | None = None,
         product_config: ProductConfig | None = None,
-        redis: RedisPubSub | None = None,
     ) -> None:
         self._llm = llm_client
         self._config_override = product_config
-        self._redis = redis
 
     def _get_llm(self) -> LLMClient:
         if self._llm is None:
             self._llm = LLMClient()
         return self._llm
-
-    def _get_redis(self) -> RedisPubSub:
-        if self._redis is None:
-            from platform.config.settings import get_settings  # noqa: PLC0415
-
-            self._redis = RedisPubSub(get_settings().redis_url)
-        return self._redis
 
     def _get_config(
         self, product_id: str, overrides: dict[str, Any] | None = None
@@ -174,7 +164,6 @@ class ClassificationNode:
 
         publish_phase_start(
             batch_id,
-            self._get_redis(),
             phase=4,
             phase_name="Classification",
         )
@@ -195,11 +184,10 @@ class ClassificationNode:
                 priors_by_atom.get(mr.atom.atom_id, []),
                 config,
             )
-            publish_classification_event(batch_id, result, self._get_redis())
+            publish_classification_event(batch_id, result)
             classifications.append(result)
             publish_step_progress(
                 batch_id,
-                self._get_redis(),
                 phase=4,
                 step=f"Classifying requirements ({i + 1}/{n})",
                 completed=i + 1,
@@ -223,7 +211,6 @@ class ClassificationNode:
         )
         publish_phase_complete(
             batch_id,
-            self._get_redis(),
             phase=4,
             phase_name="Classification",
             atoms_produced=len(classifications),
@@ -271,7 +258,47 @@ class ClassificationNode:
         else:
             result = self._gap_confirm(mr, prior_fitments, config)
 
+        result = self._scan_for_response_pii(result)
         return self._apply_sanity_checks(result, mr, config)
+
+    # ------------------------------------------------------------------
+    # G11 — Response PII scan
+    # ------------------------------------------------------------------
+
+    def _scan_for_response_pii(
+        self,
+        result: ClassificationResult,
+    ) -> ClassificationResult:
+        """Scan LLM output fields for leaked/hallucinated PII (G11).
+
+        If PII is found, adds a 'response_pii_leak' caveat so Phase 5
+        routes this atom to HITL review. Never changes classification.
+        """
+        # Concatenate all LLM-generated text fields for scanning
+        scannable = " ".join(
+            filter(None, [result.rationale, result.gap_description, result.config_steps])
+        )
+        if not scannable.strip():
+            return result
+
+        pii_scan = scan_response_pii(scannable)
+        if pii_scan.has_pii:
+            log.warning(
+                "response_pii_leak_detected",
+                atom_id=result.atom_id,
+                entity_count=pii_scan.entity_count,
+                entity_types=[e.entity_type for e in pii_scan.entities_found],
+            )
+            existing_caveats = result.caveats or ""
+            pii_caveat = (
+                f"G11: PII detected in LLM response ({pii_scan.entity_count} "
+                f"entities: {', '.join(e.entity_type for e in pii_scan.entities_found)}). "
+                "Flagged for human review."
+            )
+            combined = f"{existing_caveats} {pii_caveat}".strip() if existing_caveats else pii_caveat
+            return result.model_copy(update={"caveats": combined})
+
+        return result
 
     # ------------------------------------------------------------------
     # Route strategies
@@ -493,6 +520,7 @@ class ClassificationNode:
 # ---------------------------------------------------------------------------
 
 _node: ClassificationNode | None = None
+_node_lock = __import__("threading").Lock()
 
 
 def classification_node(state: DynafitState) -> dict[str, Any]:
@@ -503,5 +531,7 @@ def classification_node(state: DynafitState) -> dict[str, Any]:
     """
     global _node
     if _node is None:
-        _node = ClassificationNode()
+        with _node_lock:
+            if _node is None:
+                _node = ClassificationNode()
     return _node(state)

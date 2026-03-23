@@ -19,7 +19,8 @@ modules/{name}/
 - Nodes call `platform/` utilities. They **never** import `anthropic`, `qdrant_client`, or `sqlalchemy` directly.
 - Nodes call `agents/` for reusable LangGraph logic.
 - Modules **never** import from sibling modules (`modules/dynafit/` cannot import `modules/fdd/`).
-- All product-variant parameters come from `ProductConfig`. No hardcoded model names or thresholds.
+- All product-variant parameters come from `ProductConfig`. No hardcoded model names, thresholds, or product IDs.
+- `_get_embedder(product_id)` must receive `product_id` from state — never hardcode `"d365_fo"` or any product identifier.
 - Every node function reads from state and writes back to state. No side effects beyond platform calls.
 
 ## Test Requirements
@@ -38,8 +39,8 @@ Guardrails are not a separate layer. Each phase node owns its guardrail and they
 | Phase | Node file | Guardrail |
 |-------|-----------|-----------|
 | Pre-Layer 3 (Session A) | `platform/guardrails/file_validator.py` + `injection_scanner.py` | G1-lite + G3-lite — built first, called by Phase 1 |
-| Phase 1 — Ingestion | `nodes/phase1_ingestion.py` | Calls G1-lite and G3-lite (already built) |
-| Phase 4 — Classification | `nodes/phase4_classification.py` | G8 (Jinja2 template pattern) + G9 (Pydantic strict — built-in) |
-| Phase 5 — Validation | `nodes/phase5_validation.py` + `guardrails.py` | G10-lite sanity gate + HITL via LangGraph `interrupt()` |
+| Phase 1 — Ingestion | `nodes/ingestion.py` | G1-lite, G3-lite, then G2 PII redaction (before LLM atomization) |
+| Phase 4 — Classification | `nodes/classification.py` | G8 (Jinja2 template) + G9 (Pydantic strict) + G11 response PII scan (after LLM) |
+| Phase 5 — Validation | `nodes/phase5_validation.py` + `guardrails.py` | G10-lite sanity gate + `response_pii_leak` flag + HITL via `interrupt()` + CSV-only output (no ZIP) |
 
 HITL is mandatory at Phase 5. The node MUST call `interrupt()` when `flagged_for_review` is non-empty. Batch completion is blocked until a human resolves every flagged item.

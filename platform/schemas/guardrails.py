@@ -1,12 +1,15 @@
 """
-Guardrail result schemas — FileValidationResult and InjectionScanResult.
+Guardrail result schemas.
 
 Produced by:
-  G1-lite  platform/guardrails/file_validator.py     → FileValidationResult
-  G3-lite  platform/guardrails/injection_scanner.py  → InjectionScanResult
+  G1-lite  platform/guardrails/file_validator.py       → FileValidationResult
+  G3-lite  platform/guardrails/injection_scanner.py    → InjectionScanResult
+  G2       platform/guardrails/pii_redactor.py         → PIIRedactionResult
+  G11      platform/guardrails/response_pii_scanner.py → PIIScanResult
 
 Consumed by:
-  Phase 1 ingestion node — validates and scans before any requirement is parsed.
+  Phase 1 ingestion node — validates, scans, and redacts PII before parsing.
+  Phase 4 classification node — scans LLM responses for leaked PII.
 """
 
 from __future__ import annotations
@@ -41,3 +44,41 @@ class InjectionScanResult(PlatformModel):
     injection_score: float  # 0.0–1.0
     matched_patterns: list[str]  # pattern names, e.g. ["instruction_override"]
     action: Literal["PASS", "FLAG_FOR_REVIEW", "BLOCK"]
+
+
+class PIIEntity(PlatformModel):
+    """A single detected PII entity with its location and replacement placeholder."""
+
+    entity_type: str  # e.g. "PERSON", "EMAIL_ADDRESS", "PHONE_NUMBER"
+    start: int  # char offset in original text
+    end: int  # char offset in original text
+    score: float  # 0.0–1.0 confidence from analyzer
+    placeholder: str  # e.g. "<PII_PERSON_1>"
+
+
+class PIIRedactionResult(PlatformModel):
+    """Output of G2 PII redactor — text with PII replaced by placeholders.
+
+    The redaction_map enables restore_pii() to reverse the transformation
+    after human review (Phase 5). Map keys are placeholders, values are
+    original text fragments.
+    """
+
+    redacted_text: str
+    entities_found: list[PIIEntity]
+    entity_count: int
+    redaction_map: dict[str, str]  # {"<PII_PERSON_1>": "John Doe", ...}
+
+
+class PIIScanResult(PlatformModel):
+    """Output of G11 response PII scanner — detects PII in LLM output.
+
+    action follows the same convention as InjectionScanResult:
+      PASS           — no PII detected
+      FLAG_FOR_REVIEW — PII found, route to HITL
+    """
+
+    has_pii: bool
+    entities_found: list[PIIEntity]
+    entity_count: int
+    action: Literal["PASS", "FLAG_FOR_REVIEW"]

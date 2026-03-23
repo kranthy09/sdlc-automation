@@ -10,12 +10,14 @@ const REASON_LABEL: Record<ReviewItem['review_reason'], string> = {
   low_confidence: 'Low confidence',
   conflict: 'Conflicting evidence',
   anomaly: 'Anomaly detected',
+  pii_detected: 'PII detected in response',
 }
 
 const REASON_COLOR: Record<ReviewItem['review_reason'], string> = {
   low_confidence: 'text-partial-text border-partial/30 bg-partial-muted/20',
   conflict: 'text-gap-text border-gap/30 bg-gap-muted/20',
   anomaly: 'text-accent-glow border-accent/30 bg-accent/5',
+  pii_detected: 'text-gap-text border-gap/40 bg-gap-muted/30',
 }
 
 const DEV_EFFORT_LABEL: Record<string, string> = {

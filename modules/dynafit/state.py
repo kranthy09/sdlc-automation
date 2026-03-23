@@ -59,5 +59,5 @@ class DynafitState(TypedDict):
     # auto_approve_with_history. Phase 5 applies these via model_copy.
     config_overrides: NotRequired[dict[str, Any]]
 
-    # --- Optional: per-phase timing and counts --------------------------------
-    phase_metrics: NotRequired[dict[str, Any]]
+    # --- PII redaction (G2 → Phase 1, restored in Phase 5 CSV output) ---------
+    pii_redaction_map: NotRequired[dict[str, str]]  # placeholder → original text

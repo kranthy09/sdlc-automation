@@ -47,6 +47,9 @@ ml = [
     "spacy>=3.7",
     "rapidfuzz>=3.6",
 
+    # PII detection (G2/G11 guardrails — uses spaCy NER backend)
+    "presidio-analyzer>=2.2",
+
     # Vector / retrieval (fastembed uses ONNX Runtime ~50 MB — no PyTorch)
     "qdrant-client>=1.8",
     "fastembed>=0.3",
@@ -135,6 +138,7 @@ module = [
     "spacy.*",
     "rapidfuzz.*",
     "celery.*",
+    "presidio_analyzer.*",
     "langchain_anthropic.*",
     "langchain_core.*",
     "langgraph.*",

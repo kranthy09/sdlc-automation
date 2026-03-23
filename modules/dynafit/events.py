@@ -2,9 +2,9 @@
 
 Two-step publish strategy:
   1. persist_phase_state_sync — sync Redis hset (durable)
-  2. redis pub/sub — async (best-effort, live WebSocket)
+  2. publish_sync — sync Redis pub/sub (best-effort, live WebSocket)
 
-Step 1 uses sync Redis so there are no event-loop conflicts
+Both use sync Redis so there are no event-loop conflicts
 when called from Celery workers or LangGraph nodes.
 """
 
@@ -61,7 +61,6 @@ def run_async(coro: Any) -> Any:
 
 def publish_phase_start(
     batch_id: str,
-    redis: RedisPubSub | None,
     *,
     phase: int,
     phase_name: str,
@@ -73,13 +72,11 @@ def publish_phase_start(
         phase_name=phase_name,
     )
     _persist(event, batch_id, phase)
-    if redis is not None:
-        _publish_async(redis, event, batch_id, phase)
+    _publish_sync(event, batch_id, phase)
 
 
 def publish_phase_complete(
     batch_id: str,
-    redis: RedisPubSub | None,
     *,
     phase: int,
     phase_name: str,
@@ -99,13 +96,11 @@ def publish_phase_complete(
         latency_ms=latency_ms,
     )
     _persist(event, batch_id, phase)
-    if redis is not None:
-        _publish_async(redis, event, batch_id, phase)
+    _publish_sync(event, batch_id, phase)
 
 
 def publish_step_progress(
     batch_id: str,
-    redis: RedisPubSub | None,
     *,
     phase: int,
     step: str,
@@ -121,14 +116,12 @@ def publish_step_progress(
         total=total,
     )
     _persist(event, batch_id, phase)
-    if redis is not None:
-        _publish_async(redis, event, batch_id, phase)
+    _publish_sync(event, batch_id, phase)
 
 
 def publish_classification_event(
     batch_id: str,
     result: Any,
-    redis: RedisPubSub | None,
 ) -> None:
     """Publish ClassificationEvent. Non-fatal."""
     event = ClassificationEvent(
@@ -138,8 +131,7 @@ def publish_classification_event(
         confidence=result.confidence,
     )
     _persist_classification(event, batch_id)
-    if redis is not None:
-        _publish_async(redis, event, batch_id, phase=4)
+    _publish_sync(event, batch_id, phase=4)
 
 
 # -----------------------------------------------------------
@@ -172,31 +164,11 @@ def _persist_classification(
     batch_id: str,
 ) -> None:
     """Append classification to durable Redis hash."""
-    import json  # noqa: PLC0415
-
-    import redis as sync_redis  # noqa: PLC0415
-
-    hash_key = f"batch:{batch_id}"
-    entry = {
-        "atom_id": event.atom_id,
-        "classification": event.classification,
-        "confidence": event.confidence,
-    }
     try:
-        r = sync_redis.from_url(REDIS_URL)
-        try:
-            raw = r.hget(hash_key, "classifications")
-            rows: list[dict[str, Any]] = json.loads(raw) if raw else []
-        except Exception:
-            rows = []
-        # Deduplicate by atom_id
-        if not any(x["atom_id"] == event.atom_id for x in rows):
-            rows.append(entry)
-            r.hset(
-                hash_key,
-                "classifications",
-                json.dumps(rows),
-            )
+        RedisPubSub.persist_classification_sync(
+            REDIS_URL,
+            event,
+        )
     except Exception as exc:
         log.warning(
             "redis_classification_persist_failed",
@@ -206,21 +178,14 @@ def _persist_classification(
         )
 
 
-def _publish_async(
-    redis: RedisPubSub,
+def _publish_sync(
     event: Any,
     batch_id: str,
     phase: int,
 ) -> None:
-    """Fire-and-forget async pub/sub from sync context."""
+    """Sync pub/sub publish via platform abstraction."""
     try:
-        loop = asyncio.new_event_loop()
-        try:
-            loop.run_until_complete(
-                _pubsub_only(redis, event),
-            )
-        finally:
-            loop.close()
+        RedisPubSub.publish_sync(REDIS_URL, event)
     except Exception as exc:
         log.warning(
             "redis_pubsub_failed",
@@ -228,26 +193,3 @@ def _publish_async(
             phase=phase,
             error=str(exc),
         )
-
-
-async def _pubsub_only(
-    redis: RedisPubSub,
-    event: Any,
-) -> None:
-    """Publish to pub/sub channel only.
-
-    Creates a fresh async client each time to avoid
-    event-loop-bound connection reuse issues.
-    """
-    import redis.asyncio as aioredis  # noqa: PLC0415
-
-    channel = f"progress:{event.batch_id}"
-    payload = event.model_dump_json()
-    client = aioredis.from_url(
-        redis._url,
-        decode_responses=True,
-    )
-    try:
-        await client.publish(channel, payload)
-    finally:
-        await client.close()

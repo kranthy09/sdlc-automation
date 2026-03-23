@@ -122,7 +122,7 @@ export interface ReviewItem {
   ai_classification: Classification
   ai_confidence: number
   ai_rationale: string
-  review_reason: 'low_confidence' | 'conflict' | 'anomaly'
+  review_reason: 'low_confidence' | 'conflict' | 'anomaly' | 'pii_detected'
   module: string
   evidence: ReviewItemEvidence
   config_steps: string | null
@@ -369,6 +369,7 @@ export interface WSReviewRequired {
     low_confidence: number
     conflicts?: number
     anomalies?: number
+    pii_detected?: number
   }
   review_url: string
 }

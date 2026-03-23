@@ -20,10 +20,9 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-import redis as _redis
 import structlog
 from fastapi import APIRouter, Form, HTTPException, UploadFile
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse, Response
 
 from api.models import (
     AtomJourney,
@@ -48,6 +47,7 @@ from api.models import (
 )
 from platform.parsers.format_detector import detect_format
 from platform.schemas.errors import UnsupportedFormatError
+from platform.storage.redis_pub import RedisPubSub
 
 log = structlog.get_logger(__name__)
 
@@ -124,19 +124,9 @@ def _sync_from_redis(batch: dict[str, Any], batch_id: str) -> None:
     List fields (results, review_items) are only loaded when empty in
     memory, preserving any submit_review() mutations made in-process.
     """
-    try:
-        r = _redis.from_url(REDIS_URL)
-        try:
-            raw: dict[bytes, bytes] = r.hgetall(f"batch:{batch_id}")
-        finally:
-            r.close()
-    except Exception:
-        return  # Redis unavailable — fall back to in-memory state
-
-    if not raw:
+    data = RedisPubSub.read_batch_state_sync(REDIS_URL, batch_id)
+    if not data:
         return
-
-    data = {k.decode(): v.decode() for k, v in raw.items()}
 
     # Always refresh authoritative scalar fields from the worker
     if "status" in data:
@@ -414,22 +404,17 @@ def get_progress(batch_id: str) -> ProgressResponse:
     # Read persisted phase states + classifications from Redis hash
     persisted: dict[str, dict[str, Any]] = {}
     persisted_cls: list[dict[str, Any]] = []
-    try:
-        r = _redis.from_url(REDIS_URL)
+    data = RedisPubSub.read_batch_state_sync(REDIS_URL, batch_id)
+    if data.get("phases"):
         try:
-            raw = r.hget(f"batch:{batch_id}", "phases")
-            raw_cls = r.hget(
-                f"batch:{batch_id}",
-                "classifications",
-            )
-        finally:
-            r.close()
-        if raw:
-            persisted = json.loads(raw)
-        if raw_cls:
-            persisted_cls = json.loads(raw_cls)
-    except Exception:
-        pass
+            persisted = json.loads(data["phases"])
+        except json.JSONDecodeError:
+            pass
+    if data.get("classifications"):
+        try:
+            persisted_cls = json.loads(data["classifications"])
+        except json.JSONDecodeError:
+            pass
 
     # Build 5-phase list, merging persisted data with defaults
     phases: list[PhaseProgressItem] = []
@@ -565,15 +550,51 @@ def submit_review(
 
 
 @router.get("/d365_fo/dynafit/{batch_id}/report")
-def download_report(batch_id: str) -> FileResponse:
+def download_report(
+    batch_id: str,
+    file: str | None = None,
+) -> Response:
+    """Download report CSV files.
+
+    If ``file`` is omitted, returns a JSON manifest listing
+    available CSVs. If ``file`` is specified, returns that
+    individual CSV. No ZIP — stdlib csv only (project rule).
+    """
     batch = _get_batch(batch_id)
     report_path = batch.get("report_path")
     if not report_path or not Path(report_path).exists():
-        raise HTTPException(status_code=404, detail="Report not yet generated")
+        raise HTTPException(
+            status_code=404,
+            detail="Report not yet generated",
+        )
+
+    report_dir = Path(report_path)
+
+    # report_path is a directory of CSVs from Phase 5
+    if report_dir.is_dir():
+        csvs = sorted(report_dir.glob("*.csv"))
+        if file:
+            target = report_dir / file
+            if not target.exists() or target not in csvs:
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"File {file!r} not found",
+                )
+            return FileResponse(
+                path=str(target),
+                media_type="text/csv",
+                filename=file,
+            )
+        # Return manifest of available CSV files
+        return JSONResponse(
+            {"files": [f.name for f in csvs]},
+        )
+
+    # Fallback: single file
     return FileResponse(
         path=report_path,
-        media_type="application/zip",
-        filename=f"fdd_report_{batch_id}.zip",
+        media_type="text/csv",
+        filename=f"fdd_report_{batch_id}.csv",
     )
 
 

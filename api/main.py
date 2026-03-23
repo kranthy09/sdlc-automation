@@ -2,8 +2,10 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 import structlog
+import yaml  # type: ignore[import-untyped]
 from fastapi import FastAPI, WebSocket
 
 from api.middleware.cors import add_cors
@@ -12,53 +14,83 @@ from api.routes.dynafit import public_router
 from api.routes.dynafit import router as dynafit_router
 from api.websocket.progress import progress_handler
 from platform.config.settings import get_settings
+from platform.retrieval.vector_store import (
+    VectorStore,
+    VectorStoreError,
+)
 from platform.storage.postgres import PostgresStore
 
 log = structlog.get_logger(__name__)
 
-# Qdrant collections the pipeline depends on — checked at startup.
-_REQUIRED_COLLECTIONS = ["d365_fo_capabilities"]
-_OPTIONAL_COLLECTIONS = ["d365_fo_docs"]
+# Root of the project (api/ sits one level below)
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent
+
+
+def _discover_collections() -> tuple[list[str], list[str]]:
+    """Derive required Qdrant collections from module manifests.
+
+    Each manifest.yaml may declare a ``product_id``.  The
+    pipeline convention is ``{product_id}_capabilities``
+    (required) and ``{product_id}_docs`` (optional).
+    """
+    required: list[str] = []
+    optional: list[str] = []
+    modules_dir = _PROJECT_ROOT / "modules"
+    if not modules_dir.exists():
+        return required, optional
+    for manifest in modules_dir.rglob("manifest.yaml"):
+        try:
+            data = yaml.safe_load(
+                manifest.read_text(encoding="utf-8"),
+            )
+        except Exception:
+            continue
+        pid = data.get("product_id") if data else None
+        if pid:
+            required.append(f"{pid}_capabilities")
+            optional.append(f"{pid}_docs")
+    return required, optional
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     settings = get_settings()
 
-    # ── Postgres: apply all pending migrations ────────────────────────────────
+    # ── Postgres ──────────────────────────────
     store = PostgresStore(settings.postgres_url)
     await store.ensure_schema()
     await store.dispose()
 
-    # ── Qdrant: warn if required collections are absent or empty ─────────────
+    # ── Qdrant ────────────────────────────────
     await _check_qdrant_collections(settings.qdrant_url)
 
     yield
 
 
-async def _check_qdrant_collections(qdrant_url: str) -> None:
-    """Log warnings for missing or empty Qdrant collections.
+async def _check_qdrant_collections(
+    qdrant_url: str,
+) -> None:
+    """Log warnings for missing / empty Qdrant collections.
 
-    Non-fatal: the API starts regardless. An empty capabilities collection
-    means retrieval returns 0 hits — run `make seed-kb-lite` to populate.
+    Non-fatal: the API starts regardless. Uses platform
+    VectorStore abstraction — no direct qdrant_client import.
     """
-    import asyncio
+    import asyncio  # noqa: PLC0415
+
+    required, optional = _discover_collections()
 
     def _check() -> None:
         try:
-            from qdrant_client import QdrantClient  # noqa: PLC0415
-
-            client = QdrantClient(url=qdrant_url, timeout=5)
-            for name in _REQUIRED_COLLECTIONS:
-                if not client.collection_exists(name):
+            vs = VectorStore(qdrant_url)
+            for name in required:
+                if not vs.collection_exists(name):
                     log.warning(
                         "qdrant_collection_missing",
                         collection=name,
                         hint="run: make seed-kb-lite",
                     )
                 else:
-                    info = client.get_collection(name)
-                    count = info.points_count or 0
+                    count = vs.collection_point_count(name)
                     if count == 0:
                         log.warning(
                             "qdrant_collection_empty",
@@ -66,16 +98,27 @@ async def _check_qdrant_collections(qdrant_url: str) -> None:
                             hint="run: make seed-kb-lite",
                         )
                     else:
-                        log.info("qdrant_collection_ready", collection=name, points=count)
-            for name in _OPTIONAL_COLLECTIONS:
-                if not client.collection_exists(name):
+                        log.info(
+                            "qdrant_collection_ready",
+                            collection=name,
+                            points=count,
+                        )
+            for name in optional:
+                if not vs.collection_exists(name):
                     log.info(
                         "qdrant_collection_absent_optional",
                         collection=name,
-                        note="Source B (MS Learn docs) not seeded — retrieval uses A+C only",
                     )
+        except VectorStoreError as exc:
+            log.warning(
+                "qdrant_startup_check_failed",
+                error=str(exc),
+            )
         except Exception as exc:
-            log.warning("qdrant_startup_check_failed", error=str(exc))
+            log.warning(
+                "qdrant_startup_check_failed",
+                error=str(exc),
+            )
 
     await asyncio.to_thread(_check)
 

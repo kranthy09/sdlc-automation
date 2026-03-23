@@ -34,7 +34,6 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-import redis
 import structlog
 from celery import Celery
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
@@ -42,15 +41,24 @@ from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
 from langgraph.types import Command
 
 from modules.dynafit.graph import build_dynafit_graph
+from modules.dynafit.presentation import (
+    build_complete_data,
+    build_hitl_data,
+)
+from platform.schemas.events import ErrorEvent, ReviewRequiredEvent
 from platform.schemas.requirement import RawUpload
+from platform.storage.redis_pub import RedisPubSub
 
 log = structlog.get_logger(__name__)
 
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 
 # Strip the +asyncpg SQLAlchemy driver spec — psycopg3 uses plain postgresql://
-POSTGRES_CHECKPOINT_URL = os.getenv("POSTGRES_URL", "postgresql://localhost/dynafit").replace(
-    "postgresql+asyncpg://", "postgresql://"
+_raw_pg = os.getenv(
+    "POSTGRES_URL", "postgresql://localhost/dynafit",
+)
+POSTGRES_CHECKPOINT_URL = _raw_pg.replace(
+    "postgresql+asyncpg://", "postgresql://",
 )
 
 celery_app = Celery("dynafit", broker=REDIS_URL, backend=REDIS_URL)
@@ -62,263 +70,55 @@ celery_app.conf.update(
 )
 
 # ---------------------------------------------------------------------------
-# Internal helpers
+# Internal helpers — all go through platform/storage/redis_pub
 # ---------------------------------------------------------------------------
 
 
-def _emit(batch_id: str, payload: dict[str, Any]) -> None:
-    """Publish a single JSON event to progress:{batch_id} via sync Redis."""
-    r = redis.from_url(REDIS_URL)
-    try:
-        r.publish(f"progress:{batch_id}", json.dumps(payload))
-    finally:
-        r.close()
+def _emit_error(
+    batch_id: str,
+    exc: Exception,
+) -> None:
+    """Publish a typed ErrorEvent via platform abstraction."""
+    event = ErrorEvent(
+        batch_id=batch_id,
+        error_type=type(exc).__name__,
+        message=str(exc),
+    )
+    RedisPubSub.publish_sync(REDIS_URL, event)
 
 
 def _write_batch_state(batch_id: str, **fields: str) -> None:
-    """Write batch state fields to Redis hash batch:{batch_id}.
-
-    All values must be pre-serialized strings (use json.dumps for dicts/lists).
-    The hash has a 24-hour TTL — long enough for any review workflow.
-    This is the cross-process bridge: the Celery worker writes here so the
-    FastAPI routes process (separate OS process, no shared memory) can read
-    results, review_items, status, summary, and report_path.
-    """
-    r = redis.from_url(REDIS_URL)
-    try:
-        key = f"batch:{batch_id}"
-        r.hset(key, mapping=fields)  # type: ignore[arg-type]
-        r.expire(key, 86400)  # 24 h TTL
-    finally:
-        r.close()
+    """Write batch state fields via platform abstraction."""
+    RedisPubSub.write_batch_state_sync(
+        REDIS_URL, batch_id, **fields,
+    )
 
 
-def _build_journey_data(final_state: dict[str, Any]) -> list[dict[str, Any]]:
-    """Join Phase 1–5 data by atom_id into per-atom journey dicts."""
-    validated_atoms = final_state.get("validated_atoms") or []
-    contexts = final_state.get("retrieval_contexts") or []
-    match_results = final_state.get("match_results") or []
-    classifications = final_state.get("classifications") or []
-    vb = final_state.get("validated_batch")
-
-    atom_by_id = {a.atom_id: a for a in validated_atoms}
-    ctx_by_id = {c.atom.atom_id: c for c in contexts}
-    mr_by_id = {m.atom.atom_id: m for m in match_results}
-    cls_by_id = {c.atom_id: c for c in classifications}
-
-    # Determine reviewed atoms from validated_batch
-    reviewed_ids: set[str] = set()
-    if vb:
-        for r in vb.results:
-            if hasattr(r, "reviewer_override") and r.reviewer_override:
-                reviewed_ids.add(r.atom_id)
-
-    journeys: list[dict[str, Any]] = []
-    all_atom_ids = list(cls_by_id.keys()) or list(atom_by_id.keys())
-
-    for atom_id in all_atom_ids:
-        atom = atom_by_id.get(atom_id)
-        ctx = ctx_by_id.get(atom_id)
-        mr = mr_by_id.get(atom_id)
-        cls = cls_by_id.get(atom_id)
-
-        if not cls:
-            continue
-
-        ingest = {
-            "atom_id": atom_id,
-            "requirement_text": cls.requirement_text,
-            "module": cls.module,
-            "intent": atom.intent if atom else "FUNCTIONAL",
-            "priority": atom.priority if atom else "SHOULD",
-            "entity_hints": atom.entity_hints if atom else [],
-            "specificity_score": atom.specificity_score if atom else 0.0,
-            "completeness_score": atom.completeness_score if atom else 0.0,
-            "content_type": atom.content_type if atom else "text",
-            "source_refs": atom.source_refs if atom else [],
-        }
-
-        retrieve = {
-            "capabilities": [
-                {
-                    "name": cap.feature,
-                    "score": cap.composite_score,
-                    "navigation": cap.navigation,
-                }
-                for cap in (ctx.capabilities[:5] if ctx else [])
-            ],
-            "ms_learn_refs": [
-                {"title": ref.title, "score": ref.score}
-                for ref in (ctx.ms_learn_refs[:3] if ctx else [])
-            ],
-            "prior_fitments": [
-                {
-                    "wave": pf.wave,
-                    "country": pf.country,
-                    "classification": pf.classification,
-                }
-                for pf in (ctx.prior_fitments if ctx else [])
-            ],
-            "retrieval_confidence": ctx.retrieval_confidence if ctx else "LOW",
-        }
-
-        match = {
-            "signal_breakdown": mr.signal_breakdown if mr else {},
-            "composite_score": mr.top_composite_score if mr else 0.0,
-            "route": str(mr.route) if mr else "",
-            "anomaly_flags": mr.anomaly_flags if mr else [],
-        }
-
-        d365_nav = mr.ranked_capabilities[0].navigation if mr and mr.ranked_capabilities else ""
-        classify = {
-            "classification": str(cls.classification),
-            "confidence": cls.confidence,
-            "rationale": cls.rationale,
-            "route_used": str(cls.route_used),
-            "llm_calls_used": cls.llm_calls_used,
-            "d365_capability": cls.d365_capability_ref or "",
-            "d365_navigation": d365_nav,
-        }
-
-        output = {
-            "classification": str(cls.classification),
-            "confidence": cls.confidence,
-            "config_steps": cls.config_steps,
-            "configuration_steps": cls.configuration_steps,
-            "gap_description": cls.gap_description,
-            "gap_type": cls.gap_type,
-            "dev_effort": cls.dev_effort,
-            "reviewer_override": atom_id in reviewed_ids,
-        }
-
-        journeys.append(
-            {
-                "atom_id": atom_id,
-                "ingest": ingest,
-                "retrieve": retrieve,
-                "match": match,
-                "classify": classify,
-                "output": output,
-            }
+def _finish_complete(
+    batch_id: str, final_state: dict[str, Any]
+) -> None:
+    """Write completed batch results to Redis."""
+    data = build_complete_data(final_state)
+    if not data:
+        log.warning(
+            "pipeline_complete_no_batch", batch_id=batch_id
         )
-
-    return journeys
-
-
-def _finish_complete(batch_id: str, final_state: dict[str, Any]) -> None:
-    """Write completed batch results to Redis.
-
-    CompleteEvent is published by validation_node itself via Redis pub/sub.
-    This write makes the data queryable via REST (separate OS process).
-    """
-    vb = final_state.get("validated_batch")
-    if not vb:
-        log.warning("pipeline_complete_no_batch", batch_id=batch_id)
         return
-
-    # Build atom-keyed lookups from Phase 3 (MatchResult) and Phase 2
-    # (AssembledContext) to populate evidence fields per result.
-    match_by_atom = {mr.atom.atom_id: mr for mr in (final_state.get("match_results") or [])}
-    context_by_atom = {
-        ctx.atom.atom_id: ctx for ctx in (final_state.get("retrieval_contexts") or [])
-    }
-
-    result_dicts = []
-    by_module: dict[str, dict[str, int]] = {}
-
-    for r in vb.results:
-        mr = match_by_atom.get(r.atom_id)
-        ctx = context_by_atom.get(r.atom_id)
-
-        evidence = {
-            "top_capability_score": mr.top_composite_score if mr else 0.0,
-            "retrieval_confidence": ctx.retrieval_confidence if ctx else "LOW",
-            "prior_fitments": [
-                {
-                    "wave": pf.wave,
-                    "country": pf.country,
-                    "classification": pf.classification,
-                }
-                for pf in (ctx.prior_fitments if ctx else [])
-            ],
-        }
-
-        d365_navigation = (
-            mr.ranked_capabilities[0].navigation if mr and mr.ranked_capabilities else ""
-        )
-
-        result_dicts.append(
-            {
-                "atom_id": r.atom_id,
-                "requirement_text": r.requirement_text,
-                "classification": str(r.classification),
-                "confidence": r.confidence,
-                "module": r.module,
-                "country": r.country,
-                "wave": r.wave,
-                "rationale": r.rationale,
-                "reviewer_override": False,
-                "d365_capability": r.d365_capability_ref or "",
-                "d365_navigation": d365_navigation,
-                "evidence": evidence,
-                "config_steps": r.config_steps,
-                "gap_description": r.gap_description,
-                "configuration_steps": r.configuration_steps,
-                "dev_effort": r.dev_effort,
-                "gap_type": r.gap_type,
-            }
-        )
-
-        # Accumulate by_module counts (REVIEW_REQUIRED not counted)
-        cls = str(r.classification)
-        if cls in ("FIT", "PARTIAL_FIT", "GAP"):
-            mod = by_module.setdefault(r.module, {"fit": 0, "partial_fit": 0, "gap": 0})
-            if cls == "FIT":
-                mod["fit"] += 1
-            elif cls == "PARTIAL_FIT":
-                mod["partial_fit"] += 1
-            else:
-                mod["gap"] += 1
-
-    journey_data = _build_journey_data(final_state)
 
     _write_batch_state(
         batch_id,
         status="complete",
-        results=json.dumps(result_dicts),
-        summary=json.dumps(
-            {
-                "total": vb.total_atoms,
-                "fit": vb.fit_count,
-                "partial_fit": vb.partial_fit_count,
-                "gap": vb.gap_count,
-                "by_module": by_module,
-            }
-        ),
-        journey=json.dumps(journey_data),
-        report_path=vb.report_path or "",
+        results=json.dumps(data["results"]),
+        summary=json.dumps(data["summary"]),
+        journey=json.dumps(data["journey"]),
+        report_path=data["report_path"],
         completed_at=datetime.now(UTC).isoformat(),
     )
-    log.info("pipeline_complete", batch_id=batch_id, total=vb.total_atoms)
-
-
-# Flag strings produced by Phase 5 _check_flags() that indicate a structural
-# anomaly rather than simple low confidence. Mapped to "anomaly" in the UI.
-_ANOMALY_FLAG_NAMES = frozenset(
-    {
-        "phase3_anomaly",
-        "high_confidence_gap",
-        "low_score_fit",
-        "llm_schema_retry_exhausted",
-    }
-)
-
-
-def _review_reason(flags: list[str]) -> str:
-    """Map a Phase 5 flag list to the UI review_reason discriminator."""
-    if any(f in _ANOMALY_FLAG_NAMES for f in flags):
-        return "anomaly"
-    return "low_confidence"
+    log.info(
+        "pipeline_complete",
+        batch_id=batch_id,
+        total=data["total_atoms"],
+    )
 
 
 def _finish_hitl(
@@ -327,139 +127,31 @@ def _finish_hitl(
     flagged_ids: set[str],
     flagged_reasons: dict[str, list[str]],
 ) -> None:
-    """Write review_required state to Redis and emit the review_required event.
-
-    flagged_ids / flagged_reasons come from Phase 5's interrupt() payload.
-    Full ClassificationResult objects are read from final_state so the review
-    queue has rationale, confidence, and requirement_text for the UI.
-    Phase 2/3 state is also read to populate evidence (capabilities, prior
-    fitments, anomaly flags) for each review item.
-    """
-    classifications = final_state.get("classifications") or []
-    review_needed = [c for c in classifications if c.atom_id in flagged_ids]
-
-    match_by_atom = {mr.atom.atom_id: mr for mr in (final_state.get("match_results") or [])}
-    context_by_atom = {
-        ctx.atom.atom_id: ctx for ctx in (final_state.get("retrieval_contexts") or [])
-    }
-
-    review_item_dicts = []
-    reasons_counts: dict[str, int] = {}
-    for c in review_needed:
-        mr = match_by_atom.get(c.atom_id)
-        ctx = context_by_atom.get(c.atom_id)
-
-        anomaly_flags = mr.anomaly_flags if mr else []
-        item_flags = flagged_reasons.get(c.atom_id, [])
-        review_reason = (
-            _review_reason(item_flags)
-            if item_flags
-            else ("anomaly" if anomaly_flags else "low_confidence")
-        )
-        reasons_counts[review_reason] = reasons_counts.get(review_reason, 0) + 1
-
-        review_item_dicts.append(
-            {
-                "atom_id": c.atom_id,
-                "requirement_text": c.requirement_text,
-                "ai_classification": str(c.classification),
-                "ai_confidence": c.confidence,
-                "ai_rationale": c.rationale,
-                "review_reason": review_reason,
-                "module": c.module,
-                "config_steps": c.config_steps,
-                "gap_description": c.gap_description,
-                "configuration_steps": c.configuration_steps,
-                "dev_effort": c.dev_effort,
-                "gap_type": c.gap_type,
-                "evidence": {
-                    "capabilities": [
-                        {
-                            "name": cap.feature,
-                            "score": cap.composite_score,
-                            "navigation": cap.navigation,
-                        }
-                        for cap in (mr.ranked_capabilities[:3] if mr else [])
-                    ],
-                    "prior_fitments": [
-                        {
-                            "wave": pf.wave,
-                            "country": pf.country,
-                            "classification": pf.classification,
-                        }
-                        for pf in (ctx.prior_fitments if ctx else [])
-                    ],
-                    "anomaly_flags": anomaly_flags,
-                },
-            }
-        )
-
-    # Build auto-approved items (classifications NOT flagged for review)
-    auto_approved_dicts = []
-    fit_count = partial_fit_count = gap_count = 0
-
-    for c in classifications:
-        cls = str(c.classification)
-        if cls == "FIT":
-            fit_count += 1
-        elif cls == "PARTIAL_FIT":
-            partial_fit_count += 1
-        elif cls == "GAP":
-            gap_count += 1
-
-        if c.atom_id in flagged_ids:
-            continue
-
-        mr = match_by_atom.get(c.atom_id)
-        d365_navigation = (
-            mr.ranked_capabilities[0].navigation if mr and mr.ranked_capabilities else ""
-        )
-        auto_approved_dicts.append(
-            {
-                "atom_id": c.atom_id,
-                "requirement_text": c.requirement_text,
-                "classification": cls,
-                "confidence": c.confidence,
-                "module": c.module,
-                "rationale": c.rationale,
-                "d365_capability": c.d365_capability_ref or "",
-                "d365_navigation": d365_navigation,
-                "config_steps": c.config_steps,
-                "configuration_steps": c.configuration_steps,
-                "gap_description": c.gap_description,
-                "gap_type": c.gap_type,
-                "dev_effort": c.dev_effort,
-            }
-        )
-
-    journey_data = _build_journey_data(final_state)
+    """Write review_required state to Redis."""
+    data = build_hitl_data(
+        final_state, flagged_ids, flagged_reasons
+    )
 
     _write_batch_state(
         batch_id,
         status="review_required",
-        review_items=json.dumps(review_item_dicts),
-        auto_approved=json.dumps(auto_approved_dicts),
-        summary=json.dumps(
-            {
-                "total": len(classifications),
-                "fit": fit_count,
-                "partial_fit": partial_fit_count,
-                "gap": gap_count,
-            }
-        ),
-        journey=json.dumps(journey_data),
+        review_items=json.dumps(data["review_items"]),
+        auto_approved=json.dumps(data["auto_approved"]),
+        summary=json.dumps(data["summary"]),
+        journey=json.dumps(data["journey"]),
     )
-    _emit(
-        batch_id,
-        {
-            "event": "review_required",
-            "batch_id": batch_id,
-            "review_items": len(review_needed),
-            "reasons": reasons_counts,
-            "review_url": f"/review/{batch_id}",
-        },
+    event = ReviewRequiredEvent(
+        batch_id=batch_id,
+        review_items=data["review_count"],
+        reasons=data["reasons_counts"],
+        review_url=f"/review/{batch_id}",
     )
-    log.info("pipeline_hitl_required", batch_id=batch_id, count=len(review_needed))
+    RedisPubSub.publish_sync(REDIS_URL, event)
+    log.info(
+        "pipeline_hitl_required",
+        batch_id=batch_id,
+        count=data["review_count"],
+    )
 
 
 async def _run_phase5(
@@ -550,7 +242,7 @@ def run_dynafit_pipeline(
     """
     thread_config: dict[str, Any] = {"configurable": {"thread_id": batch_id}}
 
-    # --- Resume path (called after HITL review is complete) ------------------
+    # --- Resume path (after HITL review) -----------
     if config.get("_resume"):
         overrides: dict[str, Any] = config.get("_overrides", {})
         log.info(
@@ -559,31 +251,32 @@ def run_dynafit_pipeline(
             override_count=len(overrides),
         )
         try:
-            final_state = asyncio.run(_resume_phase5_hitl(batch_id, thread_config, overrides))
-        except Exception as exc:
-            log.error("pipeline_phase5_resume_failed", batch_id=batch_id, error=str(exc))
-            _emit(
-                batch_id,
-                {
-                    "event": "error",
-                    "batch_id": batch_id,
-                    "error_type": type(exc).__name__,
-                    "message": str(exc),
-                },
+            final_state = asyncio.run(
+                _resume_phase5_hitl(
+                    batch_id, thread_config, overrides,
+                ),
             )
+        except Exception as exc:
+            log.error(
+                "pipeline_phase5_resume_failed",
+                batch_id=batch_id,
+                error=str(exc),
+            )
+            _emit_error(batch_id, exc)
             return
         _finish_complete(batch_id, final_state)
         return
 
-    # --- Normal first-run path -----------------------------------------------
-    # Extract per-run threshold overrides before consuming the rest of config.
-    # These keys are recognized ProductConfig fields the UI may override.
+    # --- Normal first-run path ----------------------
     _OVERRIDE_KEYS = {
         "fit_confidence_threshold",
         "review_confidence_threshold",
         "auto_approve_with_history",
     }
-    run_overrides: dict[str, Any] = {k: v for k, v in config.items() if k in _OVERRIDE_KEYS}
+    run_overrides: dict[str, Any] = {
+        k: v for k, v in config.items()
+        if k in _OVERRIDE_KEYS
+    }
 
     meta = config.pop("_upload_meta", {})
     file_path = Path(str(meta.get("path", "")))
@@ -596,15 +289,7 @@ def run_dynafit_pipeline(
             batch_id=batch_id,
             path=str(file_path),
         )
-        _emit(
-            batch_id,
-            {
-                "event": "error",
-                "batch_id": batch_id,
-                "error_type": "FileNotFoundError",
-                "message": f"Upload file not found: {exc}",
-            },
-        )
+        _emit_error(batch_id, exc)
         return
 
     raw_upload = RawUpload(
@@ -616,66 +301,56 @@ def run_dynafit_pipeline(
         country=str(meta.get("country", "")),
     )
 
-    async def _run_phases14() -> dict[str, Any]:
+    # Single event loop for phases 1-4 + phase 5
+    async def _run_all() -> tuple[
+        str, dict[str, Any], set[str], dict[str, list[str]],
+    ]:
         async with AsyncPostgresSaver.from_conn_string(
-            POSTGRES_CHECKPOINT_URL, serde=JsonPlusSerializer()
+            POSTGRES_CHECKPOINT_URL,
+            serde=JsonPlusSerializer(),
         ) as checkpointer:
             await checkpointer.setup()
-            graph = build_dynafit_graph(checkpointer=checkpointer)
-            initial_state: dict[str, Any] = {
+            graph = build_dynafit_graph(
+                checkpointer=checkpointer,
+            )
+            initial: dict[str, Any] = {
                 "upload": raw_upload,
                 "batch_id": batch_id,
                 "errors": [],
             }
             if run_overrides:
-                initial_state["config_overrides"] = run_overrides
-            state: dict[str, Any] = await graph.ainvoke(initial_state, config=thread_config)
-            return state
+                initial["config_overrides"] = run_overrides
+
+            # Phases 1-4 (interrupt_before=["validate"])
+            await graph.ainvoke(
+                initial, config=thread_config,
+            )
+
+            # Phase 5 — resume from interrupt_before
+            return await _run_phase5(
+                batch_id, thread_config,
+            )
 
     try:
-        # Phases 1–4: graph stops before Phase 5 (interrupt_before=["validate"])
-        asyncio.run(_run_phases14())
+        outcome, final_state, flagged_ids, flagged_reasons = (
+            asyncio.run(_run_all())
+        )
     except Exception as exc:
         log.error(
-            "pipeline_phases14_failed",
+            "pipeline_failed",
             batch_id=batch_id,
             error=str(exc),
         )
-        _emit(
-            batch_id,
-            {
-                "event": "error",
-                "batch_id": batch_id,
-                "error_type": type(exc).__name__,
-                "message": str(exc),
-            },
-        )
+        _emit_error(batch_id, exc)
         try:
             raise self.retry(exc=exc)
         except self.MaxRetriesExceededError:
             return
 
-    # --- Enter Phase 5 (resume from interrupt_before checkpoint) -------------
-    # Phase 5's sanity gate decides what needs review and calls interrupt()
-    # if needed — the worker does NOT pre-screen classifications here.
-    try:
-        outcome, final_state, flagged_ids, flagged_reasons = asyncio.run(
-            _run_phase5(batch_id, thread_config)
-        )
-    except Exception as exc:
-        log.error("pipeline_phase5_failed", batch_id=batch_id, error=str(exc))
-        _emit(
-            batch_id,
-            {
-                "event": "error",
-                "batch_id": batch_id,
-                "error_type": type(exc).__name__,
-                "message": str(exc),
-            },
-        )
-        return
-
     if outcome == "complete":
         _finish_complete(batch_id, final_state)
     else:
-        _finish_hitl(batch_id, final_state, flagged_ids, flagged_reasons)
+        _finish_hitl(
+            batch_id, final_state,
+            flagged_ids, flagged_reasons,
+        )

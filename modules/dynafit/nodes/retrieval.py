@@ -43,8 +43,6 @@ from platform.schemas.retrieval import (
     RankedCapability,
 )
 from platform.storage.postgres import PostgresStore
-from platform.storage.redis_pub import RedisPubSub
-
 from ..events import (
     publish_phase_complete,
     publish_phase_start,
@@ -256,9 +254,9 @@ def _hit_to_ranked_capability(
         module=p.get("module", ""),
         version=p.get("version", ""),
         tags=p.get("tags", []),
-        composite_score=composite_score,
+        composite_score=composite_score,  # preliminary; Phase 3 overwrites with 5-signal score
         rerank_score=rerank_score,
-        bm25_score=0.0,  # Phase 3 computes the 5-signal composite; bm25 unknown here
+        bm25_score=0.0,
     )
 
 
@@ -298,21 +296,19 @@ class RetrievalNode:
         vector_store: VectorStore | None = None,
         reranker: Any | None = None,
         postgres: PostgresStore | None = None,
-        redis: RedisPubSub | None = None,
     ) -> None:
         self._embedder = embedder
         self._store = vector_store
         self._reranker = reranker
         self._postgres = postgres
-        self._redis = redis
 
     # ------------------------------------------------------------------
     # Lazy infra (production path only — tests inject mocks)
     # ------------------------------------------------------------------
 
-    def _get_embedder(self) -> Embedder:
+    def _get_embedder(self, product_id: str) -> Embedder:
         if self._embedder is None:
-            config = get_product_config("d365_fo")
+            config = get_product_config(product_id)
             self._embedder = Embedder(config.embedding_model)
         return self._embedder
 
@@ -331,13 +327,6 @@ class RetrievalNode:
             self._postgres = PostgresStore(get_settings().postgres_url)
         return self._postgres
 
-    def _get_redis(self) -> RedisPubSub:
-        if self._redis is None:
-            from platform.config.settings import get_settings  # noqa: PLC0415
-
-            self._redis = RedisPubSub(get_settings().redis_url)
-        return self._redis
-
     # ------------------------------------------------------------------
     # LangGraph entry point
     # ------------------------------------------------------------------
@@ -350,7 +339,6 @@ class RetrievalNode:
 
         publish_phase_start(
             batch_id,
-            self._get_redis(),
             phase=2,
             phase_name="RAG",
         )
@@ -360,7 +348,6 @@ class RetrievalNode:
             log.info("phase_complete", phase=2, batch_id=batch_id, contexts=0, latency_ms=0)
             publish_phase_complete(
                 batch_id,
-                self._get_redis(),
                 phase=2,
                 phase_name="RAG",
                 atoms_produced=0,
@@ -371,7 +358,7 @@ class RetrievalNode:
             return {"retrieval_contexts": []}
 
         config = get_product_config(upload.product_id)
-        contexts = self._run(atoms, config, batch_id=batch_id, redis=self._get_redis())
+        contexts = self._run(atoms, config, batch_id=batch_id)
 
         elapsed_ms = (time.monotonic() - t0) * 1000
         log.info(
@@ -384,7 +371,6 @@ class RetrievalNode:
         )
         publish_phase_complete(
             batch_id,
-            self._get_redis(),
             phase=2,
             phase_name="RAG",
             atoms_produced=len(contexts),
@@ -404,10 +390,9 @@ class RetrievalNode:
         config: ProductConfig,
         *,
         batch_id: str = "",
-        redis: RedisPubSub | None = None,
     ) -> list[AssembledContext]:
 
-        embedder = self._get_embedder()
+        embedder = self._get_embedder(config.product_id)
         store = self._get_store()
         reranker = self._get_reranker(config.reranker_model)
         postgres = self._get_postgres()
@@ -421,7 +406,6 @@ class RetrievalNode:
         dense_vecs = embedder.embed_batch(atom_texts)
         publish_step_progress(
             batch_id,
-            redis,
             phase=2,
             step="Embedding requirements",
             completed=1,
@@ -438,7 +422,6 @@ class RetrievalNode:
             )
             publish_step_progress(
                 batch_id,
-                redis,
                 phase=2,
                 step=f"Retrieving capabilities ({i + 1}/{n})",
                 completed=2 + i,
@@ -454,7 +437,6 @@ class RetrievalNode:
             )
             publish_step_progress(
                 batch_id,
-                redis,
                 phase=2,
                 step="Warning: capability KB empty — seed Qdrant",
                 completed=total_steps,
@@ -463,7 +445,6 @@ class RetrievalNode:
         else:
             publish_step_progress(
                 batch_id,
-                redis,
                 phase=2,
                 step="Reranking results",
                 completed=total_steps,
@@ -539,7 +520,9 @@ class RetrievalNode:
             ranked_capabilities.append(_hit_to_ranked_capability(hit, calibrated, r.score))
 
         # Token budget: trim capability descriptions to avoid overflow in Phase 4 prompts
-        _trim_descriptions(ranked_capabilities, token_budget=3072)
+        ranked_capabilities = _trim_descriptions(
+            ranked_capabilities, token_budget=3072
+        )
 
         # ── Step 5: Context assembly ─────────────────────────────────────────
         prov_input = atom.atom_id + "".join(c.capability_id for c in ranked_capabilities)
@@ -562,28 +545,37 @@ class RetrievalNode:
 # ---------------------------------------------------------------------------
 
 
-def _trim_descriptions(caps: list[RankedCapability], token_budget: int) -> None:
-    """Trim capability descriptions in-place so they fit within the token budget.
+def _trim_descriptions(
+    caps: list[RankedCapability], token_budget: int
+) -> list[RankedCapability]:
+    """Return capabilities with descriptions trimmed to fit the token budget.
 
     Approximates tokens as chars / 4.  Trims the longest descriptions first,
-    always preserving the feature name intact.  Mutates the Pydantic models via
-    object.__setattr__ since RankedCapability is frozen.
+    always preserving the feature name intact.  Uses model_copy() to respect
+    the frozen Pydantic model contract.
     """
     total = sum(len(c.description) for c in caps)
     budget_chars = token_budget * 4
 
     if total <= budget_chars:
-        return
+        return caps
 
+    result = list(caps)
     # Sort by description length descending, trim the longest first
-    order = sorted(range(len(caps)), key=lambda i: len(caps[i].description), reverse=True)
+    order = sorted(
+        range(len(result)),
+        key=lambda i: len(result[i].description),
+        reverse=True,
+    )
     for idx in order:
-        cap = caps[idx]
-        excess = sum(len(c.description) for c in caps) - budget_chars
+        cap = result[idx]
+        excess = sum(len(c.description) for c in result) - budget_chars
         if excess <= 0:
             break
         trim_to = max(80, len(cap.description) - excess)
-        object.__setattr__(cap, "description", cap.description[:trim_to] + "…")
+        trimmed = cap.description[:trim_to] + "…"
+        result[idx] = cap.model_copy(update={"description": trimmed})
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -591,6 +583,7 @@ def _trim_descriptions(caps: list[RankedCapability], token_budget: int) -> None:
 # ---------------------------------------------------------------------------
 
 _node: RetrievalNode | None = None
+_node_lock = __import__("threading").Lock()
 
 
 def retrieval_node(state: DynafitState) -> dict[str, Any]:
@@ -601,5 +594,7 @@ def retrieval_node(state: DynafitState) -> dict[str, Any]:
     """
     global _node
     if _node is None:
-        _node = RetrievalNode()
+        with _node_lock:
+            if _node is None:
+                _node = RetrievalNode()
     return _node(state)

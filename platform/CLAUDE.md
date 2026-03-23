@@ -11,6 +11,7 @@ platform/schemas/retrieval.py   RetrievalQuery, AssembledContext, RankedCapabili
 platform/schemas/fitment.py     MatchResult, ClassificationResult, ValidatedFitmentBatch
 platform/schemas/events.py      WebSocket message types
 platform/schemas/errors.py      UnsupportedFormatError, ParseError, RetrievalError
+platform/schemas/guardrails.py  FileValidationResult, InjectionScanResult, PIIRedactionResult, PIIScanResult
 ```
 
 **Layer 2 (utilities) — COMPLETE (13/13)**
@@ -28,11 +29,13 @@ platform/schemas/errors.py      UnsupportedFormatError, ParseError, RetrievalErr
 - [x] `platform/storage/redis_pub.py`
 - [x] `platform/testing/factories.py`
 
-**Layer 2 Extension — Guardrail Utilities (Session A, build before Layer 3 phase nodes)**
-- [ ] `platform/schemas/guardrails.py` + `platform/guardrails/file_validator.py` → tests/unit/test_file_validator.py
-- [ ] `platform/guardrails/injection_scanner.py` → tests/unit/test_injection_scanner.py
+**Layer 2 Extension — Guardrail Utilities (reusable across all products)**
+- [x] `platform/schemas/guardrails.py` + `platform/guardrails/file_validator.py` → G1-lite
+- [x] `platform/guardrails/injection_scanner.py` → G3-lite
+- [x] `platform/guardrails/pii_redactor.py` → G2 (redact_pii + restore_pii, presidio + regex fallback, thread-safe init)
+- [x] `platform/guardrails/response_pii_scanner.py` → G11 (scan_response_pii, imports module not value)
 
-See `docs/specs/guardrails.md` for full design. These are reusable across all future products.
+See `docs/specs/guardrails.md` for full design.
 
 ## Platform Rules
 
@@ -42,6 +45,7 @@ See `docs/specs/guardrails.md` for full design. These are reusable across all fu
 - `platform/retrieval/vector_store.py` exposes an **interface**, not Qdrant types — swappable
 - `platform/testing/factories.py` provides **all mocks** — module tests never instantiate real infra
 - LLM retry logic lives **only** in `platform/llm/client.py` — never elsewhere
+- Lazy-loaded singletons use `threading.Lock` — never import module-level mutables by name across files
 
 ## Test Placement
 

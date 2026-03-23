@@ -34,8 +34,6 @@ from platform.observability.logger import get_logger
 from platform.retrieval.embedder import Embedder
 from platform.schemas.fitment import MatchResult, RouteLabel
 from platform.schemas.retrieval import AssembledContext, PriorFitment, RankedCapability
-from platform.storage.redis_pub import RedisPubSub
-
 from ..events import (
     publish_phase_complete,
     publish_phase_start,
@@ -157,23 +155,14 @@ class MatchingNode:
         self,
         *,
         embedder: Embedder | None = None,
-        redis: RedisPubSub | None = None,
     ) -> None:
         self._embedder = embedder
-        self._redis = redis
 
-    def _get_embedder(self) -> Embedder:
+    def _get_embedder(self, product_id: str) -> Embedder:
         if self._embedder is None:
-            config = get_product_config("d365_fo")
+            config = get_product_config(product_id)
             self._embedder = Embedder(config.embedding_model)
         return self._embedder
-
-    def _get_redis(self) -> RedisPubSub:
-        if self._redis is None:
-            from platform.config.settings import get_settings  # noqa: PLC0415
-
-            self._redis = RedisPubSub(get_settings().redis_url)
-        return self._redis
 
     # ------------------------------------------------------------------
     # LangGraph entry point
@@ -188,7 +177,6 @@ class MatchingNode:
 
         publish_phase_start(
             batch_id,
-            self._get_redis(),
             phase=3,
             phase_name="Matching",
         )
@@ -197,12 +185,12 @@ class MatchingNode:
         n = len(contexts)
         total_steps = n + 1  # n scoring + 1 routing summary
 
+        product_id: str = state["upload"].product_id
         match_results = []
         for i, ctx in enumerate(contexts):
-            match_results.append(self._score_context(ctx))
+            match_results.append(self._score_context(ctx, product_id=product_id))
             publish_step_progress(
                 batch_id,
-                self._get_redis(),
                 phase=3,
                 step=f"Scoring requirements ({i + 1}/{n})",
                 completed=i + 1,
@@ -215,7 +203,6 @@ class MatchingNode:
 
         publish_step_progress(
             batch_id,
-            self._get_redis(),
             phase=3,
             step=(f"Routing: {fast_track} fast, {deep_reason} deep, {gap_confirm} gap"),
             completed=total_steps,
@@ -236,7 +223,6 @@ class MatchingNode:
         )
         publish_phase_complete(
             batch_id,
-            self._get_redis(),
             phase=3,
             phase_name="Matching",
             atoms_produced=len(match_results),
@@ -250,7 +236,7 @@ class MatchingNode:
     # Per-context scoring
     # ------------------------------------------------------------------
 
-    def _score_context(self, ctx: AssembledContext) -> MatchResult:
+    def _score_context(self, ctx: AssembledContext, *, product_id: str) -> MatchResult:
         atom = ctx.atom
         caps = ctx.capabilities
         priors: list[PriorFitment] = ctx.prior_fitments
@@ -271,7 +257,7 @@ class MatchingNode:
 
         # Batch embed: atom text first, then all cap descriptions
         all_texts = [atom.requirement_text] + [c.description for c in caps]
-        raw_vecs = np.array(self._get_embedder().embed_batch(all_texts), dtype=np.float32)
+        raw_vecs = np.array(self._get_embedder(product_id).embed_batch(all_texts), dtype=np.float32)
         normed = _normalise(raw_vecs)
         atom_norm: np.ndarray = normed[0]  # (d,)  # type: ignore[type-arg]
         cap_norms: np.ndarray = normed[1:]  # (n, d)  # type: ignore[type-arg]
@@ -349,6 +335,7 @@ class MatchingNode:
 # ---------------------------------------------------------------------------
 
 _node: MatchingNode | None = None
+_node_lock = __import__("threading").Lock()
 
 
 def matching_node(state: DynafitState) -> dict[str, Any]:
@@ -359,5 +346,7 @@ def matching_node(state: DynafitState) -> dict[str, Any]:
     """
     global _node
     if _node is None:
-        _node = MatchingNode()
+        with _node_lock:
+            if _node is None:
+                _node = MatchingNode()
     return _node(state)

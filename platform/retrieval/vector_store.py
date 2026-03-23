@@ -168,6 +168,17 @@ class VectorStore:
             raise VectorStoreError(
                 f"collection_exists({name!r}) failed: {exc}", cause=exc) from exc
 
+    def collection_point_count(self, name: str) -> int:
+        """Return the number of points in a collection."""
+        try:
+            info = self._get_client().get_collection(name)
+            return info.points_count or 0
+        except Exception as exc:
+            raise VectorStoreError(
+                f"collection_point_count({name!r}) failed: {exc}",
+                cause=exc,
+            ) from exc
+
     def ensure_collection(self, name: str, config: CollectionConfig) -> None:
         """Create the collection if it does not already exist (idempotent)."""
         if self.collection_exists(name):

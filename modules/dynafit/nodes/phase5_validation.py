@@ -39,7 +39,6 @@ from __future__ import annotations
 import hashlib
 import os
 import time
-import zipfile
 from typing import Any
 
 from langgraph.types import interrupt
@@ -128,9 +127,9 @@ class ValidationNode:
             self._redis = RedisPubSub(get_settings().redis_url)
         return self._redis
 
-    def _get_embedder(self) -> Embedder:
+    def _get_embedder(self, product_id: str) -> Embedder:
         if self._embedder is None:
-            config = get_product_config("d365_fo")
+            config = get_product_config(product_id)
             self._embedder = Embedder(config.embedding_model)
         return self._embedder
 
@@ -195,7 +194,6 @@ class ValidationNode:
         if flagged:
             publish_phase_start(
                 batch_id,
-                self._get_redis(),
                 phase=5,
                 phase_name="human_review",
             )
@@ -223,7 +221,8 @@ class ValidationNode:
         # ----------------------------------------------------------------
         merged = _merge_overrides(clean, flagged, overrides)
         batch = _build_batch(state, merged)
-        report_path = self._write_csv(merged, batch.batch_id)
+        pii_map = state.get("pii_redaction_map")
+        report_path = self._write_csv(merged, batch.batch_id, pii_map)
         final_batch = batch.model_copy(update={"report_path": report_path})
 
         # Write-back to postgres (fire-and-forget; errors logged, not raised)
@@ -243,7 +242,6 @@ class ValidationNode:
         # CompleteEvent is terminal and stops the Redis subscriber.
         publish_phase_complete(
             batch_id,
-            self._get_redis(),
             phase=5,
             phase_name="Validation",
             atoms_produced=final_batch.total_atoms,
@@ -319,17 +317,30 @@ class ValidationNode:
                 anomalies=mr.anomaly_flags,
             )
 
+        # G11: PII detected in LLM response → HITL (consultant must review)
+        if result.caveats and "G11:" in result.caveats:
+            flags.append("response_pii_leak")
+            log.warning(
+                "sanity_response_pii_leak",
+                atom_id=result.atom_id,
+            )
+
         return flags
 
     # ------------------------------------------------------------------
     # Sub-phase 5B helpers
     # ------------------------------------------------------------------
 
-    def _write_csv(self, merged: list[_MergedResult], batch_id: str) -> str:
-        """Write FDD FOR FITS and FDD FOR GAPS CSVs, then bundle into a ZIP.
+    def _write_csv(
+        self,
+        merged: list[_MergedResult],
+        batch_id: str,
+        pii_redaction_map: dict[str, str] | None = None,
+    ) -> str:
+        """Write FDD FOR FITS and FDD FOR GAPS CSVs.
 
-        Returns the path to the ZIP file (stored as batch.report_path).
-        The ZIP contains two CSVs:
+        Returns the report directory path (stored as batch.report_path).
+        The directory contains two CSVs:
           fdd_fits_{batch_id}.csv  — FIT and PARTIAL_FIT results
           fdd_gaps_{batch_id}.csv  — GAP results
         """
@@ -343,22 +354,17 @@ class ValidationNode:
 
         fits_path = os.path.join(report_dir, f"fdd_fits_{batch_id}.csv")
         gaps_path = os.path.join(report_dir, f"fdd_gaps_{batch_id}.csv")
-        _write_fdd_csv(fits_path, fits)
-        _write_fdd_csv(gaps_path, gaps)
-
-        zip_path = os.path.join(report_dir, f"fdd_report_{batch_id}.zip")
-        with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
-            zf.write(fits_path, arcname=f"fdd_fits_{batch_id}.csv")
-            zf.write(gaps_path, arcname=f"fdd_gaps_{batch_id}.csv")
+        _write_fdd_csv(fits_path, fits, pii_redaction_map)
+        _write_fdd_csv(gaps_path, gaps, pii_redaction_map)
 
         log.info(
             "report_written",
             batch_id=batch_id,
-            zip_path=zip_path,
+            report_dir=report_dir,
             fits=len(fits),
             gaps=len(gaps),
         )
-        return zip_path
+        return report_dir
 
     async def _write_back(
         self,
@@ -374,7 +380,7 @@ class ValidationNode:
         failure does not fail the pipeline; the batch is already built in memory.
         """
         upload = state["upload"]
-        embedder = self._get_embedder()
+        embedder = self._get_embedder(upload.product_id)
         postgres = self._get_postgres()
         saved = skipped = 0
 
@@ -413,6 +419,7 @@ class ValidationNode:
 # ---------------------------------------------------------------------------
 
 _node: ValidationNode | None = None
+_node_lock = __import__("threading").Lock()
 
 
 def validation_node(state: DynafitState) -> dict[str, Any]:
@@ -423,5 +430,7 @@ def validation_node(state: DynafitState) -> dict[str, Any]:
     """
     global _node
     if _node is None:
-        _node = ValidationNode()
+        with _node_lock:
+            if _node is None:
+                _node = ValidationNode()
     return _node(state)

@@ -28,8 +28,13 @@ from pathlib import Path
 LAYER_RULES: list[tuple[str, list[str], str]] = [
     (
         "platform",
+        ["agents", "modules", "api"],
+        "platform/ cannot import from agents/, modules/, or api/",
+    ),
+    (
+        "agents",
         ["modules", "api"],
-        "platform/ cannot import from modules/ or api/",
+        "agents/ cannot import from modules/ or api/",
     ),
 ]
 
@@ -38,6 +43,7 @@ API_ALLOWED_MODULE_IMPORTS = {
     "graph",  # build_*_graph() entry points
     "schemas",  # schema types for typed responses
     "manifest",  # module registration metadata
+    "presentation",  # API-ready data builders
 }
 
 
@@ -149,6 +155,44 @@ def check_api_module_imports(root: Path) -> list[str]:
 
 
 # ---------------------------------------------------------------------------
+# Banned direct infrastructure imports (api/ and modules/ must use platform/)
+# ---------------------------------------------------------------------------
+
+# Celery and LangGraph are orchestration — allowed in api/workers/.
+# Everything else must go through platform/ abstractions.
+BANNED_INFRA_IMPORTS: set[str] = {"redis", "qdrant_client", "anthropic", "sqlalchemy"}
+
+
+def check_banned_infra_imports(root: Path) -> list[str]:
+    """api/ and modules/ must never import raw infra libraries directly."""
+    violations: list[str] = []
+    for layer in ("api", "modules"):
+        layer_dir = root / layer
+        if not layer_dir.exists():
+            continue
+        for py_file in layer_dir.rglob("*.py"):
+            rel = py_file.relative_to(root)
+            # Skip test files — they may need direct imports for integration tests
+            if "tests" in rel.parts or "test_" in rel.name:
+                continue
+            try:
+                tree = ast.parse(py_file.read_text(encoding="utf-8"))
+            except SyntaxError:
+                continue
+            imported = _extract_imports(tree)
+            for mod in imported:
+                top = mod.split(".")[0]
+                if top in BANNED_INFRA_IMPORTS:
+                    violations.append(
+                        f"VIOLATION [direct infra import in {layer}/]\n"
+                        f"  File:   {rel}\n"
+                        f"  Import: {mod}\n"
+                        f"  Use platform/ abstraction instead"
+                    )
+    return violations
+
+
+# ---------------------------------------------------------------------------
 # Manifest validation
 # ---------------------------------------------------------------------------
 
@@ -225,6 +269,7 @@ def main() -> int:
     all_violations.extend(check_layer_imports(root))
     all_violations.extend(check_cross_module_imports(root))
     all_violations.extend(check_api_module_imports(root))
+    all_violations.extend(check_banned_infra_imports(root))
     all_violations.extend(check_manifests(root))
 
     if all_violations:

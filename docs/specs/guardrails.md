@@ -4,8 +4,8 @@
 > Read alongside `docs/specs/dynafit.md`. Guardrails are not separate — they are
 > built in the same session as the phase node they protect.
 >
-> This file covers MVP guardrails (7 active) and post-MVP roadmap (7 deferred).
-> No new heavy libraries in MVP. HITL mandatory.
+> This file covers MVP guardrails (9 active) and post-MVP roadmap (5 deferred).
+> HITL mandatory.
 
 ---
 
@@ -26,8 +26,10 @@ every flagged classification.
 |---|------|-------|-------|-----------|
 | G1-lite | File validator | 1 — Ingestion (pre-parse) | `platform/guardrails/file_validator.py` | None |
 | G3-lite | Injection scanner | 1 — Ingestion (post-extract) | `platform/guardrails/injection_scanner.py` | None |
+| G2 | PII redactor | 1 — Ingestion (pre-LLM) | `platform/guardrails/pii_redactor.py` | `presidio-analyzer` (regex fallback) |
 | G8 | Prompt firewall | 4 — Classification (pre-LLM) | Structural pattern in `prompts/*.j2` | None |
 | G9 | Output schema enforcer | 4 — Classification (post-LLM) | Built into `ClassificationResult` + LLM client | None |
+| G11 | Response PII scanner | 4 — Classification (post-LLM) | `platform/guardrails/response_pii_scanner.py` | Reuses G2 engine |
 | G10-lite | Sanity gate | 5 — Validation (pre-HITL) | `modules/dynafit/guardrails.py` | None |
 | HITL | Human review checkpoint | 5 — Validation | `modules/dynafit/nodes/phase5_validation.py` | None |
 | Audit | Phase boundary logging | All phases | `platform/observability/logger.py` (existing) | None |
@@ -39,20 +41,25 @@ every flagged classification.
 These two components extend Layer 2. They go in `platform/` because they are reusable
 across all future products. Build in one session before starting any DYNAFIT phase node.
 
-### Files to create
+### Files
 
 ```
 platform/
   schemas/
-    guardrails.py              ← FileValidationResult, InjectionScanResult
+    guardrails.py              ← FileValidationResult, InjectionScanResult,
+                                 PIIEntity, PIIRedactionResult, PIIScanResult
   guardrails/
     __init__.py
     file_validator.py          ← G1-lite
     injection_scanner.py       ← G3-lite
+    pii_redactor.py            ← G2 (redact_pii + restore_pii)
+    response_pii_scanner.py    ← G11 (scan_response_pii)
 
 tests/unit/
   test_file_validator.py
   test_injection_scanner.py
+tests/integration/
+  test_pii_guardrails.py
 ```
 
 ---
@@ -122,6 +129,69 @@ def scan_for_injection(text: str) -> InjectionScanResult:
 ```
 
 **No new libraries.** Uses only `re` (stdlib).
+
+---
+
+## G2: PII Redactor
+
+**File:** `platform/guardrails/pii_redactor.py`
+**Called at:** Phase 1, after injection scan, before requirement atomization (pre-LLM).
+
+```python
+# platform/schemas/guardrails.py
+class PIIEntity(PlatformModel):
+    entity_type: str       # "PERSON", "EMAIL_ADDRESS", "PHONE_NUMBER", etc.
+    start: int
+    end: int
+    score: float
+    placeholder: str       # "<PII_PERSON_1>"
+
+class PIIRedactionResult(PlatformModel):
+    redacted_text: str
+    entities_found: list[PIIEntity]
+    entity_count: int
+    redaction_map: dict[str, str]  # placeholder → original
+
+# platform/guardrails/pii_redactor.py
+def redact_pii(text: str) -> PIIRedactionResult: ...
+def restore_pii(redacted_text: str, redaction_map: dict[str, str]) -> str: ...
+```
+
+**Detection:** Presidio-analyzer with spaCy NER (`en_core_web_sm`). Regex fallback
+(email, phone, SSN, IP, credit card) when presidio is not installed.
+**Entities:** PERSON, EMAIL_ADDRESS, PHONE_NUMBER, CREDIT_CARD, IBAN_CODE, IP_ADDRESS, US_SSN, LOCATION.
+**Lifecycle:** `pii_redaction_map` stored in `DynafitState`, carried through Phases 2–4.
+Phase 5 calls `restore_pii()` in CSV output to produce the final deliverable with original text.
+**Thread safety:** Presidio `AnalyzerEngine` singleton uses `threading.Lock` with double-checked locking.
+
+**Library:** `presidio-analyzer>=2.2` in `pyproject.toml` `[ml]` optional deps.
+
+---
+
+## G11: Response PII Scanner
+
+**File:** `platform/guardrails/response_pii_scanner.py`
+**Called at:** Phase 4, after LLM response assembly, before sanity checks.
+
+```python
+# platform/schemas/guardrails.py
+class PIIScanResult(PlatformModel):
+    has_pii: bool
+    entities_found: list[PIIEntity]
+    entity_count: int
+    action: Literal["PASS", "FLAG_FOR_REVIEW"]
+
+# platform/guardrails/response_pii_scanner.py
+def scan_response_pii(text: str) -> PIIScanResult: ...
+```
+
+Scans LLM output fields (`rationale`, `gap_description`, `config_steps`) for leaked/hallucinated PII.
+If PII found: adds `G11:` caveat to `ClassificationResult.caveats`. Phase 5 `_check_flags()`
+detects this caveat and adds `response_pii_leak` flag → routes to HITL review.
+**Never blocks.** Always `FLAG_FOR_REVIEW` — consultant decides.
+
+Reuses the same presidio/regex engine as G2 via module-level import (`from . import pii_redactor as _redactor`).
+Must access `_redactor._presidio_available` — never import the flag by name. No additional dependencies.
 
 ---
 
@@ -268,12 +338,10 @@ log.info("phase_complete",
 
 | Guardrail | Purpose | Key libraries | Reason deferred |
 |---|---|---|---|
-| G2 — PII Redactor | Redact PII before LLM calls (Presidio + spaCy NER) | `presidio-analyzer`, `spacy en_core_web_lg` | Heavy deps; no PII in test data for MVP |
 | G4 — Scope fence | Qdrant metadata pre-filter (tenant, module, country, wave) | `qdrant-client` payload filters | Single-tenant MVP; Qdrant already scopes by product_id |
 | G5 — KB integrity | SHA-256 hash verification of retrieved chunks vs seed-time hash | `hashlib` (stdlib) | Requires hash-at-seed-time infra |
 | G6 — Context token cap | Enforce token budget before LLM prompt construction | `tiktoken` | Easy to add to Phase 2 later |
 | G7 — Score bounds validator | Z-score anomaly detection on match scores per batch | `numpy`, `scikit-learn` | Range check absorbed into G10-lite for MVP |
-| G11 — Response PII scanner | Scan LLM output for hallucinated/leaked PII | `presidio-analyzer` | Deferred with G2 |
 | G12 — Context firewall | NetworkX conflict graph across full batch classifications | `networkx`, `spacy`, `rapidfuzz` | Batch-level cross-req analysis; post-MVP |
 | G13 — Export sanitizer | Strip internal metadata, deanonymize PII for final CSV | custom | Add when report export is enhanced |
 | G14 — HMAC audit seal | Merkle chain + HMAC-SHA256 tamper-evident audit trail | `hmac` (stdlib) | Full compliance feature; post-MVP |
@@ -286,16 +354,16 @@ log.info("phase_complete",
 | OWASP Risk | DYNAFIT Attack Surface | Guardrail(s) |
 |---|---|---|
 | LLM01: Prompt injection | Malicious text in uploaded docs | G3 (injection scan) + G8 (prompt firewall) |
-| LLM02: Sensitive data disclosure | PII in requirements leaks into LLM responses | G2 (PII redactor) + G11 (response scanner) + G13 (export sanitizer) |
+| LLM02: Sensitive data disclosure | PII in requirements leaks into LLM responses | **G2 (PII redactor) + G11 (response scanner)** + G13 (export sanitizer) |
 | LLM03: Supply chain | Poisoned KB documents in Qdrant | G5 (KB integrity) |
 | LLM04: Data/model poisoning | Corrupted historical fitments | G5 (KB integrity) + G10 (sanity gate) |
 | LLM06: Excessive agency | LLM attempts actions beyond classification | G8 (template-only prompts) + G9 (schema enforcement) |
-| LLM07: System prompt leakage | Attacker extracts classification logic | G8 (prompt firewall) + G11 (response scanner) |
+| LLM07: System prompt leakage | Attacker extracts classification logic | G8 (prompt firewall) + **G11 (response scanner)** |
 
 ### Post-MVP Implementation Priority
 
-**Sprint 1 (Weeks 1-2):** G2 (PII redactor), G6 (context token cap), RBAC, Rate limiter
-**Sprint 2 (Weeks 3-4):** G4 (scope fence), G7 (score validator), G11 (response PII scanner)
+**Sprint 1 (Weeks 1-2):** G6 (context token cap), RBAC, Rate limiter
+**Sprint 2 (Weeks 3-4):** G4 (scope fence), G7 (score validator)
 **Sprint 3 (Weeks 5-6):** G5 (KB integrity), G12 (context firewall), G13 (export sanitizer), G14 (audit seal)
 **Sprint 4 (Weeks 7-8):** Vault secrets, encryption at rest + mTLS, Grafana alert rules, red team testing
 

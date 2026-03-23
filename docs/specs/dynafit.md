@@ -840,12 +840,17 @@ DE:
 
 #### A: CSV Report Builder (stdlib csv)
 ```
+Output: reports/{batch_id}/
+  fdd_fits_{batch_id}.csv   — FIT + PARTIAL_FIT results
+  fdd_gaps_{batch_id}.csv   — GAP results
+
 Fitment Matrix columns:
   Req ID | Requirement | Module | Country | Wave | Classification | Confidence |
   D365 Capability | Rationale | Config Steps | Gap Description | Reviewer | Override
 ```
 - One row per validated atom
-- Summary section appended as comment rows: counts per classification, per module, per country
+- PII placeholders restored to originals via `restore_pii()` before writing (G2 de-redaction)
+- `batch.report_path` stores the report directory path — no ZIP bundling
 - Audit trail written as a second CSV: full provenance per classification
 
 #### B: Audit Trail (PostgreSQL)

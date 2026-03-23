@@ -11,6 +11,8 @@ from collections import Counter
 from dataclasses import dataclass
 from typing import Any
 
+from platform.guardrails.pii_redactor import restore_pii
+from platform.observability.logger import get_logger
 from platform.schemas.fitment import (
     ClassificationResult,
     FitLabel,
@@ -18,6 +20,8 @@ from platform.schemas.fitment import (
 )
 
 from ..state import DynafitState
+
+log = get_logger(__name__)
 
 # ---------------------------------------------------------------------------
 # CSV column definition (FDD FOR FITS / FDD FOR GAPS)
@@ -96,7 +100,13 @@ def _merge_overrides(
                 )
             )
         else:
-            # Human approved the original classification — no change
+            # Human approved the original classification (or override missing)
+            if original.atom_id not in overrides:
+                log.warning(
+                    "merge_override_missing",
+                    atom_id=original.atom_id,
+                    msg="Flagged item has no override entry — auto-approving original",
+                )
             merged.append(_MergedResult(result=original))
 
     return merged
@@ -133,17 +143,25 @@ def _build_batch(
 def _write_fdd_csv(
     path: str,
     results: list[_MergedResult],
+    pii_redaction_map: dict[str, str] | None = None,
 ) -> None:
-    """Write a single FDD CSV file for the given results."""
+    """Write a single FDD CSV file for the given results.
+
+    If pii_redaction_map is provided, PII placeholders in requirement_text
+    are restored to original values (G2 de-redaction for final deliverable).
+    """
     with open(path, "w", newline="", encoding="utf-8") as fh:
         writer = csv.DictWriter(fh, fieldnames=_CSV_FIELDNAMES)
         writer.writeheader()
         for mr in results:
             r = mr.result
+            req_text = r.requirement_text
+            if pii_redaction_map:
+                req_text = restore_pii(req_text, pii_redaction_map)
             writer.writerow(
                 {
                     "req_id": r.atom_id,
-                    "requirement": r.requirement_text,
+                    "requirement": req_text,
                     "module": r.module,
                     "country": r.country,
                     "wave": r.wave,

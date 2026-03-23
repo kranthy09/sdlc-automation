@@ -242,45 +242,54 @@ class RedisPubSub:
         try:
             r = sync_redis.from_url(redis_url)
             try:
-                raw = r.hget(hash_key, "phases")
-                phases: dict[str, dict[str, Any]] = json.loads(raw) if raw else {}
-            except Exception:
-                phases = {}
+                try:
+                    raw = r.hget(hash_key, "phases")
+                    phases: dict[str, dict[str, Any]] = (
+                        json.loads(raw) if raw else {}
+                    )
+                except Exception:
+                    phases = {}
 
-            key = str(event.phase)
+                key = str(event.phase)
 
-            if isinstance(event, PhaseStartEvent):
-                phases[key] = {
-                    "status": "active",
-                    "phase_name": event.phase_name,
-                    "current_step": None,
-                    "progress_pct": 0,
-                    "atoms_produced": 0,
-                    "atoms_validated": 0,
-                    "atoms_flagged": 0,
-                    "latency_ms": None,
-                }
-            elif isinstance(event, StepProgressEvent):
-                phase = phases.get(key, {})
-                pct = round((event.completed / event.total) * 100) if event.total > 0 else 0
-                phase["current_step"] = event.step
-                phase["progress_pct"] = pct
-                phases[key] = phase
-            elif isinstance(event, PhaseCompleteEvent):
-                phases[key] = {
-                    "status": "complete",
-                    "phase_name": event.phase_name,
-                    "current_step": None,
-                    "progress_pct": 100,
-                    "atoms_produced": event.atoms_produced,
-                    "atoms_validated": event.atoms_validated,
-                    "atoms_flagged": event.atoms_flagged,
-                    "latency_ms": event.latency_ms,
-                }
-            else:
-                return
+                if isinstance(event, PhaseStartEvent):
+                    phases[key] = {
+                        "status": "active",
+                        "phase_name": event.phase_name,
+                        "current_step": None,
+                        "progress_pct": 0,
+                        "atoms_produced": 0,
+                        "atoms_validated": 0,
+                        "atoms_flagged": 0,
+                        "latency_ms": None,
+                    }
+                elif isinstance(event, StepProgressEvent):
+                    phase = phases.get(key, {})
+                    pct = (
+                        round((event.completed / event.total) * 100)
+                        if event.total > 0
+                        else 0
+                    )
+                    phase["current_step"] = event.step
+                    phase["progress_pct"] = pct
+                    phases[key] = phase
+                elif isinstance(event, PhaseCompleteEvent):
+                    phases[key] = {
+                        "status": "complete",
+                        "phase_name": event.phase_name,
+                        "current_step": None,
+                        "progress_pct": 100,
+                        "atoms_produced": event.atoms_produced,
+                        "atoms_validated": event.atoms_validated,
+                        "atoms_flagged": event.atoms_flagged,
+                        "latency_ms": event.latency_ms,
+                    }
+                else:
+                    return
 
-            r.hset(hash_key, "phases", json.dumps(phases))
+                r.hset(hash_key, "phases", json.dumps(phases))
+            finally:
+                r.close()
         except Exception as exc:
             log.warning(
                 "redis_phase_persist_sync_failed",
@@ -290,7 +299,178 @@ class RedisPubSub:
             )
 
     # ------------------------------------------------------------------
-    # Publish
+    # Sync publish (for Celery / LangGraph nodes)
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def publish_sync(redis_url: str, event: _AnyEvent) -> None:
+        """Synchronously publish an event to ``progress:{batch_id}``.
+
+        Uses sync ``redis`` so callers in sync contexts (Celery workers,
+        LangGraph nodes) never hit event-loop conflicts.
+        """
+        import redis as sync_redis  # noqa: PLC0415
+
+        channel = f"progress:{event.batch_id}"
+        payload = event.model_dump_json()
+        try:
+            r = sync_redis.from_url(redis_url)
+            try:
+                r.publish(channel, payload)
+            finally:
+                r.close()
+            log.debug(
+                "redis_published_sync",
+                channel=channel,
+                event_type=event.event,
+            )
+        except Exception as exc:
+            log.warning(
+                "redis_publish_sync_failed",
+                channel=channel,
+                error=str(exc),
+            )
+
+    # ------------------------------------------------------------------
+    # Sync classification persistence
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def persist_classification_sync(
+        redis_url: str,
+        event: ClassificationEvent,
+    ) -> None:
+        """Append a classification event to the batch Redis hash.
+
+        Uses sync ``redis``. Deduplicates by ``atom_id``.
+        """
+        import json as _json  # noqa: PLC0415
+
+        import redis as sync_redis  # noqa: PLC0415
+
+        batch_id = event.batch_id
+        hash_key = f"batch:{batch_id}"
+        entry = {
+            "atom_id": event.atom_id,
+            "classification": event.classification,
+            "confidence": event.confidence,
+        }
+        try:
+            r = sync_redis.from_url(redis_url)
+            try:
+                try:
+                    raw = r.hget(hash_key, "classifications")
+                    rows: list[dict[str, Any]] = (
+                        _json.loads(raw) if raw else []
+                    )
+                except Exception:
+                    rows = []
+                if not any(
+                    x["atom_id"] == event.atom_id for x in rows
+                ):
+                    rows.append(entry)
+                    r.hset(
+                        hash_key,
+                        "classifications",
+                        _json.dumps(rows),
+                    )
+            finally:
+                r.close()
+        except Exception as exc:
+            log.warning(
+                "redis_classification_persist_failed",
+                batch_id=batch_id,
+                atom_id=event.atom_id,
+                error=str(exc),
+            )
+
+    # ------------------------------------------------------------------
+    # Batch state — generic hash read/write for cross-process state
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def write_batch_state_sync(
+        redis_url: str,
+        batch_id: str,
+        ttl: int = 86400,
+        **fields: str,
+    ) -> None:
+        """Write arbitrary fields to ``batch:{batch_id}`` hash.
+
+        All values must be pre-serialized strings. Sets a TTL
+        (default 24 h) on the hash.
+        """
+        import redis as sync_redis  # noqa: PLC0415
+
+        key = f"batch:{batch_id}"
+        try:
+            r = sync_redis.from_url(redis_url)
+            try:
+                r.hset(key, mapping=fields)  # type: ignore[arg-type]
+                r.expire(key, ttl)
+            finally:
+                r.close()
+        except Exception as exc:
+            log.warning(
+                "redis_batch_write_failed",
+                batch_id=batch_id,
+                error=str(exc),
+            )
+
+    @staticmethod
+    def read_batch_state_sync(
+        redis_url: str,
+        batch_id: str,
+    ) -> dict[str, str]:
+        """Read entire ``batch:{batch_id}`` hash (sync).
+
+        Returns decoded ``{field: value}`` dict, or empty dict
+        if the hash doesn't exist or Redis is unavailable.
+        """
+        import redis as sync_redis  # noqa: PLC0415
+
+        try:
+            r = sync_redis.from_url(redis_url)
+            try:
+                raw: dict[bytes, bytes] = r.hgetall(
+                    f"batch:{batch_id}",
+                )
+            finally:
+                r.close()
+            return {
+                k.decode(): v.decode() for k, v in raw.items()
+            }
+        except Exception:
+            return {}
+
+    @staticmethod
+    async def read_batch_state(
+        redis_url: str,
+        batch_id: str,
+    ) -> dict[str, str]:
+        """Read entire ``batch:{batch_id}`` hash (async).
+
+        Returns decoded ``{field: value}`` dict, or empty dict
+        if the hash doesn't exist or Redis is unavailable.
+        """
+        import redis.asyncio as aioredis  # noqa: PLC0415
+
+        try:
+            r = aioredis.from_url(
+                redis_url, decode_responses=True,
+            )
+            try:
+                data: dict[str, str] = await r.hgetall(
+                    f"batch:{batch_id}",
+                )
+            finally:
+                await r.close()
+            return data
+        except Exception:
+            return {}
+
+    # ------------------------------------------------------------------
+    # Publish (async)
     # ------------------------------------------------------------------
 
     async def publish(self, event: _AnyEvent) -> None:

@@ -21,7 +21,6 @@ from __future__ import annotations
 import json
 from typing import Any
 
-import redis.asyncio as aioredis
 import structlog
 from fastapi import WebSocket, WebSocketDisconnect
 
@@ -128,18 +127,10 @@ async def _catch_up(
 
     Returns True if a terminal event was sent (caller should close).
     """
-    try:
-        r = aioredis.from_url(
-            redis_url,
-            decode_responses=True,
-        )
-        try:
-            batch: dict[str, str] = await r.hgetall(
-                f"batch:{batch_id}",
-            )
-        finally:
-            await r.close()
-    except Exception:
+    batch = await RedisPubSub.read_batch_state(
+        redis_url, batch_id,
+    )
+    if not batch:
         return False
 
     # 1. Replay all persisted phase states

@@ -203,3 +203,27 @@ All real-world requirement documents arrive as PDF, DOCX, or TXT. Docling handle
 **Rules produced:**
 - Use `fastembed` for all local embedding and reranking — never `sentence-transformers`
 - Prefer ONNX Runtime over PyTorch for inference-only workloads
+
+### Incident: Module-level mutable imported by value
+
+`response_pii_scanner.py` imported `_presidio_available` (a `bool | None`) from `pii_redactor.py` by name. Python binds the name to the object at import time — when `_get_analyzer()` later reassigned the module-level variable, the scanner's local binding still pointed to the stale `None`. Result: presidio was never used even when installed.
+
+**Rules produced:**
+- Never import module-level mutables by name across files — import the module and access via attribute (`_redactor._presidio_available`)
+- Lazy-loaded singletons that reassign globals must use `threading.Lock` with double-checked locking
+
+### Incident: Phase 5 bundled CSVs into a ZIP
+
+Phase 5 `_write_csv()` wrapped the two FDD CSVs in a `zipfile.ZipFile`. This contradicted the project rule: "Report output is CSV (stdlib csv) — not Excel." ZIP is not CSV.
+
+**Rules produced:**
+- Phase 5 returns a report directory path containing individual CSV files
+- No `zipfile` in the output pipeline — stdlib `csv` only
+
+### Incident: Hardcoded product_id in embedder init
+
+`_get_embedder()` in both `ingestion.py` and `phase5_validation.py` hardcoded `"d365_fo"` instead of reading `product_id` from state. This would break any second product.
+
+**Rules produced:**
+- `_get_embedder()` must accept `product_id` from state — never hardcode a product identifier
+- The multi-product invariant requires grep-checking for hardcoded product IDs before merge
