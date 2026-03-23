@@ -24,11 +24,13 @@ Import boundaries are enforced by CI on every PR — violations block merges.
 
 ![Dashboard Page](./docs/platform_screenshots/dashboard_home.png)
 
-![Dashboard Page](./docs/platform_screenshots/batch_results.png)
+![Results Page](./docs/platform_screenshots/batch_results.png)
 
-![Dashboard Page](./docs/platform_screenshots/Fitment_analysis.png)
+![Fitment Analysis Page](./docs/platform_screenshots/Fitment_analysis.png)
 
-![Dashboard Page](./docs/platform_screenshots/gap_results.png)
+![Gap Analysis Page](./docs/platform_screenshots/gap_results.png)
+
+---
 
 ## Stack
 
