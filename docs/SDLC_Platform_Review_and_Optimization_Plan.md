@@ -29,7 +29,7 @@ The problems cluster around three themes: **consultant experience visibility**, 
 # Currently: processes ALL atoms, publishes ONE classification event per atom
 # BUT the frontend only renders these in the LiveClassTable AFTER they arrive via WebSocket
 
-# api/workers/tasks.py  
+# api/workers/tasks.py
 # The Celery task calls graph.ainvoke() which blocks until phases 1-4 complete
 # Only THEN does _finish_complete() or _finish_hitl() write results to Redis
 ```
@@ -100,8 +100,8 @@ Upload → Wait 2min (progress bar) → See all results at once → Expand rows 
 ### Target Flow (What the Consultant Should Experience)
 
 ```
-Upload → See Phase 1 parsing live → See Phase 2 retrieval live → 
-See each classification appear one-by-one with full evidence → 
+Upload → See Phase 1 parsing live → See Phase 2 retrieval live →
+See each classification appear one-by-one with full evidence →
 Start reviewing HIGH-CONFIDENCE results immediately while remaining items still process →
 Review flagged items → Done
 ```
@@ -134,7 +134,7 @@ Each step below is a self-contained change. Steps are ordered by impact (highest
 @router.get("/d365_fo/dynafit/{batch_id}/progress")
 def get_progress(batch_id: str) -> dict[str, Any]:
     """Return current pipeline progress state from Redis.
-    
+
     Used by frontend on mount/reconnect to restore phase history
     without relying on transient WebSocket messages.
     """
@@ -162,6 +162,7 @@ def read_phase_state_sync(redis_url: str, batch_id: str) -> dict[str, Any]:
         r.close()
 ```
 
+Instruction: Donot call raw backend calls, create a modular way by using a api client pattern.
 ```typescript
 // ui/src/api/dynafit.ts — ADD function
 export async function getProgress(batchId: string): Promise<ProgressSnapshot> {
@@ -190,10 +191,10 @@ if (snapshot.phases) {
 
 **Claude Code prompt:**
 ```
-Read api/routes/dynafit.py, platform/storage/redis_pub.py, ui/src/hooks/useProgress.ts, and ui/src/api/dynafit.ts. 
-Add a GET /d365_fo/dynafit/{batch_id}/progress endpoint that reads phase state from the Redis hash batch:{batch_id} key "phases". 
-Add a read_phase_state_sync static method to RedisPubSub. 
-Add getProgress() to the frontend API layer. 
+Read api/routes/dynafit.py, platform/storage/redis_pub.py, ui/src/hooks/useProgress.ts, and ui/src/api/dynafit.ts.
+Add a GET /d365_fo/dynafit/{batch_id}/progress endpoint that reads phase state from the Redis hash batch:{batch_id} key "phases".
+Add a read_phase_state_sync static method to RedisPubSub.
+Add getProgress() to the frontend API layer.
 Modify useProgress hook to call getProgress on mount before opening the WebSocket, and replay the snapshot into the Zustand progress store.
 Follow the existing patterns: routes do zero logic, platform provides the Redis abstraction, frontend types mirror backend response.
 ```
@@ -250,7 +251,7 @@ def build_single_atom_journey(
     classification: ClassificationResult,
 ) -> dict[str, Any]:
     """Build journey data for a single atom during streaming.
-    
+
     This is the real-time counterpart to build_journey_data().
     Called per-atom as classifications complete, so the consultant
     can drill into evidence immediately.
@@ -298,10 +299,10 @@ def get_results(batch_id: str, ...) -> ResultsResponse:
     batch = _get_batch(batch_id)
     results = batch.get("results", [])
     journey_data = batch.get("journey", [])
-    
+
     # Build a lookup map once
     journey_by_atom = {j["atom_id"]: j for j in journey_data}
-    
+
     # Attach journey to each result in the response
     enriched = []
     for r in paginated_results:
@@ -309,7 +310,7 @@ def get_results(batch_id: str, ...) -> ResultsResponse:
             **r,
             "journey": journey_by_atom.get(r["atom_id"]),
         })
-    
+
     return ResultsResponse(
         batch_id=batch_id,
         results=enriched,
@@ -557,14 +558,14 @@ def register_batch_sync(redis_url: str, batch_id: str, created_at: str) -> None:
     finally:
         r.close()
 
-@staticmethod  
+@staticmethod
 def list_batches_sync(redis_url: str, offset: int = 0, limit: int = 20) -> list[str]:
     """List batch IDs from sorted set, newest first."""
     import redis as sync_redis
     r = sync_redis.from_url(redis_url)
     try:
         return [
-            b.decode() for b in 
+            b.decode() for b in
             r.zrevrange("batches:index", offset, offset + limit - 1)
         ]
     finally:
