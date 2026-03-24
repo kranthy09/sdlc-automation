@@ -1,5 +1,5 @@
 """
-Matching node — Phase 3 of the DYNAFIT pipeline (Session E).
+Matching node — Phase 3 of the REQFIT pipeline (Session E).
 
 Responsibility: list[AssembledContext] → list[MatchResult]
 
@@ -221,7 +221,8 @@ class MatchingNode:
         match_results = []
         for i, ctx in enumerate(contexts):
             match_results.append(
-                self._score_context(ctx, product_id=product_id, vec_lookup=_vec_lookup)
+                self._score_context(
+                    ctx, product_id=product_id, vec_lookup=_vec_lookup)
             )
             publish_step_progress(
                 batch_id,
@@ -231,14 +232,18 @@ class MatchingNode:
                 total=total_steps,
             )
 
-        fast_track = sum(1 for r in match_results if r.route == RouteLabel.FAST_TRACK)
-        deep_reason = sum(1 for r in match_results if r.route == RouteLabel.DEEP_REASON)
-        gap_confirm = sum(1 for r in match_results if r.route == RouteLabel.GAP_CONFIRM)
+        fast_track = sum(1 for r in match_results if r.route ==
+                         RouteLabel.FAST_TRACK)
+        deep_reason = sum(1 for r in match_results if r.route ==
+                          RouteLabel.DEEP_REASON)
+        gap_confirm = sum(1 for r in match_results if r.route ==
+                          RouteLabel.GAP_CONFIRM)
 
         publish_step_progress(
             batch_id,
             phase=3,
-            step=(f"Routing: {fast_track} fast, {deep_reason} deep, {gap_confirm} gap"),
+            step=(
+                f"Routing: {fast_track} fast, {deep_reason} deep, {gap_confirm} gap"),
             completed=total_steps,
             total=total_steps,
         )
@@ -328,7 +333,8 @@ class MatchingNode:
         hist_signal = 1.0 if has_history else 0.0
 
         # (composite, anomaly_flags, updated_cap, original_index, signals)
-        scored: list[tuple[float, list[str], RankedCapability, int, dict[str, float]]] = []
+        scored: list[tuple[float, list[str],
+                           RankedCapability, int, dict[str, float]]] = []
 
         for i, cap in enumerate(caps):
             cap_lookup_text = f"{cap.feature} {cap.description}"
@@ -344,7 +350,8 @@ class MatchingNode:
                 composite = min(1.0, composite + _HISTORY_BOOST)
 
             flags: list[str] = []
-            anomaly = _detect_anomaly(signals["embedding_cosine"], signals["entity_overlap"])
+            anomaly = _detect_anomaly(
+                signals["embedding_cosine"], signals["entity_overlap"])
             if anomaly:
                 flags.append(anomaly)
 
@@ -367,7 +374,8 @@ class MatchingNode:
                 if float(cap_norms[orig_a] @ cap_norms[orig_b]) > _DEDUP_THRESHOLD:
                     keep[b_out] = False
 
-        final = [(s, f, c, sig) for (s, f, c, _, sig), ok in zip(scored, keep, strict=True) if ok]
+        final = [(s, f, c, sig) for (s, f, c, _, sig),
+                 ok in zip(scored, keep, strict=True) if ok]
 
         final_scores = [s for s, _, _, _ in final]
         final_caps = [c for _, _, c, _ in final]

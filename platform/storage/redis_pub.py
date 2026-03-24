@@ -99,7 +99,8 @@ class RedisPubSub:
     """Async Redis publisher and subscriber for ``ProgressEvent`` streams.
 
     Args:
-        url:      Redis DSN — ``redis://host:6379`` or ``redis://user:pw@host/0``.
+        url:      Redis DSN — ``redis://host:6379`` or
+                 ``redis://user:pw@host/0``.
         _client:  Pre-built async Redis client — for testing only.
     """
 
@@ -118,6 +119,7 @@ class RedisPubSub:
 
     def _get_client(self) -> Any:
         if self._client is None:
+            # TODO: import at the start of file
             import redis.asyncio as aioredis  # noqa: PLC0415
 
             log.info("redis_connect", url=self._url)
@@ -170,7 +172,8 @@ class RedisPubSub:
             }
         elif isinstance(event, StepProgressEvent):
             phase = phases.get(key, {})
-            pct = round((event.completed / event.total) * 100) if event.total > 0 else 0
+            pct = round((event.completed / event.total)
+                        * 100) if event.total > 0 else 0
             phase["current_step"] = event.step
             phase["progress_pct"] = pct
             phases[key] = phase
@@ -575,11 +578,13 @@ class RedisPubSub:
         client = self._get_client()
         try:
             await client.publish(channel, payload)
-            log.debug("redis_published", channel=channel, event_type=event.event)
+            log.debug("redis_published", channel=channel,
+                      event_type=event.event)
         except RedisError:
             raise
         except Exception as exc:
-            raise RedisError(f"publish to {channel!r} failed: {exc}", cause=exc) from exc
+            raise RedisError(
+                f"publish to {channel!r} failed: {exc}", cause=exc) from exc
 
     # ------------------------------------------------------------------
     # Subscribe
@@ -607,7 +612,8 @@ class RedisPubSub:
                 try:
                     event: _AnyEvent = _adapter.validate_json(message["data"])
                 except Exception as exc:
-                    log.warning("redis_bad_message", channel=channel, error=str(exc))
+                    log.warning("redis_bad_message",
+                                channel=channel, error=str(exc))
                     continue
                 yield event
                 if isinstance(event, _TERMINAL):
@@ -615,7 +621,8 @@ class RedisPubSub:
         except RedisError:
             raise
         except Exception as exc:
-            raise RedisError(f"subscribe({batch_id!r}) failed: {exc}", cause=exc) from exc
+            raise RedisError(
+                f"subscribe({batch_id!r}) failed: {exc}", cause=exc) from exc
         finally:
             try:
                 await pubsub.unsubscribe(channel)

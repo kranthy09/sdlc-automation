@@ -1,5 +1,5 @@
 """
-Tests for the DYNAFIT ingestion node (Session C).
+Tests for the REQFIT ingestion node (Session C).
 
 All tests are marked @pytest.mark.unit — they use mocked infrastructure and
 do not require Docker services.  The file lives in tests/integration/ because
@@ -102,7 +102,8 @@ def test_empty_file_returns_rejection_result() -> None:
     """Empty bytes → file rejected before parsing."""
     from modules.dynafit.nodes.ingestion import IngestionNode
 
-    node = IngestionNode(llm_client=make_llm_client(), embedder=make_embedder())
+    node = IngestionNode(llm_client=make_llm_client(),
+                         embedder=make_embedder())
     state = {
         "upload": make_raw_upload(filename="empty.pdf", file_bytes=b""),
         "batch_id": "test-002",
@@ -133,7 +134,8 @@ def test_injection_block_aborts_pipeline() -> None:
     mock_parser = MagicMock()
     mock_parser.parse.return_value = ParseResult(
         tables=[],
-        prose=[ProseChunk(text=suspicious, section="", page=1, char_offset=0, has_overlap=False)],
+        prose=[ProseChunk(text=suspicious, section="", page=1,
+                          char_offset=0, has_overlap=False)],
     )
 
     node = IngestionNode(
@@ -173,10 +175,12 @@ def test_valid_txt_produces_validated_atoms() -> None:
     mock_parser = MagicMock()
     mock_parser.parse.return_value = ParseResult(
         tables=[],
-        prose=[ProseChunk(text=req_text, section="", page=1, char_offset=0, has_overlap=False)],
+        prose=[ProseChunk(text=req_text, section="", page=1,
+                          char_offset=0, has_overlap=False)],
     )
     llm = make_llm_client(
-        _batch_atomize_response([[{"text": req_text, "intent": "FUNCTIONAL", "module": "AccountsPayable"}]])
+        _batch_atomize_response(
+            [[{"text": req_text, "intent": "FUNCTIONAL", "module": "AccountsPayable"}]])
     )
 
     node = IngestionNode(
@@ -221,10 +225,12 @@ def test_vague_requirement_is_flagged_not_validated() -> None:
     mock_parser = MagicMock()
     mock_parser.parse.return_value = ParseResult(
         tables=[],
-        prose=[ProseChunk(text=vague_text, section="", page=1, char_offset=0, has_overlap=False)],
+        prose=[ProseChunk(text=vague_text, section="", page=1,
+                          char_offset=0, has_overlap=False)],
     )
     llm = make_llm_client(
-        _batch_atomize_response([[{"text": vague_text, "intent": "FUNCTIONAL", "module": "GeneralLedger"}]])
+        _batch_atomize_response(
+            [[{"text": vague_text, "intent": "FUNCTIONAL", "module": "GeneralLedger"}]])
     )
 
     node = IngestionNode(
@@ -262,10 +268,12 @@ def test_ingestion_node_function_is_callable_with_state() -> None:
     mock_parser = MagicMock()
     mock_parser.parse.return_value = ParseResult(
         tables=[],
-        prose=[ProseChunk(text=req_text, section="", page=1, char_offset=0, has_overlap=False)],
+        prose=[ProseChunk(text=req_text, section="", page=1,
+                          char_offset=0, has_overlap=False)],
     )
     llm = make_llm_client(
-        _batch_atomize_response([[{"text": req_text, "intent": "FUNCTIONAL", "module": "AccountsPayable"}]])
+        _batch_atomize_response(
+            [[{"text": req_text, "intent": "FUNCTIONAL", "module": "AccountsPayable"}]])
     )
     ingestion_mod._node = IngestionNode(
         llm_client=llm,

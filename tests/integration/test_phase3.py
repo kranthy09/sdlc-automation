@@ -1,5 +1,5 @@
 """
-Tests for the DYNAFIT matching node — Phase 3.
+Tests for the REQFIT matching node — Phase 3.
 
 All tests are @pytest.mark.unit — they use mocked infrastructure and do not
 require Docker services. The file lives in tests/integration/ because it
@@ -131,7 +131,8 @@ def test_compute_composite(signals: dict, expected: float) -> None:
         (0.90, True, RouteLabel.FAST_TRACK),
         (0.90, False, RouteLabel.DEEP_REASON),
         (0.60, False, RouteLabel.DEEP_REASON),
-        (0.85, True, RouteLabel.DEEP_REASON),  # boundary: 0.85 is NOT > threshold
+        # boundary: 0.85 is NOT > threshold
+        (0.85, True, RouteLabel.DEEP_REASON),
         (0.50, True, RouteLabel.GAP_CONFIRM),
         (0.30, False, RouteLabel.GAP_CONFIRM),
     ],
@@ -172,8 +173,10 @@ def test_detect_anomaly(cosine: float, entity_overlap: float, expect_anomaly: bo
     ("hints", "cap_text", "expected"),
     [
         ([], "invoice matching vendor", 0.0),
-        (["invoice", "vendor", "matching"], "vendor invoice matching policy configuration", 1.0),
-        (["invoice", "vendor", "purchase order"], "invoice approval workflow", 1 / 3),
+        (["invoice", "vendor", "matching"],
+         "vendor invoice matching policy configuration", 1.0),
+        (["invoice", "vendor", "purchase order"],
+         "invoice approval workflow", 1 / 3),
         (["payroll", "employee"], "three-way matching for purchase orders", 0.0),
     ],
     ids=["empty_hints", "all_present", "partial", "no_match"],
@@ -224,7 +227,8 @@ def test_multiple_contexts_produce_one_result_per_context() -> None:
     match_results = result["match_results"]
 
     assert len(match_results) == 3
-    assert [mr.atom.atom_id for mr in match_results] == ["REQ-000", "REQ-001", "REQ-002"]
+    assert [mr.atom.atom_id for mr in match_results] == [
+        "REQ-000", "REQ-001", "REQ-002"]
 
 
 @pytest.mark.unit
@@ -252,7 +256,8 @@ def test_fit_prior_boosts_composite() -> None:
 
     # Without any history
     cap = make_ranked_capability(rerank_score=0.80)
-    ctx_no_history = make_assembled_context(capabilities=[cap], prior_fitments=[])
+    ctx_no_history = make_assembled_context(
+        capabilities=[cap], prior_fitments=[])
     node_no = _build_node(embedder=embedder)
     score_no_history = node_no(_make_state(contexts=[ctx_no_history]))["match_results"][
         0
@@ -261,13 +266,15 @@ def test_fit_prior_boosts_composite() -> None:
     # With a FIT prior — rebuild node to get fresh embedder state
     embedder2 = make_embedder()
     fit_prior = make_prior_fitment(classification="FIT")
-    ctx_with_history = make_assembled_context(capabilities=[cap], prior_fitments=[fit_prior])
+    ctx_with_history = make_assembled_context(
+        capabilities=[cap], prior_fitments=[fit_prior])
     node_yes = _build_node(embedder=embedder2)
     score_with_history = node_yes(_make_state(contexts=[ctx_with_history]))["match_results"][
         0
     ].top_composite_score
 
-    assert score_with_history == pytest.approx(score_no_history + _HISTORY_BOOST, abs=1e-6)
+    assert score_with_history == pytest.approx(
+        score_no_history + _HISTORY_BOOST, abs=1e-6)
 
 
 @pytest.mark.unit
@@ -277,13 +284,16 @@ def test_non_fit_prior_does_not_boost() -> None:
 
     cap = make_ranked_capability(rerank_score=0.80)
     gap_prior = make_prior_fitment(classification="GAP")
-    ctx = make_assembled_context(capabilities=[cap], prior_fitments=[gap_prior])
+    ctx = make_assembled_context(
+        capabilities=[cap], prior_fitments=[gap_prior])
     node = _build_node()
     mr = node(_make_state(contexts=[ctx]))["match_results"][0]
 
-    ctx_no_prior = make_assembled_context(capabilities=[cap], prior_fitments=[])
+    ctx_no_prior = make_assembled_context(
+        capabilities=[cap], prior_fitments=[])
     node2 = _build_node()
-    mr_no_prior = node2(_make_state(contexts=[ctx_no_prior]))["match_results"][0]
+    mr_no_prior = node2(_make_state(contexts=[ctx_no_prior]))[
+        "match_results"][0]
 
     # GAP prior contributes historical_alignment=1.0 (weight 0.25) but no extra boost
     assert mr.top_composite_score > mr_no_prior.top_composite_score
@@ -296,8 +306,10 @@ def test_dedup_removes_near_identical_capabilities() -> None:
     node = _build_node(embedder=_make_unit_embedder())
 
     same_desc = "Three-way matching validates purchase orders and invoices."
-    cap_a = make_ranked_capability(capability_id="cap-a", rerank_score=0.90, description=same_desc)
-    cap_b = make_ranked_capability(capability_id="cap-b", rerank_score=0.80, description=same_desc)
+    cap_a = make_ranked_capability(
+        capability_id="cap-a", rerank_score=0.90, description=same_desc)
+    cap_b = make_ranked_capability(
+        capability_id="cap-b", rerank_score=0.80, description=same_desc)
     ctx = make_assembled_context(capabilities=[cap_a, cap_b])
 
     mr = node(_make_state(contexts=[ctx]))["match_results"][0]
@@ -321,7 +333,8 @@ def test_all_signals_via_unit_embedder_produces_fast_track() -> None:
         rerank_score=1.0,
     )
     fit_prior = make_prior_fitment(classification="FIT")
-    ctx = make_assembled_context(atom=atom, capabilities=[cap], prior_fitments=[fit_prior])
+    ctx = make_assembled_context(atom=atom, capabilities=[
+                                 cap], prior_fitments=[fit_prior])
 
     mr = node(_make_state(contexts=[ctx]))["match_results"][0]
 

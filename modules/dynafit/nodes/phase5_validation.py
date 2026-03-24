@@ -1,5 +1,5 @@
 """
-Validation node — Phase 5 of the DYNAFIT pipeline (Session G).
+Validation node — Phase 5 of the REQFIT pipeline (Session G).
 
 Responsibility: list[ClassificationResult] → ValidatedFitmentBatch
 
@@ -142,7 +142,8 @@ class ValidationNode:
             else get_product_config(product_id)
         )
         if overrides:
-            recognized = {k: v for k, v in overrides.items() if hasattr(base, k)}
+            recognized = {k: v for k, v in overrides.items()
+                          if hasattr(base, k)}
             if recognized:
                 return base.model_copy(update=recognized)
         return base
@@ -159,20 +160,24 @@ class ValidationNode:
           2. After interrupt() resume: interrupt() returns overrides, execution
              continues from the line after interrupt() in the same call frame.
         """
-        classifications: list[ClassificationResult] = state.get("classifications", [])
+        classifications: list[ClassificationResult] = state.get(
+            "classifications", [])
         match_results: list[MatchResult] = state.get("match_results", [])
         batch_id = state["batch_id"]
-        config = self._get_config(state["upload"].product_id, state.get("config_overrides"))
+        config = self._get_config(
+            state["upload"].product_id, state.get("config_overrides"))
 
         t0 = time.monotonic()
         log.info(
             "phase_start",
             phase=5,
             batch_id=batch_id,
-            input_hash=hashlib.sha256(repr(classifications).encode()).hexdigest()[:16],
+            input_hash=hashlib.sha256(
+                repr(classifications).encode()).hexdigest()[:16],
         )
 
-        match_by_atom: dict[str, MatchResult] = {mr.atom.atom_id: mr for mr in match_results}
+        match_by_atom: dict[str, MatchResult] = {
+            mr.atom.atom_id: mr for mr in match_results}
 
         # ----------------------------------------------------------------
         # Pass 1 (Sub-phase 5A): Sanity gate + confidence filter
@@ -181,7 +186,8 @@ class ValidationNode:
         clean: list[ClassificationResult] = []
 
         for result in classifications:
-            flags = self._check_flags(result, match_by_atom.get(result.atom_id), config)
+            flags = self._check_flags(
+                result, match_by_atom.get(result.atom_id), config)
             if flags:
                 flagged.append((result, flags))
             else:
@@ -233,7 +239,8 @@ class ValidationNode:
             "phase_complete",
             phase=5,
             batch_id=batch_id,
-            output_hash=hashlib.sha256(repr(final_batch).encode()).hexdigest()[:16],
+            output_hash=hashlib.sha256(
+                repr(final_batch).encode()).hexdigest()[:16],
             guardrails_triggered=list({f for _, fs in flagged for f in fs}),
             latency_ms=round(elapsed_ms, 1),
         )
@@ -297,7 +304,8 @@ class ValidationNode:
 
         # Confidence filter — non-GAP, non-REVIEW_REQUIRED results below threshold
         if (
-            result.classification not in (FitLabel.GAP, FitLabel.REVIEW_REQUIRED)
+            result.classification not in (
+                FitLabel.GAP, FitLabel.REVIEW_REQUIRED)
             and result.confidence < config.review_confidence_threshold
         ):
             flags.append("low_confidence")
@@ -388,7 +396,8 @@ class ValidationNode:
         postgres = self._get_postgres()
 
         # Partition: skip REVIEW_REQUIRED up-front
-        eligible = [mr for mr in merged if mr.result.classification != FitLabel.REVIEW_REQUIRED]
+        eligible = [mr for mr in merged if mr.result.classification !=
+                    FitLabel.REVIEW_REQUIRED]
         skipped = len(merged) - len(eligible)
 
         if not eligible:

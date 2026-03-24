@@ -106,7 +106,8 @@ def detect_format(path: Path) -> DetectionResult:
     elif _is_text(header):
         fmt = DocumentFormat.TXT
     else:
-        log.warning("format_detector_rejected", file=str(path), reason="binary_no_magic")
+        log.warning("format_detector_rejected", file=str(
+            path), reason="binary_no_magic")
         raise UnsupportedFormatError(filename=path.name, detected_mime=None)
 
     log.debug("format_detector_detected", file=str(path), format=fmt.value)
@@ -119,11 +120,13 @@ def detect_format(path: Path) -> DetectionResult:
 
 
 def _read_header(path: Path) -> bytes:
-    """Read the first ``_READ_BYTES`` bytes; raise if file is empty or unreadable."""
+    """Read the first ``_READ_BYTES`` bytes; raise if file is empty or
+      unreadable."""
     try:
         data = path.read_bytes()
     except OSError as exc:
-        raise UnsupportedFormatError(filename=path.name, detected_mime=None) from exc
+        raise UnsupportedFormatError(
+            filename=path.name, detected_mime=None) from exc
 
     if not data:
         raise UnsupportedFormatError(filename=path.name, detected_mime=None)
@@ -137,16 +140,20 @@ def _resolve_zip(path: Path) -> DocumentFormat:
         with zipfile.ZipFile(path) as zf:
             names = zf.namelist()
     except zipfile.BadZipFile as exc:
-        raise UnsupportedFormatError(filename=path.name, detected_mime="application/zip") from exc
+        raise UnsupportedFormatError(
+            filename=path.name, detected_mime="application/zip") from exc
 
     if "word/document.xml" in names:
         return DocumentFormat.DOCX
 
     detected_mime = (
-        "application/vnd.ms-excel" if any(n.startswith("xl/") for n in names) else "application/zip"
+        "application/vnd.ms-excel" if any(n.startswith("xl/")
+                                          for n in names) else "application/zip"
     )
-    log.warning("format_detector_zip_rejected", file=str(path), names_sample=names[:5])
-    raise UnsupportedFormatError(filename=path.name, detected_mime=detected_mime)
+    log.warning("format_detector_zip_rejected",
+                file=str(path), names_sample=names[:5])
+    raise UnsupportedFormatError(
+        filename=path.name, detected_mime=detected_mime)
 
 
 def _is_text(data: bytes) -> bool:

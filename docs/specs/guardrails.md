@@ -1,6 +1,6 @@
-# DYNAFIT Guardrails — MVP Specification
+# REQFIT Guardrails — MVP Specification
 
-> **When to read this file:** Before building any DYNAFIT phase node (Layer 3).
+> **When to read this file:** Before building any REQFIT phase node (Layer 3).
 > Read alongside `docs/specs/dynafit.md`. Guardrails are not separate — they are
 > built in the same session as the phase node they protect.
 >
@@ -22,24 +22,24 @@ every flagged classification.
 
 ## MVP Guardrail Set
 
-| # | Name | Phase | Where | New libs? |
-|---|------|-------|-------|-----------|
-| G1-lite | File validator | 1 — Ingestion (pre-parse) | `platform/guardrails/file_validator.py` | None |
-| G3-lite | Injection scanner | 1 — Ingestion (post-extract) | `platform/guardrails/injection_scanner.py` | None |
-| G2 | PII redactor | 1 — Ingestion (pre-LLM) | `platform/guardrails/pii_redactor.py` | `presidio-analyzer` (regex fallback) |
-| G8 | Prompt firewall | 4 — Classification (pre-LLM) | Structural pattern in `prompts/*.j2` | None |
-| G9 | Output schema enforcer | 4 — Classification (post-LLM) | Built into `ClassificationResult` + LLM client | None |
-| G11 | Response PII scanner | 4 — Classification (post-LLM) | `platform/guardrails/response_pii_scanner.py` | Reuses G2 engine |
-| G10-lite | Sanity gate | 5 — Validation (pre-HITL) | `modules/dynafit/guardrails.py` | None |
-| HITL | Human review checkpoint | 5 — Validation | `modules/dynafit/nodes/phase5_validation.py` | None |
-| Audit | Phase boundary logging | All phases | `platform/observability/logger.py` (existing) | None |
+| #        | Name                    | Phase                         | Where                                          | New libs?                            |
+| -------- | ----------------------- | ----------------------------- | ---------------------------------------------- | ------------------------------------ |
+| G1-lite  | File validator          | 1 — Ingestion (pre-parse)     | `platform/guardrails/file_validator.py`        | None                                 |
+| G3-lite  | Injection scanner       | 1 — Ingestion (post-extract)  | `platform/guardrails/injection_scanner.py`     | None                                 |
+| G2       | PII redactor            | 1 — Ingestion (pre-LLM)       | `platform/guardrails/pii_redactor.py`          | `presidio-analyzer` (regex fallback) |
+| G8       | Prompt firewall         | 4 — Classification (pre-LLM)  | Structural pattern in `prompts/*.j2`           | None                                 |
+| G9       | Output schema enforcer  | 4 — Classification (post-LLM) | Built into `ClassificationResult` + LLM client | None                                 |
+| G11      | Response PII scanner    | 4 — Classification (post-LLM) | `platform/guardrails/response_pii_scanner.py`  | Reuses G2 engine                     |
+| G10-lite | Sanity gate             | 5 — Validation (pre-HITL)     | `modules/dynafit/guardrails.py`                | None                                 |
+| HITL     | Human review checkpoint | 5 — Validation                | `modules/dynafit/nodes/phase5_validation.py`   | None                                 |
+| Audit    | Phase boundary logging  | All phases                    | `platform/observability/logger.py` (existing)  | None                                 |
 
 ---
 
 ## Session A — Platform Guardrail Utilities (build before Layer 3)
 
 These two components extend Layer 2. They go in `platform/` because they are reusable
-across all future products. Build in one session before starting any DYNAFIT phase node.
+across all future products. Build in one session before starting any REQFIT phase node.
 
 ### Files
 
@@ -97,7 +97,7 @@ def validate_file(file_bytes: bytes, filename: str, max_mb: int = 50) -> FileVal
 **File:** `platform/guardrails/injection_scanner.py`
 **Called at:** Phase 1, after text extraction from document, before requirement atomization.
 
-```python
+````python
 # platform/schemas/guardrails.py
 class InjectionScanResult(PlatformModel):
     is_suspicious: bool
@@ -126,7 +126,7 @@ def scan_for_injection(text: str) -> InjectionScanResult:
     0.15–0.5 → FLAG_FOR_REVIEW
     ≥ 0.5   → BLOCK
     """
-```
+````
 
 **No new libraries.** Uses only `re` (stdlib).
 
@@ -223,6 +223,7 @@ Rules the Phase 4 node MUST follow:
 - `LLMClient.complete()` in `platform/llm/client.py` — tool-use structured output, `max_retries=3`
 
 Phase 4 node responsibility:
+
 ```python
 # On ValidationError: retry (LLM client handles up to max_retries)
 # On exhaustion: set classification=FitLabel.REVIEW_REQUIRED, log WARNING
@@ -296,13 +297,13 @@ Phase 5 — resume (after all flagged items resolved via API):
 
 ### Existing schemas that make this work
 
-| Schema field | File |
-|---|---|
-| `ValidatedFitmentBatch.flagged_for_review: list[ClassificationResult]` | `platform/schemas/fitment.py` |
-| `PriorFitment.reviewer_override: bool` | `platform/schemas/retrieval.py` |
-| `PhaseStartEvent`, `CompleteEvent` | `platform/schemas/events.py` |
-| `PostgresStore` — LangGraph checkpoint backend | `platform/storage/postgres.py` |
-| `RedisPubSub.publish()` | `platform/storage/redis_pub.py` |
+| Schema field                                                           | File                            |
+| ---------------------------------------------------------------------- | ------------------------------- |
+| `ValidatedFitmentBatch.flagged_for_review: list[ClassificationResult]` | `platform/schemas/fitment.py`   |
+| `PriorFitment.reviewer_override: bool`                                 | `platform/schemas/retrieval.py` |
+| `PhaseStartEvent`, `CompleteEvent`                                     | `platform/schemas/events.py`    |
+| `PostgresStore` — LangGraph checkpoint backend                         | `platform/storage/postgres.py`  |
+| `RedisPubSub.publish()`                                                | `platform/storage/redis_pub.py` |
 
 The API endpoints (`GET /batches/{id}/review`, `POST /batches/{id}/review/{atom_id}`) are
 Layer 4 work — implement when building `api/routes/`. Phase 5 only calls `interrupt()` and
@@ -336,29 +337,29 @@ log.info("phase_complete",
 
 ## Post-MVP Guardrails (do not build in MVP)
 
-| Guardrail | Purpose | Key libraries | Reason deferred |
-|---|---|---|---|
-| G4 — Scope fence | Qdrant metadata pre-filter (tenant, module, country, wave) | `qdrant-client` payload filters | Single-tenant MVP; Qdrant already scopes by product_id |
-| G5 — KB integrity | SHA-256 hash verification of retrieved chunks vs seed-time hash | `hashlib` (stdlib) | Requires hash-at-seed-time infra |
-| G6 — Context token cap | Enforce token budget before LLM prompt construction | `tiktoken` | Easy to add to Phase 2 later |
-| G7 — Score bounds validator | Z-score anomaly detection on match scores per batch | `numpy`, `scikit-learn` | Range check absorbed into G10-lite for MVP |
-| G12 — Context firewall | NetworkX conflict graph across full batch classifications | `networkx`, `spacy`, `rapidfuzz` | Batch-level cross-req analysis; post-MVP |
-| G13 — Export sanitizer | Strip internal metadata, deanonymize PII for final CSV | custom | Add when report export is enhanced |
-| G14 — HMAC audit seal | Merkle chain + HMAC-SHA256 tamper-evident audit trail | `hmac` (stdlib) | Full compliance feature; post-MVP |
-| RBAC | JWT validation + tenant context via FastAPI dependency injection | `python-jose` | Layer 4 concern |
-| Rate limiter | Redis token bucket per tenant (LLM calls + API requests) | `redis` | Layer 4 concern |
-| Vault secrets | HashiCorp Vault for API keys, DB creds, audit signing key | `hvac` | Infra/deployment concern |
+| Guardrail                   | Purpose                                                          | Key libraries                    | Reason deferred                                        |
+| --------------------------- | ---------------------------------------------------------------- | -------------------------------- | ------------------------------------------------------ |
+| G4 — Scope fence            | Qdrant metadata pre-filter (tenant, module, country, wave)       | `qdrant-client` payload filters  | Single-tenant MVP; Qdrant already scopes by product_id |
+| G5 — KB integrity           | SHA-256 hash verification of retrieved chunks vs seed-time hash  | `hashlib` (stdlib)               | Requires hash-at-seed-time infra                       |
+| G6 — Context token cap      | Enforce token budget before LLM prompt construction              | `tiktoken`                       | Easy to add to Phase 2 later                           |
+| G7 — Score bounds validator | Z-score anomaly detection on match scores per batch              | `numpy`, `scikit-learn`          | Range check absorbed into G10-lite for MVP             |
+| G12 — Context firewall      | NetworkX conflict graph across full batch classifications        | `networkx`, `spacy`, `rapidfuzz` | Batch-level cross-req analysis; post-MVP               |
+| G13 — Export sanitizer      | Strip internal metadata, deanonymize PII for final CSV           | custom                           | Add when report export is enhanced                     |
+| G14 — HMAC audit seal       | Merkle chain + HMAC-SHA256 tamper-evident audit trail            | `hmac` (stdlib)                  | Full compliance feature; post-MVP                      |
+| RBAC                        | JWT validation + tenant context via FastAPI dependency injection | `python-jose`                    | Layer 4 concern                                        |
+| Rate limiter                | Redis token bucket per tenant (LLM calls + API requests)         | `redis`                          | Layer 4 concern                                        |
+| Vault secrets               | HashiCorp Vault for API keys, DB creds, audit signing key        | `hvac`                           | Infra/deployment concern                               |
 
 ### OWASP LLM Top 10 Coverage
 
-| OWASP Risk | DYNAFIT Attack Surface | Guardrail(s) |
-|---|---|---|
-| LLM01: Prompt injection | Malicious text in uploaded docs | G3 (injection scan) + G8 (prompt firewall) |
+| OWASP Risk                       | REQFIT Attack Surface                        | Guardrail(s)                                                            |
+| -------------------------------- | -------------------------------------------- | ----------------------------------------------------------------------- |
+| LLM01: Prompt injection          | Malicious text in uploaded docs              | G3 (injection scan) + G8 (prompt firewall)                              |
 | LLM02: Sensitive data disclosure | PII in requirements leaks into LLM responses | **G2 (PII redactor) + G11 (response scanner)** + G13 (export sanitizer) |
-| LLM03: Supply chain | Poisoned KB documents in Qdrant | G5 (KB integrity) |
-| LLM04: Data/model poisoning | Corrupted historical fitments | G5 (KB integrity) + G10 (sanity gate) |
-| LLM06: Excessive agency | LLM attempts actions beyond classification | G8 (template-only prompts) + G9 (schema enforcement) |
-| LLM07: System prompt leakage | Attacker extracts classification logic | G8 (prompt firewall) + **G11 (response scanner)** |
+| LLM03: Supply chain              | Poisoned KB documents in Qdrant              | G5 (KB integrity)                                                       |
+| LLM04: Data/model poisoning      | Corrupted historical fitments                | G5 (KB integrity) + G10 (sanity gate)                                   |
+| LLM06: Excessive agency          | LLM attempts actions beyond classification   | G8 (template-only prompts) + G9 (schema enforcement)                    |
+| LLM07: System prompt leakage     | Attacker extracts classification logic       | G8 (prompt firewall) + **G11 (response scanner)**                       |
 
 ### Post-MVP Implementation Priority
 

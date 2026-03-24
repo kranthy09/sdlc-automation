@@ -4,15 +4,16 @@
 
 **Goal: fast to market, high confidence in core value, low maintenance cost.**
 
-| Layer | Test type | What to test |
-|-------|-----------|--------------|
-| Platform schemas | Unit | One valid case + invalid enum/range/required — trust Pydantic for the rest |
-| Platform utilities | Unit | Complex logic only: error-path branching, counter accuracy, retry behaviour |
-| Module nodes | Unit (mocked) | Non-trivial algorithms; skip simple pass-through nodes |
-| End-to-end workflows | Integration | The critical user journeys (upload -> classify -> report) with real services |
-| LLM calls | Golden fixture | Capture once, replay in CI — never live in CI |
+| Layer                | Test type      | What to test                                                                 |
+| -------------------- | -------------- | ---------------------------------------------------------------------------- |
+| Platform schemas     | Unit           | One valid case + invalid enum/range/required — trust Pydantic for the rest   |
+| Platform utilities   | Unit           | Complex logic only: error-path branching, counter accuracy, retry behaviour  |
+| Module nodes         | Unit (mocked)  | Non-trivial algorithms; skip simple pass-through nodes                       |
+| End-to-end workflows | Integration    | The critical user journeys (upload -> classify -> report) with real services |
+| LLM calls            | Golden fixture | Capture once, replay in CI — never live in CI                                |
 
 **Do NOT write tests for:**
+
 - Object construction ("can I instantiate X") — trust the import
 - Simple defaults — they're in the schema definition, read it
 - Every valid enum value — one valid + one invalid covers the contract
@@ -20,6 +21,7 @@
 - Duplicate-pattern validation (e.g. testing each missing required field separately)
 
 **Write tests for:**
+
 - Business rules: score ranges, wave >= 1, non-empty required text
 - Error paths: exception re-raise, status="error" counter, transaction rollback
 - Core journeys: requirement upload -> fitment CSV output (integration)
@@ -102,13 +104,13 @@ markers = [
 
 ## Layer Build Order (completion tracking)
 
-| Layer | Status | Key deliverables |
-|-------|--------|-----------------|
-| Layer 0 — Scaffold + CI | DONE | `make ci` passes on empty codebase, Docker services start, import validator runs |
-| Layer 1 — Platform Schemas | DONE | All Pydantic contracts in `platform/schemas/`, `mypy --strict` passes |
-| Layer 2 — Platform Utilities | DONE | 13 platform components + guardrail utilities, all tests pass |
-| Layer 3 — DYNAFIT Module | DONE | All 5 phases, LangGraph graph wired, golden fixtures captured |
-| Layer 4 — API + Workers + UI | DONE | FastAPI routes, Celery worker, WebSocket, React UI (all pages + components) |
+| Layer                        | Status | Key deliverables                                                                 |
+| ---------------------------- | ------ | -------------------------------------------------------------------------------- |
+| Layer 0 — Scaffold + CI      | DONE   | `make ci` passes on empty codebase, Docker services start, import validator runs |
+| Layer 1 — Platform Schemas   | DONE   | All Pydantic contracts in `platform/schemas/`, `mypy --strict` passes            |
+| Layer 2 — Platform Utilities | DONE   | 13 platform components + guardrail utilities, all tests pass                     |
+| Layer 3 — REQFIT Module      | DONE   | All 5 phases, LangGraph graph wired, golden fixtures captured                    |
+| Layer 4 — API + Workers + UI | DONE   | FastAPI routes, Celery worker, WebSocket, React UI (all pages + components)      |
 
 ### Platform Utility Build Order (Layer 2)
 

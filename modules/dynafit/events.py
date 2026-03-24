@@ -1,4 +1,4 @@
-"""Generalized Redis event publishing for DYNAFIT phases.
+"""Generalized Redis event publishing for REQFIT phases.
 
 Two-step publish strategy:
   1. persist_phase_state_sync — sync Redis hset (durable)

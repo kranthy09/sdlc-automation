@@ -3,13 +3,13 @@
 An AI agent platform for automating ERP implementation workflows.
 Built as a layered monorepo — platform infrastructure first, product modules on top.
 
-## **Module 1: DYNAFIT** — Requirement Fitment Engine for Microsoft D365 F&O.
+## **Module 1: REQFIT** — Requirement Fitment Engine for Microsoft D365 F&O.
 
 ## Architecture
 
 ```
 api/                    Layer 4 — FastAPI + Celery + WebSocket (thin dispatchers only)
-modules/dynafit/        Layer 3 — DYNAFIT business module (D365 fitment)
+modules/dynafit/        Layer 3 — REQFIT business module (D365 fitment)
 agents/                 Layer 2 — Reusable LangGraph nodes (ingestion, RAG, classifier, validator)
 platform/               Layer 1 — Shared infrastructure (LLM, retrieval, parsers, storage, observability)
 knowledge_bases/        Product data — YAML + JSONL only, no Python
@@ -233,12 +233,12 @@ All three must pass on every PR. Live LLM calls are never in CI — all LLM test
 
 ## Docs
 
-| File                       | Purpose                                                      |
-| -------------------------- | ------------------------------------------------------------ |
-| `CLAUDE.md`                | Project pointer — build order, dependency rule, doc index    |
-| `docs/specs/rules.md`      | Architecture, import boundaries, code standards, lessons     |
-| `docs/specs/dynafit.md`    | DYNAFIT 5-phase algorithms, prompts, thresholds, library map |
-| `docs/specs/api.md`        | API endpoints, WebSocket protocol, DB schema, React UI       |
-| `docs/specs/guardrails.md` | MVP guardrails (7 active) + post-MVP roadmap (7 deferred)    |
-| `docs/specs/tdd.md`        | Testing philosophy, golden fixtures, build order             |
-| `docs/architecturalflows/` | SVG architecture diagrams                                    |
+| File                       | Purpose                                                     |
+| -------------------------- | ----------------------------------------------------------- |
+| `CLAUDE.md`                | Project pointer — build order, dependency rule, doc index   |
+| `docs/specs/rules.md`      | Architecture, import boundaries, code standards, lessons    |
+| `docs/specs/dynafit.md`    | REQFIT 5-phase algorithms, prompts, thresholds, library map |
+| `docs/specs/api.md`        | API endpoints, WebSocket protocol, DB schema, React UI      |
+| `docs/specs/guardrails.md` | MVP guardrails (7 active) + post-MVP roadmap (7 deferred)   |
+| `docs/specs/tdd.md`        | Testing philosophy, golden fixtures, build order            |
+| `docs/architecturalflows/` | SVG architecture diagrams                                   |

@@ -59,12 +59,14 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # ── Postgres ──────────────────────────────
     store = PostgresStore(settings.postgres_url)
     await store.ensure_schema()
-    await store.dispose()
+    app.state.pg_store = store
 
     # ── Qdrant ────────────────────────────────
     await _check_qdrant_collections(settings.qdrant_url)
 
     yield
+
+    await store.dispose()
 
 
 async def _check_qdrant_collections(

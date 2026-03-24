@@ -39,7 +39,6 @@ from typing import Any
 
 from platform.observability.logger import get_logger
 from platform.schemas.fitment import ClassificationResult, FitLabel
-from platform.schemas.requirement import RawUpload
 from platform.schemas.retrieval import PriorFitment
 
 log = get_logger(__name__)
@@ -74,6 +73,10 @@ class UploadRecord:
     country: str
     status: str
     created_at: datetime
+    content_hash: str = ""
+    path: str = ""
+    size_bytes: int = 0
+    detected_format: str = ""
 
 
 # ---------------------------------------------------------------------------
@@ -123,6 +126,15 @@ _DDL: list[str] = [
     "ALTER TABLE fitments ADD COLUMN IF NOT EXISTS configuration_steps JSONB",
     "ALTER TABLE fitments ADD COLUMN IF NOT EXISTS dev_effort TEXT",
     "ALTER TABLE fitments ADD COLUMN IF NOT EXISTS gap_type TEXT",
+    # V3 migration — upload metadata columns for route-level persistence.
+    "ALTER TABLE uploads ADD COLUMN IF NOT EXISTS content_hash TEXT",
+    "ALTER TABLE uploads ADD COLUMN IF NOT EXISTS path TEXT",
+    "ALTER TABLE uploads ADD COLUMN IF NOT EXISTS size_bytes BIGINT DEFAULT 0",
+    "ALTER TABLE uploads ADD COLUMN IF NOT EXISTS detected_format TEXT DEFAULT ''",
+    """
+    CREATE UNIQUE INDEX IF NOT EXISTS uploads_content_hash_idx
+    ON uploads (content_hash) WHERE content_hash IS NOT NULL
+    """,
 ]
 
 
@@ -186,51 +198,157 @@ class PostgresStore:
     # Uploads
     # ------------------------------------------------------------------
 
-    async def save_upload(self, upload: RawUpload) -> None:
-        """Insert upload metadata. Idempotent on upload_id (ON CONFLICT DO NOTHING)."""
+    async def save_upload(
+        self,
+        record: UploadRecord,
+    ) -> None:
+        """Insert upload metadata. Idempotent on upload_id."""
         from sqlalchemy import text  # noqa: PLC0415
 
         stmt = text(
             """
-            INSERT INTO uploads (upload_id, product_id, filename, wave, country, status)
-            VALUES (:upload_id, :product_id, :filename, :wave, :country, 'pending')
+            INSERT INTO uploads (
+                upload_id, product_id, filename, wave,
+                country, status, content_hash, path,
+                size_bytes, detected_format
+            )
+            VALUES (
+                :upload_id, :product_id, :filename, :wave,
+                :country, :status, :content_hash, :path,
+                :size_bytes, :detected_format
+            )
             ON CONFLICT (upload_id) DO NOTHING
             """
         )
         params: dict[str, Any] = {
-            "upload_id": upload.upload_id,
-            "product_id": upload.product_id,
-            "filename": upload.filename,
-            "wave": upload.wave,
-            "country": upload.country,
+            "upload_id": record.upload_id,
+            "product_id": record.product_id,
+            "filename": record.filename,
+            "wave": record.wave,
+            "country": record.country,
+            "status": record.status,
+            "content_hash": record.content_hash,
+            "path": record.path,
+            "size_bytes": record.size_bytes,
+            "detected_format": record.detected_format,
         }
         engine = self._get_engine()
         try:
             async with engine.begin() as conn:
                 await conn.execute(stmt, params)
-            log.debug("postgres_upload_saved", upload_id=upload.upload_id)
+            log.debug(
+                "postgres_upload_saved",
+                upload_id=record.upload_id,
+            )
         except PostgresError:
             raise
         except Exception as exc:
             raise PostgresError(
-                f"save_upload({upload.upload_id!r}) failed: {exc}", cause=exc
+                f"save_upload({record.upload_id!r}) failed",
+                cause=exc,
             ) from exc
 
-    async def update_upload_status(self, upload_id: str, status: str) -> None:
+    async def get_upload_by_hash(
+        self,
+        content_hash: str,
+    ) -> UploadRecord | None:
+        """Find an existing upload by SHA-256 content hash."""
+        from sqlalchemy import text  # noqa: PLC0415
+
+        stmt = text(
+            """
+            SELECT upload_id, product_id, filename, wave,
+                   country, status, created_at, content_hash,
+                   path, size_bytes, detected_format
+            FROM uploads
+            WHERE content_hash = :content_hash
+            LIMIT 1
+            """
+        )
+        engine = self._get_engine()
+        try:
+            async with engine.connect() as conn:
+                row = (
+                    await conn.execute(
+                        stmt, {"content_hash": content_hash},
+                    )
+                ).mappings().first()
+            if row is None:
+                return None
+            return _row_to_upload(row)
+        except PostgresError:
+            raise
+        except Exception as exc:
+            raise PostgresError(
+                "get_upload_by_hash failed",
+                cause=exc,
+            ) from exc
+
+    async def get_upload_by_id(
+        self,
+        upload_id: str,
+    ) -> UploadRecord | None:
+        """Fetch a single upload by its ID."""
+        from sqlalchemy import text  # noqa: PLC0415
+
+        stmt = text(
+            """
+            SELECT upload_id, product_id, filename, wave,
+                   country, status, created_at, content_hash,
+                   path, size_bytes, detected_format
+            FROM uploads
+            WHERE upload_id = :upload_id
+            """
+        )
+        engine = self._get_engine()
+        try:
+            async with engine.connect() as conn:
+                row = (
+                    await conn.execute(
+                        stmt, {"upload_id": upload_id},
+                    )
+                ).mappings().first()
+            if row is None:
+                return None
+            return _row_to_upload(row)
+        except PostgresError:
+            raise
+        except Exception as exc:
+            raise PostgresError(
+                f"get_upload_by_id({upload_id!r}) failed",
+                cause=exc,
+            ) from exc
+
+    async def update_upload_status(
+        self,
+        upload_id: str,
+        status: str,
+    ) -> None:
         """Update the processing status of an upload."""
         from sqlalchemy import text  # noqa: PLC0415
 
-        stmt = text("UPDATE uploads SET status = :status WHERE upload_id = :upload_id")
+        stmt = text(
+            "UPDATE uploads SET status = :status"
+            " WHERE upload_id = :upload_id"
+        )
         engine = self._get_engine()
         try:
             async with engine.begin() as conn:
-                await conn.execute(stmt, {"status": status, "upload_id": upload_id})
-            log.debug("postgres_upload_status_updated", upload_id=upload_id, status=status)
+                await conn.execute(
+                    stmt,
+                    {"status": status, "upload_id": upload_id},
+                )
+            log.debug(
+                "postgres_upload_status_updated",
+                upload_id=upload_id,
+                status=status,
+            )
         except PostgresError:
             raise
         except Exception as exc:
             raise PostgresError(
-                f"update_upload_status({upload_id!r}) failed: {exc}", cause=exc
+                f"update_upload_status({upload_id!r}) failed",
+                cause=exc,
             ) from exc
 
     # ------------------------------------------------------------------
@@ -388,6 +506,22 @@ class PostgresStore:
 def _vec_str(embedding: list[float]) -> str:
     """Convert a float list to pgvector literal format: '[0.1,0.2,...]'."""
     return "[" + ",".join(map(str, embedding)) + "]"
+
+
+def _row_to_upload(row: Any) -> UploadRecord:
+    return UploadRecord(
+        upload_id=row["upload_id"],
+        product_id=row["product_id"],
+        filename=row["filename"],
+        wave=row["wave"],
+        country=row["country"],
+        status=row["status"],
+        created_at=row["created_at"],
+        content_hash=row["content_hash"] or "",
+        path=row["path"] or "",
+        size_bytes=row["size_bytes"] or 0,
+        detected_format=row["detected_format"] or "",
+    )
 
 
 def _row_to_prior(row: Any) -> PriorFitment:

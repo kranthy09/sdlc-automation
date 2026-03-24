@@ -1,5 +1,5 @@
 """
-Ingestion node — Phase 1 of the DYNAFIT pipeline (Session C).
+Ingestion node — Phase 1 of the REQFIT pipeline (Session C).
 
 Responsibility: RawUpload → RequirementAtom[] + ValidatedAtom[] + FlaggedAtom[]
 

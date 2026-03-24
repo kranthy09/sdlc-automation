@@ -1,6 +1,6 @@
 """Single source of truth for the D365 F&O ProductConfig.
 
-All DYNAFIT nodes import from here instead of duplicating the constant.
+All REQFIT nodes import from here instead of duplicating the constant.
 """
 
 from __future__ import annotations

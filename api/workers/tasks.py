@@ -1,5 +1,5 @@
 """
-Celery worker — runs the DYNAFIT LangGraph pipeline.
+Celery worker — runs the REQFIT LangGraph pipeline.
 
 Execution model:
   First call  → run phases 1–4 (graph pauses before Phase 5 via
@@ -188,7 +188,8 @@ async def _run_phase5(
             for task in snapshot.tasks:
                 for intr in task.interrupts:
                     flagged_ids.update(intr.value.get("flagged_atom_ids", []))
-                    flagged_reasons.update(intr.value.get("flagged_reasons", {}))
+                    flagged_reasons.update(
+                        intr.value.get("flagged_reasons", {}))
         except Exception as exc:
             log.warning(
                 "phase5_interrupt_payload_read_failed",
@@ -243,7 +244,7 @@ def run_dynafit_pipeline(
     upload_id: str,
     config: dict[str, Any],
 ) -> None:
-    """Execute the full DYNAFIT pipeline for a single batch.
+    """Execute the full REQFIT pipeline for a single batch.
 
     Args:
         batch_id:  Unique batch identifier (also used as LangGraph thread_id).

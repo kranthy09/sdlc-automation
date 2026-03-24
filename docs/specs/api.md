@@ -1,10 +1,10 @@
-# DYNAFIT — Frontend-Backend Interaction Specification
+# REQFIT — Frontend-Backend Interaction Specification
 
 > **When to read this file:** Layer 4 of the build order (Week 6 in TDD_IMPLEMENTATION_GUIDE.md).
 > The AI pipeline (Layers 0–3) must be complete and tested before building anything in this file.
 >
 > **This file covers everything the user sees and touches** — upload, progress, results, review, export.
-> The DYNAFIT_IMPLEMENTATION_SPEC.md covers the AI pipeline. This file covers how the frontend
+> The REQFIT_IMPLEMENTATION_SPEC.md covers the AI pipeline. This file covers how the frontend
 > drives that pipeline and what gets returned.
 >
 > **API rules (enforced by validate_contracts.py):**
@@ -35,7 +35,7 @@
 │  ┌──────▼────────────────▼────────────────▼───────┐         │
 │  │  Celery Worker (background)                     │         │
 │  │  ┌─────────────────────────────────────────┐    │         │
-│  │  │  LangGraph (DYNAFIT 5-phase pipeline)   │    │         │
+│  │  │  LangGraph (REQFIT 5-phase pipeline)   │    │         │
 │  │  │  State checkpointed to PostgreSQL        │    │         │
 │  │  │  Progress emitted to Redis pubsub        │    │         │
 │  │  └─────────────────────────────────────────┘    │         │
@@ -75,6 +75,7 @@ Response 201:
 ```
 
 **What happens server-side:**
+
 1. FastAPI receives multipart file
 2. Saves to `/data/uploads/{upload_id}/{filename}`
 3. Runs format detection (Phase 1, Step 1, Sub-step A) synchronously — fast, <100ms
@@ -105,6 +106,7 @@ Response 202:
 ```
 
 **What happens server-side:**
+
 1. FastAPI creates a `batch` record in PostgreSQL (status=QUEUED)
 2. Dispatches Celery task: `run_dynafit_pipeline.delay(batch_id, upload_id, config)`
 3. Returns 202 Accepted immediately with `batch_id` and WebSocket URL
@@ -202,6 +204,7 @@ WS /api/v1/ws/progress/{batch_id}
 ```
 
 **How progress flows internally:**
+
 1. Each LangGraph node (phase), after processing each atom, publishes to Redis: `PUBLISH progress:{batch_id} {json_message}`
 2. FastAPI WebSocket handler subscribes: `SUBSCRIBE progress:{batch_id}`
 3. On each Redis message → forward to connected WebSocket client
@@ -310,6 +313,7 @@ Response 200:
 ```
 
 **When all reviews complete:**
+
 1. Backend resumes LangGraph from checkpoint (Phase 5 continues after `interrupt()`)
 2. Report generator runs
 3. WebSocket sends `complete` message with report URL
@@ -366,21 +370,21 @@ app = Celery("dynafit", broker="redis://localhost:6379/0")
 
 @app.task(bind=True, max_retries=2, default_retry_delay=30)
 def run_dynafit_pipeline(self, batch_id: str, upload_id: str, config: dict):
-    """Execute the full DYNAFIT LangGraph pipeline."""
-    
+    """Execute the full REQFIT LangGraph pipeline."""
+
     r = redis.Redis()
     channel = f"progress:{batch_id}"
-    
+
     def emit(msg: dict):
         """Publish progress to Redis → WebSocket."""
         r.publish(channel, json.dumps(msg))
-    
+
     # Build graph with progress callback
     graph = build_dynafit_graph()
-    
+
     # Load upload
     upload = load_upload(upload_id)
-    
+
     # Initial state
     state = {
         "raw_upload": upload,
@@ -388,7 +392,7 @@ def run_dynafit_pipeline(self, batch_id: str, upload_id: str, config: dict):
         "config": config,
         "progress_callback": emit,   # each node calls this
     }
-    
+
     try:
         # Run graph — checkpoints to PostgreSQL automatically
         # When graph hits interrupt() at Phase 5, it pauses
@@ -399,12 +403,12 @@ def run_dynafit_pipeline(self, batch_id: str, upload_id: str, config: dict):
                 "product": load_product_config("d365_fo"),
             }
         })
-        
+
         if result.get("status") == "interrupted":
             emit({"type": "review_required", "batch_id": batch_id, ...})
         else:
             emit({"type": "complete", "batch_id": batch_id, ...})
-            
+
     except Exception as e:
         emit({"type": "error", "message": str(e), "recoverable": True})
         self.retry(exc=e)
@@ -418,15 +422,15 @@ def run_dynafit_pipeline(self, batch_id: str, upload_id: str, config: dict):
 @router.post("/{batch_id}/review/complete")
 async def complete_review(batch_id: str):
     """All reviews submitted — resume the pipeline."""
-    
+
     graph = build_dynafit_graph()
-    
+
     # Resume from checkpoint — LangGraph loads saved state
     result = graph.invoke(
         None,  # no new input — resume from checkpoint
         config={"configurable": {"thread_id": batch_id}},
     )
-    
+
     return {"status": "resumed", "batch_id": batch_id}
 ```
 
@@ -442,11 +446,11 @@ import redis.asyncio as aioredis
 
 async def progress_handler(websocket: WebSocket, batch_id: str):
     await websocket.accept()
-    
+
     r = aioredis.Redis()
     pubsub = r.pubsub()
     await pubsub.subscribe(f"progress:{batch_id}")
-    
+
     try:
         async for message in pubsub.listen():
             if message["type"] == "message":
@@ -607,6 +611,7 @@ TanStack Query owns all server state (request → response). WebSocket events ar
 **Route:** `/upload`
 
 **User flow:**
+
 1. Drag-and-drop file (or click to browse)
 2. Select product (D365 F&O — default), country (dropdown), wave (number)
 3. Optional: expand "Advanced" to override thresholds
@@ -614,6 +619,7 @@ TanStack Query owns all server state (request → response). WebSocket events ar
 5. Redirect to Progress page
 
 **API calls:**
+
 1. `POST /api/v1/upload` (on file drop) → get `upload_id`
 2. `POST /api/v1/d365_fo/dynafit/run` (on button click) → get `batch_id` + `websocket_url`
 3. `router.push('/progress/{batch_id}')`
@@ -623,6 +629,7 @@ TanStack Query owns all server state (request → response). WebSocket events ar
 **Route:** `/progress/:batchId`
 
 **What the user sees:**
+
 - 5-phase horizontal progress bar (Phase 1 ██████░░ Phase 2 ░░░░░░ ... Phase 5 ░░░░░░)
 - Current phase name + step name in large text
 - Items processed counter: "38 / 50 requirements"
@@ -636,6 +643,7 @@ TanStack Query owns all server state (request → response). WebSocket events ar
 **Data source:** WebSocket `useProgress(batchId)` hook
 
 **State machine:**
+
 ```
 QUEUED → RUNNING → PHASE_1 → PHASE_2 → PHASE_3 → PHASE_4 → PHASE_5_REVIEW → COMPLETE
                                                                     ↓
@@ -649,6 +657,7 @@ QUEUED → RUNNING → PHASE_1 → PHASE_2 → PHASE_3 → PHASE_4 → PHASE_5_R
 **Route:** `/results/:batchId`
 
 **What the user sees:**
+
 - Summary cards at top: total, FIT count (green), PARTIAL count (amber), GAP count (red)
 - Donut chart: classification distribution
 - Filterable table:
@@ -660,6 +669,7 @@ QUEUED → RUNNING → PHASE_1 → PHASE_2 → PHASE_3 → PHASE_4 → PHASE_5_R
 - "Download Excel" button → `GET /report`
 
 **API calls:**
+
 - `GET /api/v1/d365_fo/dynafit/{batchId}/results?page=1&limit=25` via TanStack Query
 - Filters and sorts as query params → refetch on change
 
@@ -668,6 +678,7 @@ QUEUED → RUNNING → PHASE_1 → PHASE_2 → PHASE_3 → PHASE_4 → PHASE_5_R
 **Route:** `/review/:batchId`
 
 **What the user sees:**
+
 - Review queue: list of items needing decision
 - For each item, a card showing:
   - Requirement text (large)
@@ -686,6 +697,7 @@ QUEUED → RUNNING → PHASE_1 → PHASE_2 → PHASE_3 → PHASE_4 → PHASE_5_R
 - When all reviewed: "Submit reviews" button → pipeline resumes → redirect to Results page
 
 **API calls:**
+
 - `GET /api/v1/d365_fo/dynafit/{batchId}/review` on page load
 - `POST /api/v1/d365_fo/dynafit/{batchId}/review/{atomId}` per decision
 - `POST /api/v1/d365_fo/dynafit/{batchId}/review/complete` after last review
@@ -695,6 +707,7 @@ QUEUED → RUNNING → PHASE_1 → PHASE_2 → PHASE_3 → PHASE_4 → PHASE_5_R
 **Route:** `/dashboard`
 
 **What the user sees:**
+
 - Batch history table: all past runs with status, summary, dates
 - Click any batch → go to Results page
 - Aggregate metrics (across all batches):
@@ -706,6 +719,7 @@ QUEUED → RUNNING → PHASE_1 → PHASE_2 → PHASE_3 → PHASE_4 → PHASE_5_R
 - Grafana embed: latency and cost metrics (iframe or link)
 
 **API calls:**
+
 - `GET /api/v1/d365_fo/dynafit/batches`
 
 ---
@@ -714,18 +728,18 @@ QUEUED → RUNNING → PHASE_1 → PHASE_2 → PHASE_3 → PHASE_4 → PHASE_5_R
 
 ### State ownership rules
 
-| State type | Owner | Reason |
-|---|---|---|
-| Server data (results, review queue, batches) | TanStack Query | Request/response lifecycle, caching, pagination |
-| WebSocket-driven progress | Zustand `progressStore` | Push events — no request lifecycle |
-| UI ephemeral state (active batch, sidebar) | Zustand `uiStore` | Not server data, not derivable from URL |
-| Form state (upload config, override reason) | React `useState` / `useForm` | Component-local, not shared |
+| State type                                   | Owner                        | Reason                                          |
+| -------------------------------------------- | ---------------------------- | ----------------------------------------------- |
+| Server data (results, review queue, batches) | TanStack Query               | Request/response lifecycle, caching, pagination |
+| WebSocket-driven progress                    | Zustand `progressStore`      | Push events — no request lifecycle              |
+| UI ephemeral state (active batch, sidebar)   | Zustand `uiStore`            | Not server data, not derivable from URL         |
+| Form state (upload config, override reason)  | React `useState` / `useForm` | Component-local, not shared                     |
 
 ### TanStack Query (server state)
 
 ```typescript
 // lib/queryClient.ts
-import { QueryClient } from '@tanstack/react-query';
+import { QueryClient } from "@tanstack/react-query";
 
 export const queryClient = new QueryClient({
   defaultOptions: {
@@ -740,13 +754,13 @@ export const queryClient = new QueryClient({
 
 ```typescript
 // hooks/useResults.ts
-import { useQuery } from '@tanstack/react-query';
-import { getResults } from '../api/dynafit';
-import type { ResultsFilters } from '../api/types';
+import { useQuery } from "@tanstack/react-query";
+import { getResults } from "../api/dynafit";
+import type { ResultsFilters } from "../api/types";
 
 export function useResults(batchId: string, filters: ResultsFilters) {
   return useQuery({
-    queryKey: ['results', batchId, filters],
+    queryKey: ["results", batchId, filters],
     queryFn: () => getResults(batchId, filters),
     staleTime: 30_000,
     refetchOnWindowFocus: false,
@@ -757,15 +771,15 @@ export function useResults(batchId: string, filters: ResultsFilters) {
 
 ```typescript
 // hooks/useBatches.ts
-import { useQuery } from '@tanstack/react-query';
-import { getBatches } from '../api/dynafit';
-import type { BatchFilters } from '../api/types';
+import { useQuery } from "@tanstack/react-query";
+import { getBatches } from "../api/dynafit";
+import type { BatchFilters } from "../api/types";
 
 export function useBatches(filters: BatchFilters) {
   return useQuery({
-    queryKey: ['batches', filters],
+    queryKey: ["batches", filters],
     queryFn: () => getBatches(filters),
-    refetchInterval: 10_000,   // poll — dashboard reflects in-progress batches
+    refetchInterval: 10_000, // poll — dashboard reflects in-progress batches
   });
 }
 ```
@@ -774,13 +788,24 @@ export function useBatches(filters: BatchFilters) {
 
 ```typescript
 // stores/progressStore.ts
-import { create } from 'zustand';
+import { create } from "zustand";
 import type {
-  PhaseStartMsg, StepProgressMsg, PhaseCompleteMsg,
-  ClassificationMsg, ReviewRequiredMsg, CompleteMsg, ErrorMsg,
-} from '../api/types';
+  PhaseStartMsg,
+  StepProgressMsg,
+  PhaseCompleteMsg,
+  ClassificationMsg,
+  ReviewRequiredMsg,
+  CompleteMsg,
+  ErrorMsg,
+} from "../api/types";
 
-type ProgressStatus = 'idle' | 'connecting' | 'running' | 'review_pending' | 'complete' | 'error';
+type ProgressStatus =
+  | "idle"
+  | "connecting"
+  | "running"
+  | "review_pending"
+  | "complete"
+  | "error";
 
 interface ProgressState {
   status: ProgressStatus;
@@ -792,17 +817,17 @@ interface ProgressState {
   phaseStats: Partial<Record<number, PhaseCompleteMsg>>;
   classifications: ClassificationMsg[];
   reviewCount: number;
-  summary: CompleteMsg['summary'] | null;
+  summary: CompleteMsg["summary"] | null;
   error: string | null;
   // actions
   applyMessage: (msg: unknown) => void;
   reset: () => void;
 }
 
-const initial: Omit<ProgressState, 'applyMessage' | 'reset'> = {
-  status: 'idle',
+const initial: Omit<ProgressState, "applyMessage" | "reset"> = {
+  status: "idle",
   phase: 0,
-  phaseName: '',
+  phaseName: "",
   progressPct: 0,
   itemsProcessed: 0,
   itemsTotal: 0,
@@ -819,16 +844,16 @@ export const useProgressStore = create<ProgressState>((set) => ({
   applyMessage(raw) {
     const msg = raw as { type: string } & Record<string, unknown>;
     switch (msg.type) {
-      case 'phase_start':
+      case "phase_start":
         set((s) => ({
           ...s,
-          status: 'running',
+          status: "running",
           phase: (msg as PhaseStartMsg).phase,
           phaseName: (msg as PhaseStartMsg).phase_name,
           progressPct: 0,
         }));
         break;
-      case 'step_progress': {
+      case "step_progress": {
         const m = msg as StepProgressMsg;
         set((s) => ({
           ...s,
@@ -838,7 +863,7 @@ export const useProgressStore = create<ProgressState>((set) => ({
         }));
         break;
       }
-      case 'phase_complete': {
+      case "phase_complete": {
         const m = msg as PhaseCompleteMsg;
         set((s) => ({
           ...s,
@@ -846,31 +871,31 @@ export const useProgressStore = create<ProgressState>((set) => ({
         }));
         break;
       }
-      case 'classification':
+      case "classification":
         set((s) => ({
           ...s,
           classifications: [...s.classifications, msg as ClassificationMsg],
         }));
         break;
-      case 'review_required':
+      case "review_required":
         set((s) => ({
           ...s,
-          status: 'review_pending',
+          status: "review_pending",
           reviewCount: (msg as ReviewRequiredMsg).review_items,
         }));
         break;
-      case 'complete':
+      case "complete":
         set((s) => ({
           ...s,
-          status: 'complete',
+          status: "complete",
           summary: (msg as CompleteMsg).summary,
         }));
         break;
-      case 'error':
+      case "error":
         set((s) => ({
           ...s,
           error: (msg as ErrorMsg).message,
-          status: (msg as ErrorMsg).recoverable ? s.status : 'error',
+          status: (msg as ErrorMsg).recoverable ? s.status : "error",
         }));
         break;
     }
@@ -888,12 +913,12 @@ export const useProgressStore = create<ProgressState>((set) => ({
 
 ```typescript
 // hooks/useProgress.ts
-import { useEffect, useRef } from 'react';
-import { useProgressStore } from '../stores/progressStore';
-import { getResults } from '../api/dynafit';
-import { queryClient } from '../lib/queryClient';
+import { useEffect, useRef } from "react";
+import { useProgressStore } from "../stores/progressStore";
+import { getResults } from "../api/dynafit";
+import { queryClient } from "../lib/queryClient";
 
-const WS_BASE = import.meta.env.VITE_WS_URL ?? 'ws://localhost:8000';
+const WS_BASE = import.meta.env.VITE_WS_URL ?? "ws://localhost:8000";
 
 export function useProgress(batchId: string) {
   const applyMessage = useProgressStore((s) => s.applyMessage);
@@ -919,7 +944,7 @@ export function useProgress(batchId: string) {
       ws.onopen = () => {
         retryRef.current = 0;
         // Reconcile any events missed during disconnect
-        queryClient.invalidateQueries({ queryKey: ['results', batchId] });
+        queryClient.invalidateQueries({ queryKey: ["results", batchId] });
       };
 
       ws.onclose = () => {
@@ -949,16 +974,16 @@ export function useProgress(batchId: string) {
 
 ```typescript
 // api/client.ts
-import axios, { type AxiosError } from 'axios';
+import axios, { type AxiosError } from "axios";
 
 const api = axios.create({
-  baseURL: import.meta.env.VITE_API_URL ?? 'http://localhost:8000/api/v1',
-  headers: { 'Content-Type': 'application/json' },
+  baseURL: import.meta.env.VITE_API_URL ?? "http://localhost:8000/api/v1",
+  headers: { "Content-Type": "application/json" },
 });
 
 // Attach JWT on every request
 api.interceptors.request.use((config) => {
-  const token = localStorage.getItem('auth_token');
+  const token = localStorage.getItem("auth_token");
   if (token) config.headers.Authorization = `Bearer ${token}`;
   return config;
 });
@@ -968,8 +993,8 @@ api.interceptors.response.use(
   (response) => response,
   (error: AxiosError) => {
     if (error.response?.status === 401) {
-      localStorage.removeItem('auth_token');
-      window.location.href = '/login';
+      localStorage.removeItem("auth_token");
+      window.location.href = "/login";
     }
     return Promise.reject(error);
   },
@@ -981,22 +1006,27 @@ export default api;
 ```typescript
 // api/types.ts  — TypeScript mirror of all API schemas
 
-export type Classification = 'FIT' | 'PARTIAL_FIT' | 'GAP';
-export type BatchStatus = 'queued' | 'running' | 'review_pending' | 'complete' | 'failed';
-export type ReviewDecisionType = 'APPROVE' | 'OVERRIDE' | 'FLAG';
+export type Classification = "FIT" | "PARTIAL_FIT" | "GAP";
+export type BatchStatus =
+  | "queued"
+  | "running"
+  | "review_pending"
+  | "complete"
+  | "failed";
+export type ReviewDecisionType = "APPROVE" | "OVERRIDE" | "FLAG";
 
 export interface UploadResponse {
   upload_id: string;
   filename: string;
   size_bytes: number;
   detected_format: string;
-  status: 'uploaded';
+  status: "uploaded";
 }
 
 export interface RunResponse {
   batch_id: string;
   upload_id: string;
-  status: 'queued';
+  status: "queued";
   websocket_url: string;
 }
 
@@ -1014,8 +1044,12 @@ export interface ResultItem {
   reviewer_override: boolean;
   evidence: {
     top_capability_score: number;
-    retrieval_confidence: 'HIGH' | 'MEDIUM' | 'LOW';
-    prior_fitments: { wave: number; country: string; classification: Classification }[];
+    retrieval_confidence: "HIGH" | "MEDIUM" | "LOW";
+    prior_fitments: {
+      wave: number;
+      country: string;
+      classification: Classification;
+    }[];
   };
 }
 
@@ -1030,7 +1064,10 @@ export interface ResultsResponse {
     fit: number;
     partial_fit: number;
     gap: number;
-    by_module: Record<string, { fit: number; partial_fit: number; gap: number }>;
+    by_module: Record<
+      string,
+      { fit: number; partial_fit: number; gap: number }
+    >;
   };
 }
 
@@ -1038,7 +1075,7 @@ export interface ResultsFilters {
   classification?: Classification;
   module?: string;
   sort?: string;
-  order?: 'asc' | 'desc';
+  order?: "asc" | "desc";
   page: number;
   limit: number;
 }
@@ -1049,17 +1086,17 @@ export interface ReviewItem {
   ai_classification: Classification;
   ai_confidence: number;
   ai_rationale: string;
-  review_reason: 'low_confidence' | 'conflict' | 'anomaly';
+  review_reason: "low_confidence" | "conflict" | "anomaly";
   evidence: {
     capabilities: { name: string; score: number }[];
-    prior_fitments: ResultItem['evidence']['prior_fitments'];
+    prior_fitments: ResultItem["evidence"]["prior_fitments"];
     anomaly_flags: { flag: string; explanation: string }[];
   };
 }
 
 export interface ReviewResponse {
   batch_id: string;
-  status: 'review_pending';
+  status: "review_pending";
   items: ReviewItem[];
 }
 
@@ -1102,14 +1139,14 @@ export interface BatchFilters {
 
 // WebSocket message types
 export interface PhaseStartMsg {
-  type: 'phase_start';
+  type: "phase_start";
   phase: number;
   phase_name: string;
   total_phases: number;
   timestamp: string;
 }
 export interface StepProgressMsg {
-  type: 'step_progress';
+  type: "step_progress";
   phase: number;
   step: string;
   sub_step: string;
@@ -1119,7 +1156,7 @@ export interface StepProgressMsg {
   timestamp: string;
 }
 export interface PhaseCompleteMsg {
-  type: 'phase_complete';
+  type: "phase_complete";
   phase: number;
   phase_name: string;
   atoms_produced?: number;
@@ -1130,7 +1167,7 @@ export interface PhaseCompleteMsg {
   timestamp: string;
 }
 export interface ClassificationMsg {
-  type: 'classification';
+  type: "classification";
   atom_id: string;
   requirement_text: string;
   classification: Classification;
@@ -1139,21 +1176,21 @@ export interface ClassificationMsg {
   rationale: string;
 }
 export interface ReviewRequiredMsg {
-  type: 'review_required';
+  type: "review_required";
   batch_id: string;
   review_items: number;
   reasons: Record<string, number>;
   review_url: string;
 }
 export interface CompleteMsg {
-  type: 'complete';
+  type: "complete";
   batch_id: string;
   summary: { total: number; fit: number; partial_fit: number; gap: number };
   report_url: string;
   latency_total_ms: number;
 }
 export interface ErrorMsg {
-  type: 'error';
+  type: "error";
   phase: number;
   message: string;
   recoverable: boolean;
@@ -1163,24 +1200,30 @@ export interface ErrorMsg {
 
 ```typescript
 // api/dynafit.ts
-import api from './client';
+import api from "./client";
 import type {
-  UploadResponse, RunResponse, ResultsResponse, ResultsFilters,
-  ReviewResponse, ReviewDecision, ReviewDecisionResponse,
-  BatchListResponse, BatchFilters,
-} from './types';
+  UploadResponse,
+  RunResponse,
+  ResultsResponse,
+  ResultsFilters,
+  ReviewResponse,
+  ReviewDecision,
+  ReviewDecisionResponse,
+  BatchListResponse,
+  BatchFilters,
+} from "./types";
 
 export async function uploadFile(
   file: File,
   meta: { product: string; country: string; wave: number },
 ): Promise<UploadResponse> {
   const form = new FormData();
-  form.append('file', file);
-  form.append('product', meta.product);
-  form.append('country', meta.country);
-  form.append('wave', String(meta.wave));
-  const { data } = await api.post<UploadResponse>('/upload', form, {
-    headers: { 'Content-Type': 'multipart/form-data' },
+  form.append("file", file);
+  form.append("product", meta.product);
+  form.append("country", meta.country);
+  form.append("wave", String(meta.wave));
+  const { data } = await api.post<UploadResponse>("/upload", form, {
+    headers: { "Content-Type": "multipart/form-data" },
   });
   return data;
 }
@@ -1189,7 +1232,7 @@ export async function startAnalysis(
   uploadId: string,
   configOverrides?: Record<string, unknown>,
 ): Promise<RunResponse> {
-  const { data } = await api.post<RunResponse>('/d365_fo/dynafit/run', {
+  const { data } = await api.post<RunResponse>("/d365_fo/dynafit/run", {
     upload_id: uploadId,
     config_overrides: configOverrides,
   });
@@ -1201,12 +1244,13 @@ export async function getResults(
   filters: ResultsFilters,
 ): Promise<ResultsResponse> {
   const params = new URLSearchParams();
-  if (filters.classification) params.set('classification', filters.classification);
-  if (filters.module) params.set('module', filters.module);
-  if (filters.sort) params.set('sort', filters.sort);
-  if (filters.order) params.set('order', filters.order);
-  params.set('page', String(filters.page));
-  params.set('limit', String(filters.limit));
+  if (filters.classification)
+    params.set("classification", filters.classification);
+  if (filters.module) params.set("module", filters.module);
+  if (filters.sort) params.set("sort", filters.sort);
+  if (filters.order) params.set("order", filters.order);
+  params.set("page", String(filters.page));
+  params.set("limit", String(filters.limit));
   const { data } = await api.get<ResultsResponse>(
     `/d365_fo/dynafit/${batchId}/results?${params}`,
   );
@@ -1236,14 +1280,18 @@ export async function completeReview(batchId: string): Promise<void> {
   await api.post(`/d365_fo/dynafit/${batchId}/review/complete`);
 }
 
-export async function getBatches(filters: BatchFilters): Promise<BatchListResponse> {
+export async function getBatches(
+  filters: BatchFilters,
+): Promise<BatchListResponse> {
   const params = new URLSearchParams();
-  if (filters.country) params.set('country', filters.country);
-  if (filters.wave) params.set('wave', String(filters.wave));
-  if (filters.status) params.set('status', filters.status);
-  if (filters.page) params.set('page', String(filters.page));
-  if (filters.limit) params.set('limit', String(filters.limit));
-  const { data } = await api.get<BatchListResponse>(`/d365_fo/dynafit/batches?${params}`);
+  if (filters.country) params.set("country", filters.country);
+  if (filters.wave) params.set("wave", String(filters.wave));
+  if (filters.status) params.set("status", filters.status);
+  if (filters.page) params.set("page", String(filters.page));
+  if (filters.limit) params.set("limit", String(filters.limit));
+  const { data } = await api.get<BatchListResponse>(
+    `/d365_fo/dynafit/batches?${params}`,
+  );
   return data;
 }
 
@@ -1314,29 +1362,29 @@ CREATE INDEX idx_review_queue_batch ON review_queue(batch_id, status);
 
 ```typescript
 // vite.config.ts
-import { defineConfig } from 'vite';
-import react from '@vitejs/plugin-react';
-import path from 'path';
+import { defineConfig } from "vite";
+import react from "@vitejs/plugin-react";
+import path from "path";
 
 export default defineConfig({
   plugins: [react()],
   resolve: {
     alias: {
-      '@': path.resolve(__dirname, 'src'),  // import from '@/api/...' instead of '../../api/...'
+      "@": path.resolve(__dirname, "src"), // import from '@/api/...' instead of '../../api/...'
     },
   },
   server: {
     port: 3000,
     proxy: {
       // WS rule FIRST — must precede the /api catch-all
-      '/api/v1/ws': {
-        target: 'ws://localhost:8000',
+      "/api/v1/ws": {
+        target: "ws://localhost:8000",
         ws: true,
         changeOrigin: true,
       },
       // REST catch-all SECOND
-      '/api': {
-        target: 'http://localhost:8000',
+      "/api": {
+        target: "http://localhost:8000",
         changeOrigin: true,
       },
     },
@@ -1353,40 +1401,48 @@ No live backend in any unit or integration test. MSW intercepts at the network l
 ### Unit tests (Vitest + React Testing Library)
 
 What to test:
+
 - All custom hooks (`useProgress`, `useResults`, `useReview`, `useUpload`, `useBatches`) in isolation with MSW mock handlers
 - All `ui/` primitive components: render, variant classes, interaction events
 - `progressStore`: every `applyMessage` branch produces correct state transition
 - `utils.ts`: `cn()` class merging correctness
 
 What NOT to test at unit level:
+
 - Page-level layout (covered by integration tests)
 - Network timing or WebSocket reconnect delays (covered by E2E)
 
 ```typescript
 // tests/unit/stores/progressStore.test.ts — example
-import { describe, it, expect, beforeEach } from 'vitest';
-import { useProgressStore } from '@/stores/progressStore';
+import { describe, it, expect, beforeEach } from "vitest";
+import { useProgressStore } from "@/stores/progressStore";
 
-describe('progressStore', () => {
+describe("progressStore", () => {
   beforeEach(() => useProgressStore.getState().reset());
 
-  it('phase_start transitions status to running', () => {
+  it("phase_start transitions status to running", () => {
     useProgressStore.getState().applyMessage({
-      type: 'phase_start', phase: 1, phase_name: 'Ingestion', total_phases: 5,
-      timestamp: '2026-03-19T14:22:00Z',
+      type: "phase_start",
+      phase: 1,
+      phase_name: "Ingestion",
+      total_phases: 5,
+      timestamp: "2026-03-19T14:22:00Z",
     });
     const s = useProgressStore.getState();
-    expect(s.status).toBe('running');
+    expect(s.status).toBe("running");
     expect(s.phase).toBe(1);
     expect(s.progressPct).toBe(0);
   });
 
-  it('review_required transitions status to review_pending', () => {
+  it("review_required transitions status to review_pending", () => {
     useProgressStore.getState().applyMessage({
-      type: 'review_required', batch_id: 'bat_1', review_items: 5,
-      reasons: { low_confidence: 3 }, review_url: '/review/bat_1',
+      type: "review_required",
+      batch_id: "bat_1",
+      review_items: 5,
+      reasons: { low_confidence: 3 },
+      review_url: "/review/bat_1",
     });
-    expect(useProgressStore.getState().status).toBe('review_pending');
+    expect(useProgressStore.getState().status).toBe("review_pending");
     expect(useProgressStore.getState().reviewCount).toBe(5);
   });
 });
@@ -1395,6 +1451,7 @@ describe('progressStore', () => {
 ### Integration tests (Vitest + MSW)
 
 What to test:
+
 - Full page renders: data fetched, transformed, displayed correctly
 - TanStack Query cache invalidation after mutations (submit review → results refetch)
 - Filter/sort param changes produce correct query keys and API calls
@@ -1426,6 +1483,7 @@ it('displays summary counts from API response', async () => {
 Runs against the live Docker backend (`make dev`). Uses the same user journey defined in [THE FULL USER JOURNEY](#the-full-user-journey-end-to-end).
 
 Test files:
+
 ```
 tests/e2e/
 ├── upload.spec.ts         # upload file → verify format detection + redirect

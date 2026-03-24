@@ -1,5 +1,5 @@
 """
-API-level Pydantic models for DYNAFIT routes.
+API-level Pydantic models for REQFIT routes.
 
 Kept separate from platform/schemas/ — these are the HTTP contract shapes,
 not the internal pipeline schemas.

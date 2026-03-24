@@ -1,5 +1,5 @@
 """
-Lite API contract tests for DYNAFIT routes.
+Lite API contract tests for REQFIT routes.
 
 Mark: unit — no Docker required.
 All external deps (Celery, disk format detection) are handled via:
@@ -53,7 +53,8 @@ def _make_journey(atom_id: str = "REQ-AP-001") -> dict:
         },
         "retrieve": {
             "capabilities": [
-                {"name": "AP Invoice matching", "score": 0.91, "navigation": "AP > Invoices"}
+                {"name": "AP Invoice matching", "score": 0.91,
+                    "navigation": "AP > Invoices"}
             ],
             "ms_learn_refs": [{"title": "Invoice matching", "score": 0.85}],
             "prior_fitments": [{"wave": 2, "country": "UK", "classification": "FIT"}],
@@ -168,7 +169,8 @@ async def test_health(client: AsyncClient) -> None:
 async def test_upload_pdf_success(client: AsyncClient) -> None:
     resp = await client.post(
         f"{BASE}/upload",
-        files={"file": ("reqs.pdf", io.BytesIO(b"%PDF-1.4 fake"), "application/pdf")},
+        files={"file": ("reqs.pdf", io.BytesIO(
+            b"%PDF-1.4 fake"), "application/pdf")},
         data={"product": "d365_fo", "country": "DE", "wave": "3"},
     )
     assert resp.status_code == 201
@@ -184,7 +186,8 @@ async def test_upload_invalid_format_rejected(client: AsyncClient) -> None:
     # Valid ZIP magic but not a DOCX → UnsupportedFormatError → 422
     resp = await client.post(
         f"{BASE}/upload",
-        files={"file": ("data.zip", io.BytesIO(b"PK\x03\x04garbage"), "application/zip")},
+        files={"file": ("data.zip", io.BytesIO(
+            b"PK\x03\x04garbage"), "application/zip")},
         data={"product": "d365_fo", "country": "DE", "wave": "3"},
     )
     assert resp.status_code == 422

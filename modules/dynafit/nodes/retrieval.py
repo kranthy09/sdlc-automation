@@ -1,5 +1,5 @@
 """
-Retrieval node — Phase 2 of the DYNAFIT pipeline (Session D).
+Retrieval node — Phase 2 of the REQFIT pipeline (Session D).
 
 Responsibility: list[ValidatedAtom] → list[AssembledContext]
 
@@ -109,7 +109,8 @@ def _parallel_retrieve(
             dense_vec,
             10,
         )
-        history_task = postgres.get_similar_fitments(dense_vec, 5, module=module)
+        history_task = postgres.get_similar_fitments(
+            dense_vec, 5, module=module)
 
         raw = await asyncio.gather(
             asyncio.wait_for(caps_task, timeout=_SOURCE_TIMEOUT),
@@ -121,7 +122,8 @@ def _parallel_retrieve(
 
         caps: list[SearchHit] = caps_res if isinstance(caps_res, list) else []
         docs: list[SearchHit] = docs_res if isinstance(docs_res, list) else []
-        priors: list[PriorFitment] = hist_res if isinstance(hist_res, list) else []
+        priors: list[PriorFitment] = hist_res if isinstance(
+            hist_res, list) else []
 
         if not isinstance(caps_res, list):
             log.warning("retrieval_source_a_failed", error=str(caps_res))
@@ -132,7 +134,8 @@ def _parallel_retrieve(
 
         return caps, docs, priors
 
-    result: tuple[list[SearchHit], list[SearchHit], list[PriorFitment]] = run_async(_gather())
+    result: tuple[list[SearchHit], list[SearchHit],
+                  list[PriorFitment]] = run_async(_gather())
     return result
 
 
@@ -258,7 +261,8 @@ def _hit_to_ranked_capability(
         module=p.get("module", ""),
         version=p.get("version", ""),
         tags=p.get("tags", []),
-        composite_score=composite_score,  # preliminary; Phase 3 overwrites with 5-signal score
+        # preliminary; Phase 3 overwrites with 5-signal score
+        composite_score=composite_score,
         rerank_score=rerank_score,
         bm25_score=0.0,
     )
@@ -346,10 +350,12 @@ class RetrievalNode:
             phase=2,
             phase_name="RAG",
         )
-        log.info("phase_start", phase=2, batch_id=batch_id, atom_count=len(atoms))
+        log.info("phase_start", phase=2,
+                 batch_id=batch_id, atom_count=len(atoms))
 
         if not atoms:
-            log.info("phase_complete", phase=2, batch_id=batch_id, contexts=0, latency_ms=0)
+            log.info("phase_complete", phase=2,
+                     batch_id=batch_id, contexts=0, latency_ms=0)
             publish_phase_complete(
                 batch_id,
                 phase=2,
@@ -433,7 +439,8 @@ class RetrievalNode:
 
         completed_retrievals = 0
         with ThreadPoolExecutor(max_workers=min(n, _RETRIEVAL_CONCURRENCY)) as pool:
-            future_to_idx = {pool.submit(_retrieve_indexed, i): i for i in range(n)}
+            future_to_idx = {pool.submit(
+                _retrieve_indexed, i): i for i in range(n)}
             for future in as_completed(future_to_idx):
                 idx, ctx = future.result()
                 contexts[idx] = ctx
@@ -447,7 +454,8 @@ class RetrievalNode:
                 )
 
         # as_completed fills slots; cast away None (all slots filled above)
-        final_contexts: list[AssembledContext] = contexts  # type: ignore[assignment]
+        # type: ignore[assignment]
+        final_contexts: list[AssembledContext] = contexts
 
         # Warn if Qdrant returned nothing — capability KB likely not seeded
         if all(not ctx.capabilities for ctx in final_contexts):
@@ -489,7 +497,8 @@ class RetrievalNode:
         # ── Step 1: Query builder ────────────────────────────────────────────
         top_k = 30 if atom.content_type == "image_derived" else 20
         sparse_indices, sparse_values = bm25.encode(atom.requirement_text)
-        module_filter: dict[str, str | int | float | bool] = {"module": atom.module}
+        module_filter: dict[str, str | int |
+                            float | bool] = {"module": atom.module}
 
         # ── Step 2: Parallel retrieval ───────────────────────────────────────
         caps_hits, doc_hits, prior_fitments = _parallel_retrieve(
@@ -519,7 +528,8 @@ class RetrievalNode:
         candidates = [
             (h.id, h.payload.get("description", "") or h.payload.get("feature", "")) for h in fused
         ]
-        reranked = reranker.rerank(atom.requirement_text, candidates, top_k=len(candidates))
+        reranked = reranker.rerank(
+            atom.requirement_text, candidates, top_k=len(candidates))
 
         k = _adaptive_k(reranked)
         top = reranked[:k]
@@ -538,7 +548,8 @@ class RetrievalNode:
             if hit is None:
                 continue
             calibrated = min(1.0, r.score * quality_mult * history_boost)
-            ranked_capabilities.append(_hit_to_ranked_capability(hit, calibrated, r.score))
+            ranked_capabilities.append(
+                _hit_to_ranked_capability(hit, calibrated, r.score))
 
         # Token budget: trim capability descriptions to avoid overflow in Phase 4 prompts
         ranked_capabilities = _trim_descriptions(
@@ -546,7 +557,8 @@ class RetrievalNode:
         )
 
         # ── Step 5: Context assembly ─────────────────────────────────────────
-        prov_input = atom.atom_id + "".join(c.capability_id for c in ranked_capabilities)
+        prov_input = atom.atom_id + \
+            "".join(c.capability_id for c in ranked_capabilities)
         provenance_hash = hashlib.sha256(prov_input.encode()).hexdigest()
 
         return AssembledContext(

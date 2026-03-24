@@ -1,1 +1,1 @@
-# modules/dynafit/nodes — phase node functions for the DYNAFIT pipeline
+# modules/dynafit/nodes — phase node functions for the REQFIT pipeline

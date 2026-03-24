@@ -1,7 +1,7 @@
-# DYNAFIT — Complete Implementation Specification
+# REQFIT — Complete Implementation Specification
 
 > **Module 1 brain.** Every algorithm, threshold, prompt, decision tree, and data transformation
-> for the DYNAFIT module. Nodes call `platform/` utilities — they do not own infrastructure.
+> for the REQFIT module. Nodes call `platform/` utilities — they do not own infrastructure.
 > Every LLM call goes through `platform/llm/client.py`. Every vector search goes through
 > `platform/retrieval/vector_store.py`. Nodes never instantiate Anthropic or Qdrant clients directly.
 
@@ -17,6 +17,7 @@
 #### Sub-step A: Format Detector
 
 **Algorithm:** Three-layer cascade:
+
 1. Read first 8 bytes → match magic bytes (`%PDF` = PDF, `PK\x03\x04` = ZIP-based container)
 2. If ZIP: inspect `[Content_Types].xml` inside archive → if contains `word/document.xml` = DOCX; otherwise `UnsupportedFormatError`
 3. If neither: `python-magic` MIME detection → TXT/plain text
@@ -26,6 +27,7 @@
 **Output:** `DetectedFormat(format: PDF|DOCX|TXT, confidence: float, encoding: str)`
 
 **Routing decision:**
+
 - PDF/DOCX/TXT → Docling extraction → Table Extractor AND Prose Splitter AND Image Extractor (Sub-steps B, C, E run in parallel)
 - If Docling fails → Unstructured.partition_auto() as fallback; image extraction still runs on raw bytes
 
@@ -34,6 +36,7 @@
 #### Sub-step B: Table Extractor
 
 **For PDF/DOCX/TXT (Docling path):**
+
 1. `DocumentConverter().convert(file_path)` → `DoclingDocument`
 2. Iterate `doc.tables` → each table has rows/cols extracted with layout awareness
 3. Docling preserves table structure even in complex PDFs (spanning cells, nested tables)
@@ -43,6 +46,7 @@
 #### Sub-step C: Prose Splitter
 
 **Algorithm:**
+
 1. Extract text from PDF/DOCX preserving heading hierarchy (Docling provides `doc.text_content` with section labels)
 2. Split at paragraph boundaries (double newline)
 3. Group short paragraphs under same heading into single chunk (max 1500 chars)
@@ -53,10 +57,24 @@
 #### Sub-step D: Header Map
 
 **The multilingual synonym dictionary (YAML):**
+
 ```yaml
 requirement_text:
-  en: ["Business Requirement", "Req Description", "Requirement", "User Need", "Functional Requirement", "Req Desc"]
-  de: ["Geschäftsanforderung", "Anforderungsbeschreibung", "Fachliche Anforderung"]
+  en:
+    [
+      "Business Requirement",
+      "Req Description",
+      "Requirement",
+      "User Need",
+      "Functional Requirement",
+      "Req Desc",
+    ]
+  de:
+    [
+      "Geschäftsanforderung",
+      "Anforderungsbeschreibung",
+      "Fachliche Anforderung",
+    ]
   fr: ["Exigence métier", "Description exigence"]
 req_id:
   en: ["Requirement ID", "Req ID", "Req No", "Req #", "ID", "Ref"]
@@ -74,6 +92,7 @@ country:
 ```
 
 **Three-tier resolution:**
+
 1. **Exact match:** Lowercase + strip whitespace → lookup in synonym dict → confidence 1.0
 2. **Fuzzy match:** `rapidfuzz.fuzz.token_set_ratio(header, synonym)` > 70 → confidence 0.7-0.9
 3. **Positional fallback:** Column 1 with short values (<30 chars avg) → likely req_id. Longest-text column → likely requirement_text. Confidence 0.4-0.6, flag for human review.
@@ -97,6 +116,7 @@ Uses `platform/llm/client.py` for vision calls (Claude is multimodal — same LL
 **Pipeline:**
 
 **Step 1 — Image Extraction**
+
 ```python
 # Docling path (primary)
 images: list[Picture] = doc.pictures          # Docling Picture: bbox, page_no, image bytes
@@ -105,6 +125,7 @@ images = [el for el in elements if el.category == ElementType.IMAGE]
 ```
 
 **Step 2 — Size Filter (before any LLM call)**
+
 - Skip if image width < 80px OR height < 80px → likely icon/logo/bullet decoration
 - Skip if image area < 6400px² → too small to carry semantic content
 - Cost guard: this filter eliminates ~60% of embedded images before spending LLM tokens
@@ -141,6 +162,7 @@ CHART           → Tesseract OCR for axis labels + Claude vision (Haiku) for na
 ```
 
 **Architecture Diagram prompt (Jinja2):**
+
 ```jinja2
 {# platform/parsers/prompts/image_architecture.j2 #}
 This image is an architecture or process diagram from an ERP requirements document
@@ -166,6 +188,7 @@ Respond with JSON:
 ```
 
 **Screenshot prompt (Jinja2):**
+
 ```jinja2
 {# platform/parsers/prompts/image_screenshot.j2 #}
 This image is a screenshot of an existing system in an ERP requirements document
@@ -208,6 +231,7 @@ class ImageDerivedChunk(PlatformModel):
 They are tagged `content_type="image_derived"` on the resulting RequirementAtoms.
 
 **Cost summary for a typical 50-req document with 10 embedded images:**
+
 - ~6 survive size filter
 - ~6 classifier calls (Haiku): ~$0.0006
 - ~3 non-decorative: 2 Sonnet vision calls + 1 Haiku OCR+narrative: ~$0.006
@@ -226,6 +250,7 @@ They are tagged `content_type="image_derived"` on the resulting RequirementAtoms
 **Expected output:** 3 separate atoms.
 
 **LLM prompt template (Jinja2):**
+
 ```
 You are a D365 F&O requirements analyst. Split the following text into atomic business requirements.
 Each atom must describe exactly ONE functional need.
@@ -253,6 +278,7 @@ Respond with JSON:
 #### Sub-step B: Intent Classifier
 
 **LLM classifies each atom:**
+
 - `FUNCTIONAL` — describes what the system does (goes to fitment)
 - `NON_FUNCTIONAL` — performance, security, UX (tagged but skipped in fitment)
 - `INTEGRATION` — connects D365 to external system (goes to fitment with integration flag)
@@ -263,6 +289,7 @@ Respond with JSON:
 #### Sub-step C: Module Tagger
 
 **Tags each atom to a D365 module using constrained vocabulary:**
+
 ```python
 D365_MODULES = [
     "AccountsPayable", "AccountsReceivable", "GeneralLedger",
@@ -284,6 +311,7 @@ D365_MODULES = [
 #### Sub-step A: Deduplicator
 
 **Algorithm:**
+
 1. Embed all atoms using `bge-small-en-v1.5` (batch encode)
 2. For <5K atoms: FAISS `IndexFlatIP` → pairwise cosine similarity
 3. For >10K atoms: `datasketch.MinHashLSH` with 128 permutations, threshold 0.8
@@ -297,17 +325,31 @@ D365_MODULES = [
 **Problem:** "three-way matching" vs "3-way match" vs "invoice matching triple" must normalize to canonical term.
 
 **Implementation:**
+
 1. Load `en_core_web_lg` + custom `EntityRuler` with 400-entry D365 synonym YAML
 2. For each atom, run NER pipeline
 3. Replace recognized entities with canonical forms
 4. Add `entity_hints: list[str]` to atom (used by Phase 2 retrieval)
 
 **Synonym YAML excerpt:**
+
 ```yaml
-- pattern: [{"LOWER": "three"}, {"LOWER": "-"}, {"LOWER": "way"}, {"LOWER": "matching"}]
+- pattern:
+    [
+      { "LOWER": "three" },
+      { "LOWER": "-" },
+      { "LOWER": "way" },
+      { "LOWER": "matching" },
+    ]
   canonical: "three-way matching"
   d365_entity: "VendInvoiceMatchingPolicy"
-- pattern: [{"LOWER": "3"}, {"LOWER": "-"}, {"LOWER": "way"}, {"LOWER": "match"}]
+- pattern:
+    [
+      { "LOWER": "3" },
+      { "LOWER": "-" },
+      { "LOWER": "way" },
+      { "LOWER": "match" },
+    ]
   canonical: "three-way matching"
   d365_entity: "VendInvoiceMatchingPolicy"
 ```
@@ -315,6 +357,7 @@ D365_MODULES = [
 #### Sub-step C: Priority Enricher
 
 **If priority not explicitly provided in source doc:**
+
 1. Keyword scan: "must" / "shall" / "required" → MUST. "should" / "expected" → SHOULD. "could" / "nice to have" → COULD.
 2. If no keywords: default to SHOULD (safest middle ground)
 3. Tag with MoSCoW classification
@@ -322,6 +365,7 @@ D365_MODULES = [
 #### Sub-step D: Cross-Wave Linker
 
 **For multi-wave implementations:**
+
 1. Query `historical_fitments` table in PostgreSQL: `WHERE module = atom.module AND cosine_similarity(embedding, atom_embedding) > 0.85`
 2. Attach matching prior decisions: `{wave: 1, country: "FR", classification: "FIT", consultant: "J. Martin"}`
 3. This data flows through to Phase 4 as strong classification evidence
@@ -333,6 +377,7 @@ D365_MODULES = [
 #### Sub-step A: Schema Validator (cross-field rules)
 
 NOT re-checking JSON. Checking CONSISTENCY:
+
 - If `module = "AccountsPayable"` but `entity_hints` contain "customer" or "sales order" → flag mismatch
 - If `country = "DE"` but requirement mentions "GAAP" (US standard) → flag (should be HGB/IFRS)
 - All `atom_id` values must be unique within batch
@@ -341,6 +386,7 @@ NOT re-checking JSON. Checking CONSISTENCY:
 #### Sub-step B: Ambiguity Detector
 
 **Algorithm using spaCy dependency parse:**
+
 1. Count concrete D365 nouns (from entity dictionary): "invoice", "purchase order", "vendor", "journal"
 2. Count specific verbs: "create", "validate", "approve", "calculate", "post"
 3. Count vague terms: "handle", "manage", "process", "deal with", "support"
@@ -355,12 +401,15 @@ NOT re-checking JSON. Checking CONSISTENCY:
 #### Sub-step C: Completeness Score
 
 **Per-module parameter templates:** Each D365 module has expected parameters for a complete requirement.
+
 ```yaml
 AccountsPayable:
-  expected_params: ["matching_type", "tolerance", "approval_workflow", "payment_terms"]
+  expected_params:
+    ["matching_type", "tolerance", "approval_workflow", "payment_terms"]
   min_params_for_complete: 2
 GeneralLedger:
-  expected_params: ["posting_type", "dimension_set", "period_control", "currency"]
+  expected_params:
+    ["posting_type", "dimension_set", "period_control", "currency"]
   min_params_for_complete: 2
 ```
 
@@ -395,6 +444,7 @@ There are three sources. They are built at different times by different processe
 **How it is built:** `make seed-kb PRODUCT=d365_fo` runs `infra/scripts/seed_knowledge_base.py`.
 
 **Collection configuration:**
+
 ```python
 # Qdrant hybrid collection — HNSW for dense + sparse vectors for BM25
 VectorsConfig = {
@@ -404,6 +454,7 @@ VectorsConfig = {
 ```
 
 **Record format (capabilities.jsonl — one JSON object per line):**
+
 ```jsonl
 {
   "id": "cap-ap-0001",
@@ -412,7 +463,12 @@ VectorsConfig = {
   "description": "Validates purchase order, product receipt, and vendor invoice quantities and amounts before payment approval. Configurable matching policies per vendor group.",
   "navigation": "AP > Setup > Accounts payable parameters > Invoice matching",
   "version": "10.0.38",
-  "tags": ["invoice", "matching", "purchase order", "validation"]
+  "tags": [
+    "invoice",
+    "matching",
+    "purchase order",
+    "validation"
+  ]
 }
 ```
 
@@ -421,21 +477,23 @@ VectorsConfig = {
 **Sparse vector:** Computed from `tags` + `feature` + tokenized `description` keywords via BM25 term weighting.
 
 **Refresh policy:** Rebuild the collection when any of the following change:
+
 - capabilities.jsonl updated (new D365 version, new features discovered)
 - Embedding model changed
 - Collection schema changed
-Run `make seed-kb PRODUCT=d365_fo` — it calls `recreate_collection` (full rebuild, not upsert). Downtime: ~2 min. Schedule during off-hours for production.
+  Run `make seed-kb PRODUCT=d365_fo` — it calls `recreate_collection` (full rebuild, not upsert). Downtime: ~2 min. Schedule during off-hours for production.
 
 ---
 
 #### Source B — MS Learn Corpus (Qdrant collection: `d365_fo_docs`)
 
-**What it is:** Chunked documentation from Microsoft Learn for D365 F&O. Provides richer prose context than the capability KB — explains *how* features work, not just *that* they exist.
+**What it is:** Chunked documentation from Microsoft Learn for D365 F&O. Provides richer prose context than the capability KB — explains _how_ features work, not just _that_ they exist.
 **Who builds it:** Core platform team runs a one-time crawl + periodic refresh.
 **When it is built:** Week 5 alongside Source A. Refreshed monthly (new D365 release notes, updated docs).
 **How it is built:** `make seed-corpus PRODUCT=d365_fo` runs `infra/scripts/seed_ms_learn_corpus.py`.
 
 **Crawl strategy:**
+
 ```python
 # infra/scripts/seed_ms_learn_corpus.py
 # MS Learn D365 F&O docs are publicly accessible. Crawl the sitemap.
@@ -448,12 +506,14 @@ BASE_URLS = [
 ```
 
 **Chunking strategy:**
+
 1. Strip navigation chrome, keep article body only
 2. Split at `<h2>` and `<h3>` boundaries — preserve section context
 3. Chunk sections at 512 tokens (bge-small context window), 50-token overlap
 4. Each chunk carries: `{url, title, section_heading, text, d365_module_hint, crawled_at}`
 
 **Collection configuration:**
+
 ```python
 # Dense-only collection — documentation is prose, sparse BM25 less useful
 VectorParams(size=384, distance=Distance.COSINE)
@@ -469,12 +529,13 @@ VectorParams(size=384, distance=Distance.COSINE)
 
 #### Source C — Historical Fitments (PostgreSQL table: `d365_fo_fitments`)
 
-**What it is:** The output of every completed DYNAFIT wave, stored with embeddings for similarity retrieval. This is the only source that improves over time. Wave 1 classification of a German AP requirement informs Wave 3 classification of a similar French AP requirement.
-**Who builds it:** The DYNAFIT pipeline writes to it automatically. No manual curation needed.
+**What it is:** The output of every completed REQFIT wave, stored with embeddings for similarity retrieval. This is the only source that improves over time. Wave 1 classification of a German AP requirement informs Wave 3 classification of a similar French AP requirement.
+**Who builds it:** The REQFIT pipeline writes to it automatically. No manual curation needed.
 **When it is built:** Starts empty. First records written after Wave 1 Phase 5 completes. Grows with each wave.
 **How it is built:** Phase 5 (Validation node) writes every `ValidatedFitmentResult` back to this table WITH its embedding.
 
 **Table schema with pgvector:**
+
 ```sql
 CREATE TABLE d365_fo_fitments (
     id              SERIAL PRIMARY KEY,
@@ -500,6 +561,7 @@ CREATE INDEX idx_fitments_embedding ON d365_fo_fitments
 ```
 
 **Write-back (Phase 5 node, after human review completes):**
+
 ```python
 # In phase5_validation_node, after ValidatedFitmentBatch is finalized:
 for result in validated_batch.results:
@@ -523,6 +585,7 @@ for result in validated_batch.results:
 **Critical rule:** Consultant overrides (where `reviewer_override=True`) are HIGHEST QUALITY training signal. When Phase 2 retrieves a prior fitment where a consultant overrode GAP → FIT, Phase 4 must treat that as strong evidence, not just a data point. The `reviewer_override` flag passes through to the Phase 4 prompt as explicit signal.
 
 **Query in Phase 2:**
+
 ```sql
 -- Find similar prior decisions for the same module
 SELECT atom_id, classification, confidence, rationale, wave, country, reviewer_override
@@ -539,11 +602,11 @@ LIMIT 5;
 
 **Summary — build timeline:**
 
-| Source | Built when | By whom | Refresh |
-|--------|-----------|---------|---------|
-| A: Capability KB | Week 5 (once, then on D365 release) | D365 product team authors JSONL | Per D365 update |
-| B: MS Learn Corpus | Week 5 (then monthly cron) | Core platform team runs crawl | Monthly delta upsert |
-| C: Historical Fitments | Auto-populated after Wave 1 Phase 5 | DYNAFIT pipeline writes on completion | Continuous (every wave) |
+| Source                 | Built when                          | By whom                              | Refresh                 |
+| ---------------------- | ----------------------------------- | ------------------------------------ | ----------------------- |
+| A: Capability KB       | Week 5 (once, then on D365 release) | D365 product team authors JSONL      | Per D365 update         |
+| B: MS Learn Corpus     | Week 5 (then monthly cron)          | Core platform team runs crawl        | Monthly delta upsert    |
+| C: Historical Fitments | Auto-populated after Wave 1 Phase 5 | REQFIT pipeline writes on completion | Continuous (every wave) |
 
 **Before Wave 1, only Source A and B exist.** The system still works because Sources A and B provide capability matching. Source C starts contributing from Wave 2 onwards, improving confidence scores and reducing DEEP_REASON routing (fewer 3-LLM-call scenarios because history provides strong priors).
 
@@ -558,6 +621,7 @@ LIMIT 5;
 3. **Metadata filter:** `{"module": atom.module, "version": {"$gte": "10.0.30"}}` → Qdrant payload filter
 
 **Special handling for image-derived atoms (`content_type == "image_derived"`):**
+
 - Augment dense vector query: if `atom.image_components` is non-empty, also encode each component name separately and average the embeddings → enriched query vector that includes system names from the diagram
 - Augment metadata filter: if `atom.d365_modules_implied` is non-empty, OR it with `atom.module` in the Qdrant filter — diagrams often imply multiple modules (e.g., an AP-to-GL integration diagram implies both AccountsPayable AND GeneralLedger)
 - Reduce top-K threshold: retrieve top-30 capabilities instead of top-20 (image extraction is noisier, so cast wider net before reranking)
@@ -569,6 +633,7 @@ LIMIT 5;
 **Implementation:** `asyncio.gather()` with per-source timeout (5s)
 
 **Source A — D365 Capability KB (Qdrant):**
+
 - Collection: `d365_fo_capabilities`
 - Search: Qdrant hybrid (HNSW dense + BM25 sparse, built-in RRF)
 - Filter: `module` payload filter from query
@@ -576,12 +641,14 @@ LIMIT 5;
 - Latency: ~50ms
 
 **Source B — MS Learn Corpus (Qdrant):**
+
 - Collection: `d365_fo_docs`
 - Search: Dense only (documentation is prose, BM25 less useful)
 - Returns: top-10 `DocChunkHit(url, title, excerpt, score)`
 - Latency: ~40ms
 
 **Source C — Historical Fitments (PostgreSQL + pgvector):**
+
 - Table: `d365_fo_fitments`
 - Query: `SELECT * WHERE module = $1 AND 1 - (embedding <=> $2) > 0.85 ORDER BY reviewer_override DESC, wave DESC LIMIT 5`
 - Consultant overrides ranked first — they are the highest-quality signal (human correction)
@@ -595,11 +662,13 @@ LIMIT 5;
 ### Step 3: RRF Fusion
 
 **Critical design: NOT equal fusion across all sources.**
+
 - Capabilities (Source A) are PRIMARY evidence
 - Docs (Source B) provide a BOOST signal to capabilities
 - Historical fitments (Source C) BYPASS fusion entirely — passed through as structured evidence
 
 **Algorithm:**
+
 1. Rank capabilities by their Qdrant hybrid score → assign ordinal ranks 1..20
 2. Compute RRF: `score(cap) = 1 / (60 + rank_dense) + 1 / (60 + rank_sparse)` where k=60
 3. **Doc boost:** For each capability, if ANY doc chunk from Source B mentions the same D365 feature name (exact string match on `feature` field) → add +0.05 to RRF score. This is a FIXED boost, not proportional.
@@ -616,6 +685,7 @@ LIMIT 5;
 **Problem:** Bi-encoder (bge-small) optimizes for retrieval speed, not pairwise accuracy. Cross-encoder reads (atom, capability) jointly.
 
 **Implementation:**
+
 1. Model: `Xenova/ms-marco-MiniLM-L-6-v2`
 2. Construct 20 pairs: `[(atom.text, cap.description) for cap in fused_capabilities]`
 3. Forward pass: `model.predict(pairs)` → raw logits
@@ -665,6 +735,7 @@ class AssembledContext(PlatformModel):
 ### Step 2: Composite Scorer + Router
 
 **Weighted composite:**
+
 ```python
 weights = {
     "embedding_cosine": 0.25,
@@ -679,6 +750,7 @@ composite = sum(signals[k] * weights[k] for k in weights)
 **Anomaly detection:** If cosine > 0.85 but entity_overlap < 0.2 → FLAG (semantic match without entity agreement = suspicious, could be false positive like "three-way handshake" vs "three-way matching").
 
 **Routing thresholds (from ProductConfig):**
+
 - `composite > 0.85 AND historical_alignment > 0` → **FAST_TRACK** (Phase 4 gets single LLM call)
 - `0.60 ≤ composite ≤ 0.85` → **DEEP_REASON** (Phase 4 gets 3 LLM calls + majority vote)
 - `composite < 0.60` → **GAP_CONFIRM** (Phase 4 gets 1 LLM call confirming GAP)
@@ -686,6 +758,7 @@ composite = sum(signals[k] * weights[k] for k in weights)
 ### Step 3: Candidate Ranker
 
 **Re-ranks the capabilities using composite scores:**
+
 1. Sort by composite descending
 2. Drop duplicates (subsume overlapping capabilities where one is a superset of another)
 3. Historical boost: if a capability was confirmed FIT in a prior wave, boost score by 0.1
@@ -704,6 +777,7 @@ If zero capabilities retrieved (Phase 2 returned empty) → auto-classify as GAP
 ### Step 1: Prompt Builder
 
 **Jinja2 template (classification_prompt.j2):**
+
 ```
 <system>
 You are a senior D365 F&O functional consultant performing fitment analysis.
@@ -767,22 +841,26 @@ Respond in XML:
 **Based on route from Phase 3:**
 
 **FAST_TRACK route (composite > 0.85 + history):**
+
 - Single LLM call with temperature=0.0
 - Expected: FIT or PARTIAL_FIT
 
 **DEEP_REASON route (0.60-0.85):**
+
 - THREE LLM calls with temperature=0.3
 - Majority vote on classification
 - If all three disagree → flag for human review in Phase 5
 - Rationale: take from the majority vote's response
 
 **GAP_CONFIRM route (< 0.60):**
+
 - Single LLM call with temperature=0.0
 - Expected: GAP (but LLM can override if it finds evidence we missed)
 
 ### Step 3: Response Parser
 
 **Three-layer defense:**
+
 1. **XML parse:** `xml.etree.ElementTree.fromstring(response)` → extract fields
 2. **Regex fallback:** If XML is malformed, regex patterns: `<verdict>(.*?)</verdict>`
 3. **Pydantic validation:** Parsed fields → `ClassificationResult` model. If validation fails → retry LLM call (max 2 retries)
@@ -790,6 +868,7 @@ Respond in XML:
 ### Step 4: Sanity Check
 
 **Score-vs-classification consistency:**
+
 - If classification = FIT but top-1 composite < 0.50 → OVERRIDE to PARTIAL_FIT, add caveat
 - If classification = GAP but top-1 composite > 0.85 → FLAG for human review (possible LLM error)
 - If confidence < review_confidence_threshold (0.60) → force human review regardless
@@ -805,11 +884,13 @@ Respond in XML:
 ### Step 1: Consistency Check
 
 #### A: Dependency Graph (NetworkX)
+
 1. Build `DiGraph` where nodes = atoms, edges = dependency keywords ("depends on", "requires", "extends")
 2. Detect conflicts: if atom A = FIT but atom B (which A depends on) = GAP → flag A for review
 3. Detect cycles: `nx.find_cycle(G)` → fatal if found (circular dependencies in requirements)
 
 #### B: Country Overrides (YAML rules)
+
 ```yaml
 DE:
   overrides:
@@ -821,6 +902,7 @@ DE:
 ```
 
 #### C: Confidence Filter
+
 - All atoms with confidence < `review_confidence_threshold` (0.60) → forced human review
 - All atoms where Phase 3 raised anomaly flags → forced human review
 
@@ -839,6 +921,7 @@ DE:
 ### Step 3: Report Generator
 
 #### A: CSV Report Builder (stdlib csv)
+
 ```
 Output: reports/{batch_id}/
   fdd_fits_{batch_id}.csv   — FIT + PARTIAL_FIT results
@@ -848,19 +931,23 @@ Fitment Matrix columns:
   Req ID | Requirement | Module | Country | Wave | Classification | Confidence |
   D365 Capability | Rationale | Config Steps | Gap Description | Reviewer | Override
 ```
+
 - One row per validated atom
 - PII placeholders restored to originals via `restore_pii()` before writing (G2 de-redaction)
 - `batch.report_path` stores the report directory path — no ZIP bundling
 - Audit trail written as a second CSV: full provenance per classification
 
 #### B: Audit Trail (PostgreSQL)
+
 Each classification record includes:
+
 - All 5 phase outputs (ingestion → retrieval → matching → classification → validation)
 - LLM call IDs (LangSmith trace URLs)
 - Consultant override history
 - Timestamp + batch correlation ID
 
 #### C: Metrics (Prometheus)
+
 - `dynafit_atoms_total{classification, module, country}` — counter
 - `dynafit_phase_latency_seconds{phase}` — histogram
 - `dynafit_llm_calls_total{model, phase}` — counter
@@ -892,21 +979,21 @@ class RequirementState(TypedDict):
 
 def build_dynafit_graph() -> StateGraph:
     graph = StateGraph(RequirementState)
-    
+
     graph.add_node("ingest", phase1_ingestion_node)
     graph.add_node("retrieve", phase2_retrieval_node)
     graph.add_node("match", phase3_matching_node)
     graph.add_node("classify", phase4_classification_node)
     graph.add_node("validate", phase5_validation_node)
-    
+
     graph.add_edge("ingest", "retrieve")
     graph.add_edge("retrieve", "match")
     graph.add_edge("match", "classify")
     graph.add_edge("classify", "validate")
     graph.add_edge("validate", END)
-    
+
     graph.set_entry_point("ingest")
-    
+
     return graph.compile(
         checkpointer=PostgresSaver.from_conn_string(POSTGRES_URL),
         interrupt_before=["validate"],  # HITL pause point
@@ -921,6 +1008,7 @@ def build_dynafit_graph() -> StateGraph:
 ## OBSERVABILITY SETUP
 
 **structlog configuration:**
+
 ```python
 structlog.configure(
     processors=[
@@ -934,6 +1022,7 @@ structlog.configure(
 ```
 
 **Every phase boundary logs:**
+
 ```python
 log.info("phase_complete",
     phase="ingestion",
@@ -972,22 +1061,22 @@ log.info("phase_complete",
 
 Key architecture decisions with alternatives considered.
 
-| Decision | Choice | Alternative considered | Why |
-|----------|--------|----------------------|-----|
-| Orchestration | LangGraph | CrewAI, AutoGen | Graph-based state machine maps 1:1 to 5-phase pipeline. Built-in checkpointing, HITL, streaming. |
-| Document parsing | Docling (primary) + Unstructured (fallback) | PyPDF, Marker, MinerU | MIT license, best table extraction (TableFormer), native LangChain integration, fully local |
-| Input formats | PDF, DOCX, TXT only | xlsx, csv, pptx, email | Docling handles tables natively. Excel-specific parsing was complexity with no coverage gain. |
-| Vector DB | Qdrant (primary) + pgvector (historical) | Milvus, Chroma, FAISS-only | Qdrant: payload filtering before similarity, real-time updates. pgvector: historical fitments in same PostgreSQL as audit trail |
-| Embedding model | bge-small-en-v1.5 (local) | OpenAI ada-002, Cohere | Runs fully local (air-gapped enterprise), strong MTEB retrieval, 384-dim, small footprint |
-| Embedding library | fastembed (ONNX Runtime) | sentence-transformers (PyTorch) | ~50 MB vs ~500 MB. Same model weights (ONNX-converted). Cuts Docker build from 400s to ~60s |
-| LLM | Configurable (Claude / GPT-4 / Llama 3) | Single-vendor lock-in | LangChain abstraction lets you swap. Classification accuracy tested per model |
-| Reranker | fastembed TextCrossEncoder (ms-marco-MiniLM) | sentence-transformers CrossEncoder | ONNX backend, same accuracy, no PyTorch dependency |
-| Sparse retrieval | rank_bm25 + Qdrant sparse vectors | Elasticsearch | BM25 catches exact D365 terminology ("VendInvoiceInfoTable") that embeddings miss. No extra infra |
-| Report output | Python stdlib csv | openpyxl Excel | CSV is universally importable. Zero extra dependency |
-| Deduplication | FAISS (transient) + datasketch (at-scale) | All-pairs brute force | FAISS for <5K reqs (fast cosine). datasketch MinHash LSH for >10K (sub-linear time) |
-| NLP | spaCy (en_core_web_lg) | NLTK, Stanza | Fastest production NLP. EntityRuler for synonym dictionary. Enterprise-proven |
-| Fuzzy matching | RapidFuzz | python-Levenshtein | 10x faster Levenshtein + token sort ratio for header mapping |
-| Task queue | Celery + Redis | Dramatiq, ARQ | Battle-tested distributed processing. Redis as broker + result backend |
+| Decision          | Choice                                       | Alternative considered             | Why                                                                                                                             |
+| ----------------- | -------------------------------------------- | ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| Orchestration     | LangGraph                                    | CrewAI, AutoGen                    | Graph-based state machine maps 1:1 to 5-phase pipeline. Built-in checkpointing, HITL, streaming.                                |
+| Document parsing  | Docling (primary) + Unstructured (fallback)  | PyPDF, Marker, MinerU              | MIT license, best table extraction (TableFormer), native LangChain integration, fully local                                     |
+| Input formats     | PDF, DOCX, TXT only                          | xlsx, csv, pptx, email             | Docling handles tables natively. Excel-specific parsing was complexity with no coverage gain.                                   |
+| Vector DB         | Qdrant (primary) + pgvector (historical)     | Milvus, Chroma, FAISS-only         | Qdrant: payload filtering before similarity, real-time updates. pgvector: historical fitments in same PostgreSQL as audit trail |
+| Embedding model   | bge-small-en-v1.5 (local)                    | OpenAI ada-002, Cohere             | Runs fully local (air-gapped enterprise), strong MTEB retrieval, 384-dim, small footprint                                       |
+| Embedding library | fastembed (ONNX Runtime)                     | sentence-transformers (PyTorch)    | ~50 MB vs ~500 MB. Same model weights (ONNX-converted). Cuts Docker build from 400s to ~60s                                     |
+| LLM               | Configurable (Claude / GPT-4 / Llama 3)      | Single-vendor lock-in              | LangChain abstraction lets you swap. Classification accuracy tested per model                                                   |
+| Reranker          | fastembed TextCrossEncoder (ms-marco-MiniLM) | sentence-transformers CrossEncoder | ONNX backend, same accuracy, no PyTorch dependency                                                                              |
+| Sparse retrieval  | rank_bm25 + Qdrant sparse vectors            | Elasticsearch                      | BM25 catches exact D365 terminology ("VendInvoiceInfoTable") that embeddings miss. No extra infra                               |
+| Report output     | Python stdlib csv                            | openpyxl Excel                     | CSV is universally importable. Zero extra dependency                                                                            |
+| Deduplication     | FAISS (transient) + datasketch (at-scale)    | All-pairs brute force              | FAISS for <5K reqs (fast cosine). datasketch MinHash LSH for >10K (sub-linear time)                                             |
+| NLP               | spaCy (en_core_web_lg)                       | NLTK, Stanza                       | Fastest production NLP. EntityRuler for synonym dictionary. Enterprise-proven                                                   |
+| Fuzzy matching    | RapidFuzz                                    | python-Levenshtein                 | 10x faster Levenshtein + token sort ratio for header mapping                                                                    |
+| Task queue        | Celery + Redis                               | Dramatiq, ARQ                      | Battle-tested distributed processing. Redis as broker + result backend                                                          |
 
 ### Handler Registry Pattern
 

@@ -326,7 +326,9 @@ def build_hitl_data(
         )
     }
 
+    # TODO: store in psql, get the data using orms.
     review_item_dicts: list[dict[str, Any]] = []
+    # TODO: store in psql, get the data using orms.
     reasons_counts: dict[str, int] = {}
     for c in review_needed:
         mr = match_by_atom.get(c.atom_id)
@@ -347,6 +349,7 @@ def build_hitl_data(
             reasons_counts.get(reason, 0) + 1
         )
 
+        # TODO: better response constructions
         review_item_dicts.append(
             {
                 "atom_id": c.atom_id,
@@ -394,7 +397,7 @@ def build_hitl_data(
                 },
             }
         )
-
+    # TODO: store in psql, get the required data by using orms
     auto_approved_dicts: list[dict[str, Any]] = []
     fit_count = partial_fit_count = gap_count = 0
 
@@ -416,6 +419,7 @@ def build_hitl_data(
             if mr and mr.ranked_capabilities
             else ""
         )
+        # TODO: improve better json creations
         auto_approved_dicts.append(
             {
                 "atom_id": c.atom_id,
@@ -440,6 +444,7 @@ def build_hitl_data(
 
     journey_data = build_journey_data(final_state)
 
+    # Better response data, with data models or classes.
     return {
         "review_items": review_item_dicts,
         "auto_approved": auto_approved_dicts,

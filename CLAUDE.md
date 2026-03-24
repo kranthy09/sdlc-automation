@@ -1,7 +1,7 @@
 # Enterprise AI Platform
 
 Enterprise AI agent platform for automating ERP implementation workflows.
-**DYNAFIT** (D365 F&O Requirement Fitment Engine) is Module 1.
+**REQFIT** (D365 F&O Requirement Fitment Engine) is Module 1.
 
 ---
 
@@ -27,14 +27,14 @@ CI rejects violations on every PR via `make validate-contracts`.
 
 ## Where to Find What
 
-| Need | Read |
-|------|------|
-| Architecture, import rules, code standards, lessons | `docs/specs/rules.md` |
-| DYNAFIT 5-phase algorithms, prompts, library rationale | `docs/specs/dynafit.md` |
-| API endpoints, WebSocket, DB schema, React UI | `docs/specs/api.md` |
-| MVP guardrails + post-MVP roadmap | `docs/specs/guardrails.md` |
-| Testing philosophy, golden fixtures, build order | `docs/specs/tdd.md` |
-| Architecture diagrams (SVG) | `docs/architecturalflows/` |
+| Need                                                  | Read                       |
+| ----------------------------------------------------- | -------------------------- |
+| Architecture, import rules, code standards, lessons   | `docs/specs/rules.md`      |
+| REQFIT 5-phase algorithms, prompts, library rationale | `docs/specs/dynafit.md`    |
+| API endpoints, WebSocket, DB schema, React UI         | `docs/specs/api.md`        |
+| MVP guardrails + post-MVP roadmap                     | `docs/specs/guardrails.md` |
+| Testing philosophy, golden fixtures, build order      | `docs/specs/tdd.md`        |
+| Architecture diagrams (SVG)                           | `docs/architecturalflows/` |
 
 **Read `docs/specs/rules.md` before writing any code in this project.**
 
@@ -47,7 +47,7 @@ All layers complete:
 - Layer 0: Scaffold + CI
 - Layer 1: Platform Schemas (`platform/schemas/`)
 - Layer 2: Platform Utilities (13 components + guardrail utilities)
-- Layer 3: DYNAFIT Module (5 phases in `modules/dynafit/`)
+- Layer 3: REQFIT Module (5 phases in `modules/dynafit/`)
 - Layer 4: API + Workers + UI (FastAPI, Celery, WebSocket, React)
 
 **One component per session.** Confirm exactly what is being built before writing code.

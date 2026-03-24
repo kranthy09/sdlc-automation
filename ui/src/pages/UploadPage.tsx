@@ -43,7 +43,7 @@ export default function UploadPage() {
     <div>
       <PageHeader
         title="Upload Requirements"
-        description="Upload a DOCX, PDF, XLSX, or TXT file to begin DYNAFIT analysis"
+        description="Upload a DOCX, PDF, XLSX, or TXT file to begin REQFIT analysis"
       />
       <div className="px-6 pb-6 space-y-4 max-w-2xl">
         {/* Drop zone */}

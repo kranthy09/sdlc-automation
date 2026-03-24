@@ -1,5 +1,5 @@
 """
-Tests for the DYNAFIT retrieval node — Phase 2 (Session D).
+Tests for the REQFIT retrieval node — Phase 2 (Session D).
 
 All tests are @pytest.mark.unit — they use mocked infrastructure and do not
 require Docker services.  The file lives in tests/integration/ because it
@@ -253,8 +253,10 @@ def test_doc_boost_not_applied_when_no_feature_match() -> None:
     from modules.dynafit.nodes.retrieval import _rrf_boost
     from platform.retrieval.vector_store import SearchHit
 
-    cap = SearchHit(id="cap-001", score=0.80, payload={"feature": "Invoice approval"})
-    doc = SearchHit(id="doc-001", score=0.75, payload={"title": "Cash management overview"})
+    cap = SearchHit(id="cap-001", score=0.80,
+                    payload={"feature": "Invoice approval"})
+    doc = SearchHit(id="doc-001", score=0.75,
+                    payload={"title": "Cash management overview"})
 
     boosted = _rrf_boost([cap], [doc])
 
@@ -267,8 +269,10 @@ def test_doc_boost_capped_at_one() -> None:
     from modules.dynafit.nodes.retrieval import _rrf_boost
     from platform.retrieval.vector_store import SearchHit
 
-    cap = SearchHit(id="cap-001", score=0.98, payload={"feature": "Vendor invoice matching"})
-    doc = SearchHit(id="doc-001", score=0.90, payload={"title": "Vendor invoice matching"})
+    cap = SearchHit(id="cap-001", score=0.98,
+                    payload={"feature": "Vendor invoice matching"})
+    doc = SearchHit(id="doc-001", score=0.90,
+                    payload={"title": "Vendor invoice matching"})
 
     boosted = _rrf_boost([cap], [doc])
 
@@ -338,7 +342,8 @@ def test_history_boost_raises_calibrated_score() -> None:
     """With prior history, calibrated score = CE × quality_mult × 1.1 (capped at 1.0)."""
     ce_score = 0.80  # reranker returns this
     prior = make_prior_fitment()
-    node = _build_node(cap_hits=[_make_cap_hit()], prior_fitments=[prior], reranker_score=ce_score)
+    node = _build_node(cap_hits=[_make_cap_hit()], prior_fitments=[
+                       prior], reranker_score=ce_score)
     state = _make_state(atoms=[make_validated_atom()])
 
     result = node(state)
@@ -346,7 +351,8 @@ def test_history_boost_raises_calibrated_score() -> None:
 
     assert len(ctx.capabilities) >= 1
     # With history the calibrated score should be >= the raw CE score (boost applied)
-    assert ctx.capabilities[0].composite_score >= ce_score * 0.70  # at least LOW quality_mult
+    # at least LOW quality_mult
+    assert ctx.capabilities[0].composite_score >= ce_score * 0.70
 
 
 # ---------------------------------------------------------------------------
@@ -373,7 +379,8 @@ def test_image_derived_atom_requests_top_k_30() -> None:
     captured_top_k: list[int] = []
     original_retrieve = node._retrieve_one  # noqa: SLF001
 
-    def _patched(a, dv, bm25, store, reranker, postgres, config):  # type: ignore[no-untyped-def]
+    # type: ignore[no-untyped-def]
+    def _patched(a, dv, bm25, store, reranker, postgres, config):
         top_k = 30 if a.content_type == "image_derived" else 20
         captured_top_k.append(top_k)
         return original_retrieve(a, dv, bm25, store, reranker, postgres, config)
@@ -413,7 +420,8 @@ def test_adaptive_k_returns_all_when_fewer_than_gap_lo() -> None:
     from modules.dynafit.nodes.retrieval import _adaptive_k
     from platform.retrieval.reranker import RerankResult
 
-    results = [RerankResult(id="a", score=0.9), RerankResult(id="b", score=0.8)]
+    results = [RerankResult(id="a", score=0.9),
+               RerankResult(id="b", score=0.8)]
     assert _adaptive_k(results) == 2
 
 
@@ -464,7 +472,8 @@ def test_multiple_atoms_produce_one_context_each() -> None:
     contexts = result["retrieval_contexts"]
 
     assert len(contexts) == 3
-    assert [c.atom.atom_id for c in contexts] == ["REQ-001", "REQ-002", "REQ-003"]
+    assert [c.atom.atom_id for c in contexts] == [
+        "REQ-001", "REQ-002", "REQ-003"]
 
 
 # ---------------------------------------------------------------------------

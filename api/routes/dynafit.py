@@ -1,13 +1,13 @@
 """
-DYNAFIT API routes — thin dispatchers only.
+REQFIT API routes — thin dispatchers only.
 
 Rule: zero business logic here. Routes validate input, persist minimal
 metadata, dispatch to Celery, and return. All computation lives in
 modules/dynafit/ and is invoked by api/workers/tasks.py (Session B).
 
 State store:
-  _uploads / _batches are in-memory dicts for MVP.
-  Session B replaces these with PostgreSQL queries.
+  Uploads are persisted to PostgreSQL via platform/storage/postgres.py.
+  _batches is an in-memory dict for MVP (replaced by PostgreSQL later).
 """
 
 from __future__ import annotations
@@ -21,7 +21,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 import structlog
-from fastapi import APIRouter, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, JSONResponse, Response
 
 from api.models import (
@@ -47,6 +47,7 @@ from api.models import (
 )
 from platform.parsers.format_detector import detect_format
 from platform.schemas.errors import UnsupportedFormatError
+from platform.storage.postgres import PostgresStore, UploadRecord
 from platform.storage.redis_pub import RedisPubSub
 
 log = structlog.get_logger(__name__)
@@ -57,9 +58,13 @@ public_router = APIRouter(tags=["public"])
 UPLOAD_DIR = Path(os.getenv("UPLOAD_DIR", "/tmp/dynafit_uploads"))
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 
-# In-memory state — replaced by PostgreSQL in Session B
-_uploads: dict[str, dict[str, Any]] = {}
+# In-memory state — _batches replaced by PostgreSQL in a later session.
 _batches: dict[str, dict[str, Any]] = {}
+
+
+def _get_pg(request: Request) -> PostgresStore:
+    """Retrieve the PostgresStore attached at startup."""
+    return request.app.state.pg_store  # type: ignore[no-any-return]
 
 
 def _dispatch(batch_id: str, upload_id: str, config: dict[str, Any]) -> None:
@@ -67,6 +72,7 @@ def _dispatch(batch_id: str, upload_id: str, config: dict[str, Any]) -> None:
     worker (separate process) can reconstruct RawUpload without shared
     memory."""
     try:
+        # TODO: always import at the top.
         from api.workers.tasks import run_dynafit_pipeline  # noqa: PLC0415
 
         # Phase state is durably persisted to the batch Redis hash by
@@ -82,7 +88,8 @@ def _dispatch_resume(batch_id: str, overrides: dict[str, Any]) -> None:
     try:
         from api.workers.tasks import run_dynafit_pipeline  # noqa: PLC0415
 
-        run_dynafit_pipeline.delay(batch_id, "", {"_resume": True, "_overrides": overrides})
+        run_dynafit_pipeline.delay(
+            batch_id, "", {"_resume": True, "_overrides": overrides})
     except ImportError:
         log.warning("celery_not_ready_resume", batch_id=batch_id)
 
@@ -97,7 +104,8 @@ def _build_overrides(review_items: list[dict[str, Any]]) -> dict[str, Any]:
     overrides: dict[str, Any] = {}
     for item in review_items:
         atom_id = item["atom_id"]
-        is_override = item.get("decision") == "OVERRIDE" and item.get("override_classification")
+        is_override = item.get("decision") == "OVERRIDE" and item.get(
+            "override_classification")
         if is_override:
             reviewer = item.get("reviewer", "unknown")
             overrides[atom_id] = {
@@ -256,60 +264,72 @@ def _now() -> str:
 
 @router.post("/upload", status_code=201)
 async def upload_file(
+    request: Request,
     file: UploadFile,
     product: str = Form(...),
     country: str = Form(...),
     wave: int = Form(...),
 ) -> UploadResponse:
-    upload_id = f"upl_{uuid.uuid4().hex[:8]}"
-    dest_dir = UPLOAD_DIR / upload_id
-    dest_dir.mkdir(parents=True, exist_ok=True)
+    pg = _get_pg(request)
 
     filename = file.filename or "upload"
     content = await file.read()
     content_hash = hashlib.sha256(content).hexdigest()
 
-    # Return existing upload if identical content was already uploaded
-    for existing in _uploads.values():
-        if existing.get("content_hash") == content_hash:
-            log.info(
-                "upload_duplicate_detected",
-                existing_id=existing["upload_id"],
-            )
-            return UploadResponse(
-                upload_id=existing["upload_id"],
-                filename=existing["filename"],
-                size_bytes=existing["size_bytes"],
-                detected_format=existing["detected_format"].upper(),
-                status="already_exists",
-            )
+    # O(1) duplicate check via indexed content_hash column
+    existing = await pg.get_upload_by_hash(content_hash)
+    if existing is not None:
+        log.info(
+            "upload_duplicate_detected",
+            existing_id=existing.upload_id,
+        )
+        return UploadResponse(
+            upload_id=existing.upload_id,
+            filename=existing.filename,
+            size_bytes=existing.size_bytes,
+            detected_format=existing.detected_format.upper(),
+            status="already_exists",
+        )
 
+    upload_id = f"upl_{uuid.uuid4().hex[:8]}"
+    dest_dir = UPLOAD_DIR / upload_id
+    dest_dir.mkdir(parents=True, exist_ok=True)
     dest_path = dest_dir / filename
     dest_path.write_bytes(content)
 
     try:
-        result = detect_format(dest_path)
+        fmt_result = detect_format(dest_path)
     except UnsupportedFormatError as exc:
         dest_path.unlink(missing_ok=True)
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+        raise HTTPException(
+            status_code=422, detail=str(exc),
+        ) from exc
 
-    _uploads[upload_id] = {
-        "upload_id": upload_id,
-        "filename": filename,
-        "size_bytes": len(content),
-        "detected_format": result.format,
-        "path": str(dest_path),
-        "product": product,
-        "country": country,
-        "wave": wave,
-        "content_hash": content_hash,
-    }
-    log.info("upload_complete", upload_id=upload_id, fmt=result.format)
+    record = UploadRecord(
+        upload_id=upload_id,
+        product_id=product,
+        filename=filename,
+        wave=wave,
+        country=country,
+        status="pending",
+        created_at=datetime.now(UTC),
+        content_hash=content_hash,
+        path=str(dest_path),
+        size_bytes=len(content),
+        detected_format=fmt_result.format,
+    )
+    await pg.save_upload(record)
+
+    log.info(
+        "upload_complete",
+        upload_id=upload_id,
+        fmt=fmt_result.format,
+    )
     return UploadResponse(
         upload_id=upload_id,
         filename=filename,
         size_bytes=len(content),
-        detected_format=result.format.upper(),
+        detected_format=fmt_result.format.upper(),
     )
 
 
@@ -319,52 +339,79 @@ async def upload_file(
 
 
 @router.post("/d365_fo/dynafit/run", status_code=202)
-def run_pipeline(body: RunRequest) -> RunResponse:
-    if body.upload_id not in _uploads:
+async def run_pipeline(
+    request: Request,
+    body: RunRequest,
+) -> RunResponse:
+    pg = _get_pg(request)
+
+    up = await pg.get_upload_by_id(body.upload_id)
+    if up is None:
         raise HTTPException(
             status_code=404,
             detail=f"upload_id {body.upload_id!r} not found",
         )
 
-    up = _uploads[body.upload_id]
     batch_id = f"bat_{uuid.uuid4().hex[:8]}"
+    created_at = _now()
+
     _batches[batch_id] = {
         "batch_id": batch_id,
         "upload_id": body.upload_id,
-        "upload_filename": up["filename"],
-        "product": up["product"],
-        "country": up["country"],
-        "wave": up["wave"],
+        "upload_filename": up.filename,
+        "product": up.product_id,
+        "country": up.country,
+        "wave": up.wave,
         "status": "queued",
         "results": [],
         "review_items": [],
-        "summary": {"total": 0, "fit": 0, "partial_fit": 0, "gap": 0},
+        "summary": {
+            "total": 0, "fit": 0,
+            "partial_fit": 0, "gap": 0,
+        },
         "report_path": None,
-        "created_at": _now(),
+        "created_at": created_at,
         "completed_at": None,
     }
-    # Persist initial batch state to Redis (crash-resilient)
+
     RedisPubSub.write_batch_state_sync(
         REDIS_URL,
         batch_id,
         status="queued",
         upload_id=body.upload_id,
-        upload_filename=up["filename"],
-        product=up["product"],
-        country=up["country"],
-        wave=str(up["wave"]),
-        created_at=_batches[batch_id]["created_at"],
+        upload_filename=up.filename,
+        product=up.product_id,
+        country=up.country,
+        wave=str(up.wave),
+        created_at=created_at,
     )
 
-    # Register in sorted set index for dashboard listing
     RedisPubSub.register_batch_sync(
-        REDIS_URL, batch_id, _batches[batch_id]["created_at"],
+        REDIS_URL, batch_id, created_at,
     )
 
     # Pass upload metadata so the Celery worker can read the file
-    full_config = {**body.config_overrides, "_upload_meta": dict(up)}
+    upload_meta = {
+        "upload_id": up.upload_id,
+        "filename": up.filename,
+        "path": up.path,
+        "product": up.product_id,
+        "country": up.country,
+        "wave": up.wave,
+        "size_bytes": up.size_bytes,
+        "detected_format": up.detected_format,
+        "content_hash": up.content_hash,
+    }
+    full_config = {
+        **body.config_overrides,
+        "_upload_meta": upload_meta,
+    }
     _dispatch(batch_id, body.upload_id, full_config)
-    log.info("pipeline_queued", batch_id=batch_id, upload_id=body.upload_id)
+    log.info(
+        "pipeline_queued",
+        batch_id=batch_id,
+        upload_id=body.upload_id,
+    )
     return RunResponse(
         batch_id=batch_id,
         upload_id=body.upload_id,
@@ -384,7 +431,8 @@ def _load_all_batches() -> list[dict[str, Any]]:
     (which recovers from Redis hash on cache miss). Merges any in-memory-only
     batches not yet indexed (e.g. just created, index write pending).
     """
-    indexed_ids = RedisPubSub.list_batches_sync(REDIS_URL, offset=0, limit=1000)
+    indexed_ids = RedisPubSub.list_batches_sync(
+        REDIS_URL, offset=0, limit=1000)
     batches_by_id: dict[str, dict[str, Any]] = {}
 
     for bid in indexed_ids:
@@ -420,7 +468,7 @@ def list_batches(
 
     total = len(batches)
     start = (page - 1) * limit
-    page_batches = batches[start : start + limit]
+    page_batches = batches[start: start + limit]
     return BatchHistoryResponse(
         batches=[
             BatchRecord(
@@ -447,7 +495,8 @@ def list_batches(
 # ---------------------------------------------------------------------------
 
 
-_SORTABLE_FIELDS = frozenset({"confidence", "module", "classification", "atom_id"})
+_SORTABLE_FIELDS = frozenset(
+    {"confidence", "module", "classification", "atom_id"})
 
 
 @router.get("/d365_fo/dynafit/{batch_id}/results")
@@ -483,7 +532,7 @@ def get_results(
     }
 
     start = (page - 1) * limit
-    page_results = results[start : start + limit]
+    page_results = results[start: start + limit]
 
     result_items: list[ResultItem] = []
     for r in page_results:
@@ -623,7 +672,8 @@ def get_review_queue(batch_id: str) -> ReviewQueueResponse:
         batch_id=batch_id,
         status=batch["status"],
         items=[ReviewItem(**i) for i in batch["review_items"]],
-        auto_approved=[AutoApprovedItem(**i) for i in batch.get("auto_approved", [])],
+        auto_approved=[AutoApprovedItem(**i)
+                       for i in batch.get("auto_approved", [])],
     )
 
 
@@ -690,7 +740,8 @@ def submit_review(
     )
 
     final = (
-        body.override_classification if body.decision == "OVERRIDE" else item["ai_classification"]
+        body.override_classification if body.decision == "OVERRIDE" else item[
+            "ai_classification"]
     )
     remaining = sum(1 for i in items if not i.get("reviewed", False))
 
@@ -799,7 +850,7 @@ def list_all_batches(
         batches = [b for b in batches if b["status"] == status]
     total = len(batches)
     start = (page - 1) * limit
-    page_batches = batches[start : start + limit]
+    page_batches = batches[start: start + limit]
     return BatchHistoryResponse(
         batches=[
             BatchRecord(

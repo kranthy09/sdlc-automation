@@ -1,5 +1,5 @@
 """
-DynafitState — LangGraph state accumulator for the DYNAFIT 5-phase pipeline.
+DynafitState — LangGraph state accumulator for the REQFIT 5-phase pipeline.
 
 The state TypedDict is the single data contract between all phase nodes.
 Each node:
@@ -38,21 +38,26 @@ class DynafitState(TypedDict):
     errors: Annotated[list[str], operator.add]  # start as [] at entry
 
     # --- Phase 1 — Ingestion -------------------------------------------------
-    atoms: NotRequired[list[RequirementAtom]]  # raw atoms after parse + atomize
+    # raw atoms after parse + atomize
+    atoms: NotRequired[list[RequirementAtom]]
     validated_atoms: NotRequired[list[ValidatedAtom]]  # passed quality gates
     flagged_atoms: NotRequired[list[FlaggedAtom]]  # need human review
 
     # --- Phase 2 — Knowledge Retrieval (RAG) ---------------------------------
-    retrieval_contexts: NotRequired[list[AssembledContext]]  # one per validated atom
+    # one per validated atom
+    retrieval_contexts: NotRequired[list[AssembledContext]]
 
     # --- Phase 3 — Semantic Matching -----------------------------------------
-    match_results: NotRequired[list[MatchResult]]  # composite scores + route tier
+    # composite scores + route tier
+    match_results: NotRequired[list[MatchResult]]
 
     # --- Phase 4 — LLM Classification ----------------------------------------
-    classifications: NotRequired[list[ClassificationResult]]  # FIT/PARTIAL_FIT/GAP
+    # FIT/PARTIAL_FIT/GAP
+    classifications: NotRequired[list[ClassificationResult]]
 
     # --- Phase 5 — Validation + HITL -----------------------------------------
-    validated_batch: NotRequired[ValidatedFitmentBatch | None]  # final deliverable
+    # final deliverable
+    validated_batch: NotRequired[ValidatedFitmentBatch | None]
 
     # --- Per-run ProductConfig overrides (from API config_overrides) ----------
     # Recognized keys: fit_confidence_threshold, review_confidence_threshold,
@@ -60,4 +65,5 @@ class DynafitState(TypedDict):
     config_overrides: NotRequired[dict[str, Any]]
 
     # --- PII redaction (G2 → Phase 1, restored in Phase 5 CSV output) ---------
-    pii_redaction_map: NotRequired[dict[str, str]]  # placeholder → original text
+    # placeholder → original text
+    pii_redaction_map: NotRequired[dict[str, str]]

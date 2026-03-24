@@ -1,6 +1,6 @@
 # SDLC Automation Platform — Codebase Review & Optimization Plan
 
-> **Purpose:** Deep technical review of the sdlc-automation codebase, identifying business logic bottlenecks, UX gaps in the consultant flow through Module 1 (DYNAFIT), and providing a step-by-step implementation plan executable via Claude Code.
+> **Purpose:** Deep technical review of the sdlc-automation codebase, identifying business logic bottlenecks, UX gaps in the consultant flow through Module 1 (REQFIT), and providing a step-by-step implementation plan executable via Claude Code.
 
 ---
 
@@ -44,7 +44,10 @@ The `classification` WebSocket messages ARE emitted per-atom during Phase 4 (the
 
 ```typescript
 // ui/src/components/results/ResultRow.tsx
-const { data: journeyData } = useJourney(batchId, open ? result.atom_id : undefined)
+const { data: journeyData } = useJourney(
+  batchId,
+  open ? result.atom_id : undefined,
+);
 ```
 
 For a consultant reviewing 50 results and expanding 20 of them, that's 20 sequential HTTP round-trips to FastAPI, each of which calls `_sync_from_redis()` → parses the full journey JSON → filters to one atom.
@@ -121,6 +124,7 @@ Each step below is a self-contained change. Steps are ordered by impact (highest
 **Goal:** Let the frontend recover full progress state on page refresh.
 
 **Files to modify:**
+
 - `api/routes/dynafit.py` — add endpoint
 - `platform/storage/redis_pub.py` — add reader method
 - `ui/src/api/dynafit.ts` — add API function
@@ -163,33 +167,35 @@ def read_phase_state_sync(redis_url: str, batch_id: str) -> dict[str, Any]:
 ```
 
 Instruction: Donot call raw backend calls, create a modular way by using a api client pattern.
+
 ```typescript
 // ui/src/api/dynafit.ts — ADD function
 export async function getProgress(batchId: string): Promise<ProgressSnapshot> {
-  const { data } = await api.get(`/api/v1/d365_fo/dynafit/${batchId}/progress`)
-  return data
+  const { data } = await api.get(`/api/v1/d365_fo/dynafit/${batchId}/progress`);
+  return data;
 }
 ```
 
 ```typescript
 // ui/src/hooks/useProgress.ts — ADD initial state hydration
 // Inside useEffect, BEFORE opening WebSocket:
-const snapshot = await getProgress(batchId)
+const snapshot = await getProgress(batchId);
 if (snapshot.phases) {
   // Replay phase states into Zustand store
   Object.entries(snapshot.phases).forEach(([phase, data]) => {
-    if (data.status === 'complete') {
-      applyMessage({ type: 'phase_complete', phase: Number(phase), ...data })
-    } else if (data.status === 'active') {
-      applyMessage({ type: 'phase_start', phase: Number(phase), ...data })
+    if (data.status === "complete") {
+      applyMessage({ type: "phase_complete", phase: Number(phase), ...data });
+    } else if (data.status === "active") {
+      applyMessage({ type: "phase_start", phase: Number(phase), ...data });
     }
-  })
+  });
 }
 ```
 
 **Why this matters:** Fixes Finding 6. Consultant can refresh the page at any time without losing progress history.
 
 **Claude Code prompt:**
+
 ```
 Read api/routes/dynafit.py, platform/storage/redis_pub.py, ui/src/hooks/useProgress.ts, and ui/src/api/dynafit.ts.
 Add a GET /d365_fo/dynafit/{batch_id}/progress endpoint that reads phase state from the Redis hash batch:{batch_id} key "phases".
@@ -206,6 +212,7 @@ Follow the existing patterns: routes do zero logic, platform provides the Redis 
 **Goal:** When each classification completes in Phase 4, immediately make its full journey data available — not just the summary line.
 
 **Files to modify:**
+
 - `modules/dynafit/nodes/classification.py` — emit richer classification event
 - `platform/schemas/events.py` — extend ClassificationEvent with journey snippet
 - `ui/src/stores/progressStore.ts` — accumulate classification + journey pairs
@@ -264,6 +271,7 @@ def build_single_atom_journey(
 **Why this matters:** Fixes Finding 1. The consultant sees each classification appear in the live table AND can immediately expand it to see the full 5-phase evidence trail — D365 capabilities matched, confidence signals, rationale — without waiting for the entire batch to complete.
 
 **Claude Code prompt:**
+
 ```
 Read modules/dynafit/presentation.py (specifically build_journey_data), modules/dynafit/nodes/classification.py, and platform/schemas/events.py.
 
@@ -284,6 +292,7 @@ Preserve all existing behavior — this is additive only.
 **Goal:** Eliminate the N+1 journey loading problem on the Results page.
 
 **Files to modify:**
+
 - `api/routes/dynafit.py` — modify `get_results` to include journey inline
 - `ui/src/hooks/useResults.ts` — use inline journey data
 - `ui/src/components/results/ResultRow.tsx` — use pre-loaded journey
@@ -321,17 +330,21 @@ def get_results(batch_id: str, ...) -> ResultsResponse:
 ```typescript
 // ui/src/components/results/ResultRow.tsx — use pre-loaded journey
 // BEFORE:
-const { data: journeyData } = useJourney(batchId, open ? result.atom_id : undefined)
-const atomJourney = journeyData?.atoms?.[0] ?? null
+const { data: journeyData } = useJourney(
+  batchId,
+  open ? result.atom_id : undefined,
+);
+const atomJourney = journeyData?.atoms?.[0] ?? null;
 
 // AFTER:
-const atomJourney = result.journey ?? null
+const atomJourney = result.journey ?? null;
 // No network call needed — journey data comes with the results response
 ```
 
 **Why this matters:** Fixes Finding 2. Eliminates 20+ sequential HTTP calls when a consultant reviews results. The results page loads once with all journey data included. For the 25-item default page size, this saves ~2s of round-trip latency.
 
 **Claude Code prompt:**
+
 ```
 Read api/routes/dynafit.py (get_results endpoint), ui/src/hooks/useResults.ts, ui/src/hooks/useJourney.ts, ui/src/components/results/ResultRow.tsx, and ui/src/api/types.ts.
 
@@ -350,6 +363,7 @@ This eliminates the N+1 query pattern on the results page.
 **Goal:** Prevent batch data loss on FastAPI restart.
 
 **Files to modify:**
+
 - `api/routes/dynafit.py` — write to Redis on batch creation
 
 **Changes:**
@@ -389,6 +403,7 @@ def _get_batch(batch_id: str) -> dict[str, Any]:
 **Why this matters:** Fixes Finding 3. Consultants won't get 404 errors if the API server restarts during a pipeline run.
 
 **Claude Code prompt:**
+
 ```
 Read api/routes/dynafit.py (specifically start_analysis and _get_batch functions).
 
@@ -406,6 +421,7 @@ This makes the batch store crash-resilient without requiring a full database mig
 **Goal:** Reduce Phase 4 latency from ~120s to ~15s.
 
 **Files to modify:**
+
 - `modules/dynafit/nodes/classification.py` — batch LLM calls with asyncio.gather
 
 **Changes:**
@@ -447,6 +463,7 @@ for i in range(0, len(atoms), BATCH_SIZE):
 **Important constraint:** The platform's `LLMClient` handles retry logic and rate limiting. The parallelism must respect the `platform/llm/client.py` retry boundaries. Use a semaphore to cap concurrent requests at the LLM provider's rate limit.
 
 **Claude Code prompt:**
+
 ```
 Read modules/dynafit/nodes/classification.py and platform/llm/client.py.
 
@@ -469,6 +486,7 @@ The per-atom emission order may differ from input order — this is acceptable b
 **Goal:** Reduce Redis memory usage and deserialization overhead by ~40%.
 
 **Files to modify:**
+
 - `modules/dynafit/presentation.py` — merge results into journey structure
 - `api/workers/tasks.py` — write single unified blob
 - `api/routes/dynafit.py` — derive results from journey
@@ -520,6 +538,7 @@ def _derive_results_from_journey(journey: list[dict]) -> list[dict]:
 **Why this matters:** Fixes Finding 5. For 50 atoms, saves ~100KB of redundant Redis storage and eliminates double-deserialization on every API call.
 
 **Claude Code prompt:**
+
 ```
 Read api/workers/tasks.py (_finish_complete and _finish_hitl), api/routes/dynafit.py (get_results, _sync_from_redis), and modules/dynafit/presentation.py (build_complete_data).
 
@@ -538,6 +557,7 @@ This is a storage optimization that reduces Redis memory and serialization overh
 **Goal:** The `/batches` endpoint currently has no efficient way to list all batches. As the system scales, scanning Redis becomes slow.
 
 **Files to modify:**
+
 - `platform/storage/redis_pub.py` — maintain a sorted set index
 - `api/workers/tasks.py` — register batch in index on creation
 - `api/routes/dynafit.py` — query index for batch list
@@ -573,6 +593,7 @@ def list_batches_sync(redis_url: str, offset: int = 0, limit: int = 20) -> list[
 ```
 
 **Claude Code prompt:**
+
 ```
 Read platform/storage/redis_pub.py, api/routes/dynafit.py (get_batches endpoint), and api/workers/tasks.py.
 
@@ -586,15 +607,15 @@ Read platform/storage/redis_pub.py, api/routes/dynafit.py (get_batches endpoint)
 
 ## Part 5: Implementation Priority Matrix
 
-| Step | Impact | Effort | Dependencies | Priority |
-|------|--------|--------|-------------|----------|
-| Step 1: Progress REST endpoint | HIGH — fixes page refresh | LOW — 1 endpoint + hook change | None | P0 |
-| Step 2: Stream per-atom journey | CRITICAL — core UX improvement | MEDIUM — refactor presentation + WS | None | P0 |
-| Step 3: Batch-load journey data | HIGH — eliminates N+1 | LOW — response shape change | Step 2 (shared journey format) | P1 |
-| Step 4: Persist batch to Redis | HIGH — crash resilience | LOW — 2 lines + recovery logic | None | P0 |
-| Step 5: Parallelize Phase 4 | CRITICAL — 10x latency reduction | MEDIUM — async refactor | None | P0 |
-| Step 6: Deduplicate Redis data | MEDIUM — storage optimization | LOW — read-derive pattern | Step 3 (same data model) | P2 |
-| Step 7: Batch index for dashboard | MEDIUM — scales batch listing | LOW — sorted set + query | Step 4 (Redis persistence) | P2 |
+| Step                              | Impact                           | Effort                              | Dependencies                   | Priority |
+| --------------------------------- | -------------------------------- | ----------------------------------- | ------------------------------ | -------- |
+| Step 1: Progress REST endpoint    | HIGH — fixes page refresh        | LOW — 1 endpoint + hook change      | None                           | P0       |
+| Step 2: Stream per-atom journey   | CRITICAL — core UX improvement   | MEDIUM — refactor presentation + WS | None                           | P0       |
+| Step 3: Batch-load journey data   | HIGH — eliminates N+1            | LOW — response shape change         | Step 2 (shared journey format) | P1       |
+| Step 4: Persist batch to Redis    | HIGH — crash resilience          | LOW — 2 lines + recovery logic      | None                           | P0       |
+| Step 5: Parallelize Phase 4       | CRITICAL — 10x latency reduction | MEDIUM — async refactor             | None                           | P0       |
+| Step 6: Deduplicate Redis data    | MEDIUM — storage optimization    | LOW — read-derive pattern           | Step 3 (same data model)       | P2       |
+| Step 7: Batch index for dashboard | MEDIUM — scales batch listing    | LOW — sorted set + query            | Step 4 (Redis persistence)     | P2       |
 
 **Recommended execution order:** Step 4 → Step 1 → Step 5 → Step 2 → Step 3 → Step 6 → Step 7
 
@@ -609,8 +630,8 @@ Read platform/storage/redis_pub.py, api/routes/dynafit.py (get_batches endpoint)
 // Currently, every filter change immediately triggers a new API call.
 // Add 300ms debounce to prevent rapid-fire requests during typing.
 
-const debouncedQuery = useDebouncedValue(query, 300)
-const { data, isLoading } = useResults(batchId!, debouncedQuery)
+const debouncedQuery = useDebouncedValue(query, 300);
+const { data, isLoading } = useResults(batchId!, debouncedQuery);
 ```
 
 **Claude Code prompt:** `Read ui/src/pages/ResultsPage.tsx. Add a useDebouncedValue hook (or use lodash.debounce) to debounce the query state by 300ms before passing it to useResults. This prevents API calls on every keystroke when filtering.`
@@ -621,15 +642,15 @@ const { data, isLoading } = useResults(batchId!, debouncedQuery)
 // ui/src/hooks/useResults.ts
 // Add prefetch for page+1 when the current page loads
 
-const queryClient = useQueryClient()
+const queryClient = useQueryClient();
 useEffect(() => {
   if (data && query.page < totalPages) {
     queryClient.prefetchQuery({
-      queryKey: ['results', batchId, { ...query, page: query.page + 1 }],
+      queryKey: ["results", batchId, { ...query, page: query.page + 1 }],
       queryFn: () => getResults(batchId, { ...query, page: query.page + 1 }),
-    })
+    });
   }
-}, [data, query.page])
+}, [data, query.page]);
 ```
 
 **Claude Code prompt:** `Read ui/src/hooks/useResults.ts. Add result prefetching: when the current page loads successfully, use queryClient.prefetchQuery to pre-load the next page. This eliminates the loading delay when the consultant clicks "Next".`
@@ -660,12 +681,14 @@ This is NOT included in the step-by-step plan because it's a larger refactor tha
 ## Part 8: Summary of Consultant Experience Transformation
 
 **Before these changes:**
+
 1. Upload → stare at progress bar for 2 minutes
 2. Page refresh = lose all progress, start watching again
 3. Results load → click each row → wait for journey API call
 4. No ability to review results until entire batch completes
 
 **After these changes:**
+
 1. Upload → watch each classification stream in with full evidence
 2. Page refresh = progress state restored instantly from Redis
 3. Results load with all journey data inline — instant expand

@@ -1,4 +1,4 @@
-"""End-to-end DYNAFIT pipeline smoke test.
+"""End-to-end REQFIT pipeline smoke test.
 
 CLI:
     python -m infra.scripts.smoke_test [--file tests/fixtures/sample_requirements.txt]
@@ -30,14 +30,16 @@ from pathlib import Path
 
 
 def _parse_args() -> argparse.Namespace:
-    p = argparse.ArgumentParser(description="DYNAFIT end-to-end smoke test")
+    p = argparse.ArgumentParser(description="REQFIT end-to-end smoke test")
     p.add_argument(
         "--file",
         default="tests/fixtures/sample_requirements.txt",
         help="Path to requirements text file (one per line, REQ-NNN: text format)",
     )
-    p.add_argument("--country", default="US", help="Country code (default: US)")
-    p.add_argument("--wave", type=int, default=1, help="Wave number (default: 1)")
+    p.add_argument("--country", default="US",
+                   help="Country code (default: US)")
+    p.add_argument("--wave", type=int, default=1,
+                   help="Wave number (default: 1)")
     p.add_argument(
         "--mock-infra",
         action="store_true",
@@ -119,7 +121,8 @@ def _print_summary(
     print("SUMMARY")
     print("=" * 60)
     print(f"  Input requirements   : {n_input_lines}")
-    print(f"  Dedup / quality gate : {len(flagged_atoms)} flagged, ~{dedup_removed} deduped")
+    print(
+        f"  Dedup / quality gate : {len(flagged_atoms)} flagged, ~{dedup_removed} deduped")
     print(f"  Atoms classified     : {batch.total_atoms}")
     print(f"  FIT                  : {batch.fit_count}")
     print(f"  PARTIAL_FIT          : {batch.partial_fit_count}")
@@ -179,7 +182,8 @@ def main() -> None:
     # -----------------------------------------------------------------
     # Phase 1-4: run until HITL pause point (interrupt_before=["validate"])
     # -----------------------------------------------------------------
-    print(f"Running phases 1–4 on {filename!r} ({n_input_lines} requirements)...")
+    print(
+        f"Running phases 1–4 on {filename!r} ({n_input_lines} requirements)...")
     state = graph.invoke(initial, config)
 
     classifications = state.get("classifications") or []
@@ -201,7 +205,8 @@ def main() -> None:
 
     if state.get("validated_batch") is None:
         # Phase 5 called interrupt() — HITL needed; auto-approve all flagged items
-        flagged_ids = [c.atom_id for c in classifications if c.classification != FitLabel.GAP]
+        flagged_ids = [
+            c.atom_id for c in classifications if c.classification != FitLabel.GAP]
         overrides: dict[str, None] = dict.fromkeys(flagged_ids)
         print(f"  [HITL] Auto-approving {len(overrides)} flagged item(s)...")
         state = graph.invoke(Command(resume=overrides), config)

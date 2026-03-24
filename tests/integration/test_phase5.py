@@ -1,5 +1,5 @@
 """
-Tests for the DYNAFIT validation node — Phase 5 (Session G).
+Tests for the REQFIT validation node — Phase 5 (Session G).
 
 All tests are @pytest.mark.unit — they use mocked infrastructure and do not
 require Docker services. The file lives in tests/integration/ because it tests
@@ -92,7 +92,8 @@ _REVIEW = make_classification_result(
     atom_id="REQ-AP-004",
     classification=FitLabel.REVIEW_REQUIRED,
     confidence=0.0,
-    route_used=RouteLabel.GAP_CONFIRM,  # triggers llm_schema_retry_exhausted (via classification==REVIEW_REQUIRED)
+    # triggers llm_schema_retry_exhausted (via classification==REVIEW_REQUIRED)
+    route_used=RouteLabel.GAP_CONFIRM,
 )
 
 
@@ -147,7 +148,8 @@ def _make_node(tmp_path, **kwargs) -> ValidationNode:
 def test_clean_pass_no_interrupt(tmp_path) -> None:
     """All clean results → interrupt() never called; batch built immediately."""
     node = _make_node(tmp_path)
-    state = _make_state([_FIT], match_results=[_mr("REQ-AP-001", top_composite_score=0.92)])
+    state = _make_state([_FIT], match_results=[
+                        _mr("REQ-AP-001", top_composite_score=0.92)])
 
     with patch.object(_v5_module, "interrupt") as mock_interrupt:
         result = node(state)
@@ -209,7 +211,8 @@ def test_confidence_filter_flags_low_confidence_non_gap(tmp_path) -> None:
     node = _make_node(tmp_path)
     # composite=0.72: rule 2 (low_score_fit) does NOT trigger (0.72 > 0.60)
     state = _make_state(
-        [low_conf_fit], match_results=[_mr("REQ-LOW-001", top_composite_score=0.72)]
+        [low_conf_fit], match_results=[
+            _mr("REQ-LOW-001", top_composite_score=0.72)]
     )
 
     with patch.object(_v5_module, "interrupt", return_value={}) as mock_interrupt:
@@ -232,7 +235,8 @@ def test_confidence_filter_does_not_flag_gap_regardless_of_confidence(tmp_path) 
     node = _make_node(tmp_path)
     # composite=0.40, confidence=0.45 < fit_threshold (0.85) → rule 1 NOT triggered
     state = _make_state(
-        [low_conf_gap], match_results=[_mr("REQ-GAP-LOW", top_composite_score=0.40)]
+        [low_conf_gap], match_results=[
+            _mr("REQ-GAP-LOW", top_composite_score=0.40)]
     )
 
     with patch.object(_v5_module, "interrupt") as mock_interrupt:
@@ -317,7 +321,8 @@ def test_override_replaces_classification_in_final_batch(tmp_path) -> None:
     """Human override dict changes GAP → PARTIAL_FIT in the final ValidatedFitmentBatch."""
     node = _make_node(tmp_path)
     # _GAP: confidence=0.88 > 0.85 → flagged
-    state = _make_state([_GAP], match_results=[_mr("REQ-AP-003", top_composite_score=0.40)])
+    state = _make_state([_GAP], match_results=[
+                        _mr("REQ-AP-003", top_composite_score=0.40)])
 
     overrides = {
         "REQ-AP-003": {
@@ -339,7 +344,8 @@ def test_override_replaces_classification_in_final_batch(tmp_path) -> None:
 def test_override_none_preserves_original_classification(tmp_path) -> None:
     """Human approval (None override) keeps the original classification unchanged."""
     node = _make_node(tmp_path)
-    state = _make_state([_GAP], match_results=[_mr("REQ-AP-003", top_composite_score=0.40)])
+    state = _make_state([_GAP], match_results=[
+                        _mr("REQ-AP-003", top_composite_score=0.40)])
 
     with patch.object(_v5_module, "interrupt", return_value={"REQ-AP-003": None}):
         result = node(state)
@@ -353,7 +359,8 @@ def test_reviewer_override_true_passed_to_write_back(tmp_path) -> None:
     """When human changes verdict, postgres.save_fitment receives reviewer_override=True."""
     postgres = make_postgres_store()
     node = _make_node(tmp_path, postgres=postgres)
-    state = _make_state([_GAP], match_results=[_mr("REQ-AP-003", top_composite_score=0.40)])
+    state = _make_state([_GAP], match_results=[
+                        _mr("REQ-AP-003", top_composite_score=0.40)])
 
     overrides = {
         "REQ-AP-003": {
@@ -377,7 +384,8 @@ def test_review_required_not_written_to_postgres(tmp_path) -> None:
     """REVIEW_REQUIRED results skip write-back (not a final decision)."""
     postgres = make_postgres_store()
     node = _make_node(tmp_path, postgres=postgres)
-    state = _make_state([_REVIEW], match_results=[_mr("REQ-AP-004", top_composite_score=0.50)])
+    state = _make_state([_REVIEW], match_results=[
+                        _mr("REQ-AP-004", top_composite_score=0.50)])
 
     # Human approves the REVIEW_REQUIRED result as-is
     with patch.object(_v5_module, "interrupt", return_value={"REQ-AP-004": None}):
@@ -405,7 +413,8 @@ def test_batch_counts_sum_to_total_atoms(tmp_path) -> None:
         result = node(state)
 
     b = result["validated_batch"]
-    assert b.fit_count + b.partial_fit_count + b.gap_count + b.review_count == b.total_atoms == 4
+    assert b.fit_count + b.partial_fit_count + \
+        b.gap_count + b.review_count == b.total_atoms == 4
 
 
 @pytest.mark.unit
@@ -485,7 +494,8 @@ def test_fdd_fits_csv_contains_fit_and_partial_fit_rows(tmp_path) -> None:
         result = node(state)
 
     batch = result["validated_batch"]
-    fits_path = os.path.join(str(tmp_path), batch.batch_id, f"fdd_fits_{batch.batch_id}.csv")
+    fits_path = os.path.join(
+        str(tmp_path), batch.batch_id, f"fdd_fits_{batch.batch_id}.csv")
     assert os.path.exists(fits_path)
 
     with open(fits_path, newline="") as fh:
@@ -511,7 +521,8 @@ def test_fdd_gaps_csv_contains_gap_rows(tmp_path) -> None:
         result = node(state)
 
     batch = result["validated_batch"]
-    gaps_path = os.path.join(str(tmp_path), batch.batch_id, f"fdd_gaps_{batch.batch_id}.csv")
+    gaps_path = os.path.join(
+        str(tmp_path), batch.batch_id, f"fdd_gaps_{batch.batch_id}.csv")
     assert os.path.exists(gaps_path)
 
     with open(gaps_path, newline="") as fh:
@@ -526,13 +537,15 @@ def test_fdd_gaps_csv_contains_gap_rows(tmp_path) -> None:
 def test_csv_has_correct_headers(tmp_path) -> None:
     """Both FDD CSVs have the 13 required column headers in order."""
     node = _make_node(tmp_path)
-    state = _make_state([_FIT], match_results=[_mr("REQ-AP-001", top_composite_score=0.92)])
+    state = _make_state([_FIT], match_results=[
+                        _mr("REQ-AP-001", top_composite_score=0.92)])
 
     with patch.object(_v5_module, "interrupt"):
         result = node(state)
 
     batch = result["validated_batch"]
-    fits_path = os.path.join(str(tmp_path), batch.batch_id, f"fdd_fits_{batch.batch_id}.csv")
+    fits_path = os.path.join(
+        str(tmp_path), batch.batch_id, f"fdd_fits_{batch.batch_id}.csv")
 
     with open(fits_path, newline="") as fh:
         headers = list(csv.DictReader(fh).fieldnames or [])
@@ -590,9 +603,11 @@ def test_complete_event_published_with_correct_counts(tmp_path) -> None:
 def test_write_back_postgres_error_logged_not_raised(tmp_path) -> None:
     """PostgresError in save_fitment is logged as WARNING; pipeline still completes."""
     postgres = make_postgres_store()
-    postgres.save_fitment = AsyncMock(side_effect=PostgresError("connection refused"))
+    postgres.save_fitment = AsyncMock(
+        side_effect=PostgresError("connection refused"))
     node = _make_node(tmp_path, postgres=postgres)
-    state = _make_state([_FIT], match_results=[_mr("REQ-AP-001", top_composite_score=0.92)])
+    state = _make_state([_FIT], match_results=[
+                        _mr("REQ-AP-001", top_composite_score=0.92)])
 
     with patch.object(_v5_module, "interrupt"):
         # Must NOT raise
@@ -606,7 +621,8 @@ def test_write_back_postgres_error_logged_not_raised(tmp_path) -> None:
 def test_reviewer_override_flag_in_csv(tmp_path) -> None:
     """When human overrides a verdict, override='yes' and reviewer columns are populated."""
     node = _make_node(tmp_path)
-    state = _make_state([_GAP], match_results=[_mr("REQ-AP-003", top_composite_score=0.40)])
+    state = _make_state([_GAP], match_results=[
+                        _mr("REQ-AP-003", top_composite_score=0.40)])
 
     overrides = {
         "REQ-AP-003": {
@@ -620,7 +636,8 @@ def test_reviewer_override_flag_in_csv(tmp_path) -> None:
         result = node(state)
 
     batch = result["validated_batch"]
-    fits_path = os.path.join(str(tmp_path), batch.batch_id, f"fdd_fits_{batch.batch_id}.csv")
+    fits_path = os.path.join(
+        str(tmp_path), batch.batch_id, f"fdd_fits_{batch.batch_id}.csv")
 
     with open(fits_path, newline="") as fh:
         rows = list(csv.DictReader(fh))
@@ -657,10 +674,12 @@ def test_module_level_validation_node_singleton_smoke(tmp_path) -> None:
             "modules.dynafit.nodes.phase5_validation.Embedder",
             return_value=mock_embedder,
         ),
-        patch.object(_v5_module.ValidationNode, "_write_csv", return_value=str(tmp_path)),
+        patch.object(_v5_module.ValidationNode, "_write_csv",
+                     return_value=str(tmp_path)),
         patch.object(_v5_module, "interrupt"),
     ):
-        state = _make_state([_FIT], match_results=[_mr("REQ-AP-001", top_composite_score=0.92)])
+        state = _make_state([_FIT], match_results=[
+                            _mr("REQ-AP-001", top_composite_score=0.92)])
         result = _v5_module.validation_node(state)
 
     assert result["validated_batch"] is not None

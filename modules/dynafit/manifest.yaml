@@ -1,6 +1,6 @@
 id: dynafit
 version: "0.1.0"
-display_name: "DYNAFIT — D365 F&O Requirement Fitment Engine"
+display_name: "REQFIT — D365 F&O Requirement Fitment Engine"
 description: >
   5-phase LangGraph pipeline: Ingestion → RAG → Matching → Classification → Validation.
   Classifies client requirements as FIT / PARTIAL_FIT / GAP against standard D365 F&O.

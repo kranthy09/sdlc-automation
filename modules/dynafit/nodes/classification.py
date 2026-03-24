@@ -1,5 +1,5 @@
 """
-Classification node — Phase 4 of the DYNAFIT pipeline (Session F, part F2).
+Classification node — Phase 4 of the REQFIT pipeline (Session F, part F2).
 
 Responsibility: list[MatchResult] → list[ClassificationResult]
 
@@ -147,7 +147,8 @@ class ClassificationNode:
             else get_product_config(product_id)
         )
         if overrides:
-            recognized = {k: v for k, v in overrides.items() if hasattr(base, k)}
+            recognized = {k: v for k, v in overrides.items()
+                          if hasattr(base, k)}
             if recognized:
                 return base.model_copy(update=recognized)
         return base
@@ -166,7 +167,8 @@ class ClassificationNode:
             return {"classifications": []}
 
         batch_id: str = state["batch_id"]
-        config = self._get_config(state["upload"].product_id, state.get("config_overrides"))
+        config = self._get_config(
+            state["upload"].product_id, state.get("config_overrides"))
 
         publish_phase_start(
             batch_id,
@@ -239,7 +241,8 @@ class ClassificationNode:
 
         elapsed_ms = (time.monotonic() - t0) * 1000
 
-        counts: Counter[FitLabel] = Counter(r.classification for r in classifications)
+        counts: Counter[FitLabel] = Counter(
+            r.classification for r in classifications)
         atoms_flagged = counts.get(FitLabel.REVIEW_REQUIRED, 0)
         atoms_validated = len(classifications) - atoms_flagged
         log.info(
@@ -290,7 +293,8 @@ class ClassificationNode:
                 wave=atom.wave,
                 classification=FitLabel.GAP,
                 confidence=1.0,
-                rationale=("No matching D365 capability found in knowledge base."),
+                rationale=(
+                    "No matching D365 capability found in knowledge base."),
                 route_used=mr.route,
                 llm_calls_used=0,
             )
@@ -320,7 +324,8 @@ class ClassificationNode:
         """
         # Concatenate all LLM-generated text fields for scanning
         scannable = " ".join(
-            filter(None, [result.rationale, result.gap_description, result.config_steps])
+            filter(None, [result.rationale,
+                   result.gap_description, result.config_steps])
         )
         if not scannable.strip():
             return result
@@ -339,7 +344,8 @@ class ClassificationNode:
                 f"entities: {', '.join(e.entity_type for e in pii_scan.entities_found)}). "
                 "Flagged for human review."
             )
-            combined = f"{existing_caveats} {pii_caveat}".strip() if existing_caveats else pii_caveat
+            combined = f"{existing_caveats} {pii_caveat}".strip(
+            ) if existing_caveats else pii_caveat
             return result.model_copy(update={"caveats": combined})
 
         return result

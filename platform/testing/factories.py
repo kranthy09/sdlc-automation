@@ -1,7 +1,7 @@
 """
 Test factories — centralised mock builders for Layer 3+ module tests.
 
-Every DYNAFIT node test imports from here instead of instantiating real
+Every REQFIT node test imports from here instead of instantiating real
 infrastructure.  This is the ONLY place where mock infrastructure is
 constructed, keeping mocks consistent with the platform contracts they
 replace.
@@ -24,7 +24,7 @@ Factory categories:
 All schema factories accept **overrides so tests only specify the fields
 that matter for the assertion under test.
 
-Usage (inside a DYNAFIT node test)::
+Usage (inside a REQFIT node test)::
 
     from platform.testing.factories import (
         make_llm_client,
@@ -400,7 +400,8 @@ def make_match_result(**overrides: Any) -> MatchResult:
     capabilities: list[RankedCapability] = overrides.pop("ranked_capabilities", None) or [
         make_ranked_capability()
     ]
-    scores: list[float] = overrides.pop("composite_scores", None) or [0.91] * len(capabilities)
+    scores: list[float] = overrides.pop("composite_scores", None) or [
+        0.91] * len(capabilities)
 
     defaults: dict[str, Any] = {
         "atom": atom,

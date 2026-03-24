@@ -1,5 +1,5 @@
 """
-DYNAFIT LangGraph graph — the ONLY public entry point for the dynafit module.
+REQFIT LangGraph graph — the ONLY public entry point for the dynafit module.
 
 Usage:
 
@@ -46,7 +46,7 @@ log = get_logger(__name__)
 
 
 def build_dynafit_graph(checkpointer: Any = None) -> Any:
-    """Build and compile the DYNAFIT 5-phase LangGraph graph.
+    """Build and compile the REQFIT 5-phase LangGraph graph.
 
     Args:
         checkpointer: LangGraph checkpoint saver.
@@ -83,5 +83,6 @@ def build_dynafit_graph(checkpointer: Any = None) -> Any:
         interrupt_before=["validate"],
     )
 
-    log.debug("dynafit_graph_compiled", has_checkpointer=checkpointer is not None)
+    log.debug("dynafit_graph_compiled",
+              has_checkpointer=checkpointer is not None)
     return compiled

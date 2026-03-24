@@ -76,7 +76,7 @@ export function AppShell() {
               <p className="truncate text-xs font-semibold text-text-primary leading-tight">
                 Enterprise AI
               </p>
-              <p className="truncate text-[10px] text-text-muted">DYNAFIT Platform</p>
+              <p className="truncate text-[10px] text-text-muted">REQFIT Platform</p>
             </div>
           )}
         </div>
