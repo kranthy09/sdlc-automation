@@ -37,18 +37,33 @@ def _make_txt_upload(text: str, **overrides: Any) -> RawUpload:
     )
 
 
-def _atomize_response(atoms: list[dict[str, str]]) -> Any:
-    """Build a mock _AtomizationResult-compatible object for make_llm_client."""
-    from modules.dynafit.nodes.ingestion import _AtomizationResult, _ClassifiedAtom
+def _batch_atomize_response(atom_groups: list[list[dict[str, str]]]) -> Any:
+    """Build a _BatchAtomizationResult for make_llm_client.
 
-    return _AtomizationResult(
-        atoms=[
-            _ClassifiedAtom(
-                text=a["text"],
-                intent=a.get("intent", "FUNCTIONAL"),
-                module=a.get("module", "AccountsPayable"),
+    atom_groups: one inner list per input text chunk, each containing the
+    atom dicts the LLM would return for that chunk.  The batch LLM call
+    (_try_batch_call) expects this shape; individual fallback calls are not
+    reached when the batch succeeds.
+    """
+    from modules.dynafit.nodes.ingestion_atomiser import (
+        _AtomizationResult,
+        _BatchAtomizationResult,
+        _ClassifiedAtom,
+    )
+
+    return _BatchAtomizationResult(
+        results=[
+            _AtomizationResult(
+                atoms=[
+                    _ClassifiedAtom(
+                        text=a["text"],
+                        intent=a.get("intent", "FUNCTIONAL"),
+                        module=a.get("module", "AccountsPayable"),
+                    )
+                    for a in atoms
+                ]
             )
-            for a in atoms
+            for atoms in atom_groups
         ]
     )
 
@@ -161,7 +176,7 @@ def test_valid_txt_produces_validated_atoms() -> None:
         prose=[ProseChunk(text=req_text, section="", page=1, char_offset=0, has_overlap=False)],
     )
     llm = make_llm_client(
-        _atomize_response([{"text": req_text, "intent": "FUNCTIONAL", "module": "AccountsPayable"}])
+        _batch_atomize_response([[{"text": req_text, "intent": "FUNCTIONAL", "module": "AccountsPayable"}]])
     )
 
     node = IngestionNode(
@@ -209,7 +224,7 @@ def test_vague_requirement_is_flagged_not_validated() -> None:
         prose=[ProseChunk(text=vague_text, section="", page=1, char_offset=0, has_overlap=False)],
     )
     llm = make_llm_client(
-        _atomize_response([{"text": vague_text, "intent": "FUNCTIONAL", "module": "GeneralLedger"}])
+        _batch_atomize_response([[{"text": vague_text, "intent": "FUNCTIONAL", "module": "GeneralLedger"}]])
     )
 
     node = IngestionNode(
@@ -250,7 +265,7 @@ def test_ingestion_node_function_is_callable_with_state() -> None:
         prose=[ProseChunk(text=req_text, section="", page=1, char_offset=0, has_overlap=False)],
     )
     llm = make_llm_client(
-        _atomize_response([{"text": req_text, "intent": "FUNCTIONAL", "module": "AccountsPayable"}])
+        _batch_atomize_response([[{"text": req_text, "intent": "FUNCTIONAL", "module": "AccountsPayable"}]])
     )
     ingestion_mod._node = IngestionNode(
         llm_client=llm,

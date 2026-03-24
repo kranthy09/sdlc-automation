@@ -7,12 +7,23 @@ Contains:
 - Completeness scoring (per-module keyword presence)
 - Cross-field schema consistency checks
 - Quality gate application (_apply_quality_gates)
+
+Tokenization strategy
+---------------------
+Each atom previously triggered 4 independent re.findall / .lower() passes
+(one per scoring function).  _apply_quality_gates now calls _tokenize_text()
+once per atom and threads the resulting _TextTokens through all scorers,
+reducing redundant work from O(4 × a × w) to O(a × w).
+
+_score_specificity and _score_completeness keep their original public
+signatures as thin wrappers so existing tests and callers are unaffected.
 """
 
 from __future__ import annotations
 
 import re
 import threading
+from dataclasses import dataclass
 from typing import Any, Literal
 
 from platform.schemas.requirement import FlaggedAtom, RawUpload, ValidatedAtom
@@ -91,6 +102,43 @@ def _extract_entity_hints_batch(texts: list[str]) -> list[list[str]]:
         return results
     except Exception:
         return [[] for _ in texts]
+
+
+# ---------------------------------------------------------------------------
+# Token cache — computed once per atom, shared across all scorers
+# ---------------------------------------------------------------------------
+
+_TOKENIZE_RE = re.compile(r"\b\w+\b")
+
+
+@dataclass(frozen=True, slots=True)
+class _TextTokens:
+    """Pre-computed token forms for a single requirement text.
+
+    Built once per atom in _apply_quality_gates and passed to all scoring
+    functions, eliminating 4 redundant re.findall / .lower() calls per atom.
+    """
+
+    text_lower: str
+    words: list[str]           # individual word tokens (lowercase)
+    word_set: frozenset[str]   # O(1) membership — used by completeness scorer
+    bigrams: list[str]         # adjacent word pairs — used by specificity scorer
+
+
+def _tokenize_text(text: str) -> _TextTokens:
+    """Tokenize *text* into all forms needed by the quality scorers.
+
+    O(w) — called once per atom, result threaded through all scorers.
+    """
+    text_lower = text.lower()
+    words = _TOKENIZE_RE.findall(text_lower)
+    bigrams = [f"{words[i]} {words[i + 1]}" for i in range(len(words) - 1)]
+    return _TextTokens(
+        text_lower=text_lower,
+        words=words,
+        word_set=frozenset(words),
+        bigrams=bigrams,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -187,24 +235,33 @@ _VAGUE_TERMS: frozenset[str] = frozenset(
 )
 
 
-def _score_specificity(text: str) -> float:
-    """Specificity score in [0, 1]: (concrete + specific_verbs) / total vocab.
+def _score_specificity_from_tokens(tokens: _TextTokens) -> float:
+    """Specificity score computed from pre-tokenized _TextTokens.
 
-    < 0.30 → TOO_VAGUE (spec threshold)
+    All frozenset lookups are O(1).  No re.findall / .lower() — tokens
+    were computed once by _tokenize_text() and are shared across scorers.
     """
-    words = re.findall(r"\b\w+\b", text.lower())
-    bigrams = [f"{words[i]} {words[i + 1]}" for i in range(len(words) - 1)]
-
-    concrete = sum(1 for w in words if w in _CONCRETE_NOUNS) + sum(
-        1 for bg in bigrams if bg in _CONCRETE_NOUNS
+    concrete = sum(1 for w in tokens.words if w in _CONCRETE_NOUNS) + sum(
+        1 for bg in tokens.bigrams if bg in _CONCRETE_NOUNS
     )
-    specific = sum(1 for w in words if w in _SPECIFIC_VERBS)
-    vague = sum(1 for w in words if w in _VAGUE_TERMS)
+    specific = sum(1 for w in tokens.words if w in _SPECIFIC_VERBS)
+    vague = sum(1 for w in tokens.words if w in _VAGUE_TERMS)
 
     total = concrete + specific + vague
     if total == 0:
         return 0.4  # short / neutral text: no signal either way
     return (concrete + specific) / total
+
+
+def _score_specificity(text: str) -> float:
+    """Specificity score in [0, 1]: (concrete + specific_verbs) / total vocab.
+
+    < 0.30 → TOO_VAGUE (spec threshold).
+
+    Public wrapper — tokenizes internally.  _apply_quality_gates calls
+    _score_specificity_from_tokens() directly to avoid re-tokenizing.
+    """
+    return _score_specificity_from_tokens(_tokenize_text(text))
 
 
 # ---------------------------------------------------------------------------
@@ -231,15 +288,36 @@ _MODULE_EXPECTED_PARAMS: dict[str, list[str]] = {
     "SystemAdministration": ["security", "role", "permission", "user"],
 }
 
+# Pre-split each param into a frozenset of words, built once at import time.
+# _score_completeness_from_tokens() uses word_set ⊇ param_words (subset check)
+# which is O(|param_words|) per param — avoids O(w_chars × p_len) substring scan.
+_MODULE_PARAM_WORDSETS: dict[str, list[frozenset[str]]] = {
+    module: [frozenset(p.split()) for p in params]
+    for module, params in _MODULE_EXPECTED_PARAMS.items()
+}
+
+
+def _score_completeness_from_tokens(tokens: _TextTokens, module: str) -> float:
+    """Completeness score computed from pre-tokenized _TextTokens.
+
+    Uses frozenset subset check (param_words ⊆ word_set) instead of
+    str.__contains__ substring scan, changing per-atom cost from
+    O(p × w_chars) to O(p × avg_param_words) ≈ O(p) — near-constant.
+    """
+    param_sets = _MODULE_PARAM_WORDSETS.get(module, [])
+    if not param_sets:
+        return 50.0
+    found = sum(1 for ps in param_sets if ps <= tokens.word_set)
+    return round(found / len(param_sets) * 100.0, 1)
+
 
 def _score_completeness(text: str, module: str) -> float:
-    """Completeness score in [0, 100]: % of expected module keywords present."""
-    params = _MODULE_EXPECTED_PARAMS.get(module, [])
-    if not params:
-        return 50.0
-    text_lower = text.lower()
-    found = sum(1 for p in params if p in text_lower)
-    return round(found / len(params) * 100.0, 1)
+    """Completeness score in [0, 100]: % of expected module keywords present.
+
+    Public wrapper — tokenizes internally.  _apply_quality_gates calls
+    _score_completeness_from_tokens() directly to avoid re-tokenizing.
+    """
+    return _score_completeness_from_tokens(_tokenize_text(text), module)
 
 
 # ---------------------------------------------------------------------------
@@ -285,6 +363,10 @@ def _apply_quality_gates(
       D. Text length 10–2000 chars          — rejects on violation
       Passed all → ValidatedAtom
     Potential duplicates are added to flagged_atoms without blocking the pass-through.
+
+    Tokenization: each atom is tokenized exactly once via _tokenize_text().
+    The resulting _TextTokens is shared across all four scorers, eliminating
+    redundant re.findall / .lower() work from the hot per-atom loop.
     """
     validated: list[ValidatedAtom] = []
     flagged: list[FlaggedAtom] = []
@@ -317,7 +399,7 @@ def _apply_quality_gates(
         text = req.atom.requirement_text
         module = req.module if req.module in _MODULE_SET else "OrganizationAdministration"
 
-        # Gate A — schema cross-field consistency
+        # Gate A — schema cross-field consistency (uses raw text, regex only)
         consistency_flag = _check_cross_field_consistency(text, module, upload.country)
         if consistency_flag:
             flagged.append(
@@ -331,8 +413,11 @@ def _apply_quality_gates(
             )
             continue
 
+        # Tokenize once — reused by Gate B, Gate C, and ValidatedAtom construction.
+        tokens = _tokenize_text(text)
+
         # Gate B — specificity / ambiguity
-        specificity = _score_specificity(text)
+        specificity = _score_specificity_from_tokens(tokens)
         if specificity < 0.30:
             flagged.append(
                 FlaggedAtom(
@@ -347,7 +432,7 @@ def _apply_quality_gates(
             continue
 
         # Gate C — completeness borderline
-        completeness = _score_completeness(text, module)
+        completeness = _score_completeness_from_tokens(tokens, module)
         if completeness < 30.0 and specificity < 0.50:
             flagged.append(
                 FlaggedAtom(

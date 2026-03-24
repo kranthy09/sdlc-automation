@@ -54,6 +54,8 @@ ml = [
     "qdrant-client>=1.8",
     "fastembed>=0.3",
     "rank-bm25>=0.2",
+    # Deduplication ANN for large batches (a > 300) — CPU-only, ~30 MB
+    "faiss-cpu>=1.7",
 ]
 
 # Dev tooling only — what CI installs for Layer 0/1

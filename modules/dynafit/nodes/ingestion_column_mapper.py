@@ -2,6 +2,11 @@
 
 Loads header_synonyms.yaml and maps raw table column headers to canonical
 field names using exact match + optional rapidfuzz fallback.
+
+Complexity of _map_column_to_canonical:
+  Before: exact O(k_total) Python loop + fuzzy nested-loop O(C_canon × T_per_canon)
+  After:  exact O(1) dict lookup  + fuzzy single rapidfuzz.process.extractOne C-call
+where k_total ≈ 85 total synonym terms (constant).
 """
 
 from __future__ import annotations
@@ -21,19 +26,37 @@ log = get_logger(__name__)
 # ---------------------------------------------------------------------------
 
 _SYNONYMS_PATH: Path = Path(__file__).parent.parent / "header_synonyms.yaml"
+
+# {canonical: [terms]}  — forward map, same shape as before
 _SYNONYMS_CACHE: dict[str, list[str]] | None = None
+# {term: canonical}  — inverted map built once at load time for O(1) exact lookup
+_INVERSE_LOOKUP: dict[str, str] | None = None
+# Flat list of all terms — passed to rapidfuzz.process.extractOne (C implementation)
+_ALL_TERMS: list[str] | None = None
+
 _synonyms_lock = threading.Lock()
 
 
-def _load_synonyms() -> dict[str, list[str]]:
-    """Lazy-load and flatten header_synonyms.yaml into {canonical: [terms]}."""
-    global _SYNONYMS_CACHE
+def _load_synonyms() -> tuple[dict[str, list[str]], dict[str, str], list[str]]:
+    """Lazy-load header_synonyms.yaml.
+
+    Returns (forward_map, inverse_lookup, all_terms).
+
+    Three structures are built in one pass at first call and cached:
+      forward_map:     {canonical: [terms]}  — original shape (kept for callers)
+      inverse_lookup:  {term: canonical}     — O(1) exact match
+      all_terms:       flat list of all terms — passed to rapidfuzz.process.extractOne
+    """
+    global _SYNONYMS_CACHE, _INVERSE_LOOKUP, _ALL_TERMS
     if _SYNONYMS_CACHE is None:
         with _synonyms_lock:
             if _SYNONYMS_CACHE is None:
                 with _SYNONYMS_PATH.open(encoding="utf-8") as fh:
                     raw: dict[str, Any] = yaml.safe_load(fh)
-                cache: dict[str, list[str]] = {}
+
+                forward: dict[str, list[str]] = {}
+                inverse: dict[str, str] = {}
+
                 for canonical, lang_map in raw.items():
                     terms: list[str] = []
                     if isinstance(lang_map, dict):
@@ -42,9 +65,17 @@ def _load_synonyms() -> dict[str, list[str]]:
                                 terms.extend(t.strip().lower() for t in term_list)
                     elif isinstance(lang_map, list):
                         terms.extend(t.strip().lower() for t in lang_map)
-                    cache[canonical] = terms
-                _SYNONYMS_CACHE = cache
-    return _SYNONYMS_CACHE
+
+                    forward[canonical] = terms
+                    for term in terms:
+                        # First canonical wins on collision (deterministic YAML order)
+                        inverse.setdefault(term, canonical)
+
+                _SYNONYMS_CACHE = forward
+                _INVERSE_LOOKUP = inverse
+                _ALL_TERMS = list(inverse.keys())
+
+    return _SYNONYMS_CACHE, _INVERSE_LOOKUP, _ALL_TERMS  # type: ignore[return-value]
 
 
 def _map_column_to_canonical(header: str) -> tuple[str | None, float]:
@@ -53,30 +84,32 @@ def _map_column_to_canonical(header: str) -> tuple[str | None, float]:
     Returns (canonical_name, confidence) or (None, 0.0).
 
     Three-tier resolution (spec §Phase1 Sub-step D):
-      1. Exact lowercase match  → confidence 1.0
-      2. rapidfuzz token_set_ratio > 70 → confidence proportional
+      1. Exact lowercase match  → O(1) dict lookup, confidence 1.0
+      2. rapidfuzz.process.extractOne > 70 → single C-call, confidence proportional
       3. No match               → (None, 0.0)
+
+    Complexity: O(1) for exact; O(k_total) in C for fuzzy (k_total ≈ 85, constant).
+    Previously the fuzzy path ran a nested Python loop over all canonicals × terms.
     """
-    synonyms = _load_synonyms()
+    _, inverse, all_terms = _load_synonyms()
     h_lower = header.strip().lower()
 
-    for canonical, terms in synonyms.items():
-        if h_lower in terms:
-            return canonical, 1.0
+    # Tier 1 — O(1) dict lookup (replaces linear Python scan)
+    if h_lower in inverse:
+        return inverse[h_lower], 1.0
 
+    # Tier 2 — single rapidfuzz C-call over the flat terms list
     try:
-        from rapidfuzz.fuzz import token_set_ratio  # noqa: PLC0415
+        from rapidfuzz import process, fuzz  # noqa: PLC0415
 
-        best_canonical: str | None = None
-        best_score: float = 0.0
-        for canonical, terms in synonyms.items():
-            for term in terms:
-                score = token_set_ratio(h_lower, term) / 100.0
-                if score > best_score:
-                    best_score = score
-                    best_canonical = canonical
-        if best_score > 0.70:
-            return best_canonical, best_score
+        match = process.extractOne(
+            h_lower,
+            all_terms,
+            scorer=fuzz.token_set_ratio,
+        )
+        if match is not None and match[1] > 70:
+            canonical = inverse[match[0]]
+            return canonical, match[1] / 100.0
     except ImportError:
         pass
 
