@@ -68,6 +68,10 @@ dev:
 dev-down:
 	$(COMPOSE) down
 
+dev-down-v:
+	$(COMPOSE) down -v
+
+
 dev-logs:
 	$(COMPOSE) logs -f
 

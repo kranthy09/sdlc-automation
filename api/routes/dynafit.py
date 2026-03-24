@@ -18,7 +18,7 @@ import os
 import uuid
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import structlog
 from fastapi import APIRouter, Form, HTTPException, UploadFile
@@ -447,11 +447,16 @@ def list_batches(
 # ---------------------------------------------------------------------------
 
 
+_SORTABLE_FIELDS = frozenset({"confidence", "module", "classification", "atom_id"})
+
+
 @router.get("/d365_fo/dynafit/{batch_id}/results")
 def get_results(
     batch_id: str,
     classification: str | None = None,
     module: str | None = None,
+    sort: str = "confidence",
+    order: Literal["asc", "desc"] = "desc",
     page: int = 1,
     limit: int = 25,
 ) -> ResultsResponse:
@@ -462,6 +467,15 @@ def get_results(
         results = [r for r in results if r["classification"] == classification]
     if module:
         results = [r for r in results if r["module"] == module]
+
+    # Server-side sort before pagination — only allow known fields to prevent
+    # accidental exposure of internal keys.
+    sort_key = sort if sort in _SORTABLE_FIELDS else "confidence"
+    results = sorted(
+        results,
+        key=lambda r: r.get(sort_key) or 0,
+        reverse=(order == "desc"),
+    )
 
     # Index journey data by atom_id for inline attachment (eliminates N+1)
     journey_by_atom: dict[str, dict[str, Any]] = {

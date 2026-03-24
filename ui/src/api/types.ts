@@ -1,7 +1,7 @@
 // ─── Shared enums ────────────────────────────────────────────────────────────
 
 export type Classification = 'FIT' | 'PARTIAL_FIT' | 'GAP'
-export type BatchStatus = 'queued' | 'running' | 'review_pending' | 'complete' | 'failed'
+export type BatchStatus = 'queued' | 'running' | 'review_required' | 'resuming' | 'complete' | 'failed'
 export type ReviewDecision = 'APPROVE' | 'OVERRIDE' | 'FLAG'
 
 // ─── Upload ───────────────────────────────────────────────────────────────────

@@ -12,6 +12,7 @@
 {#   atom            ValidatedAtom                                              #}
 {#   capabilities    list[RankedCapability]  (1-N, sorted by composite_score)  #}
 {#   prior_fitments  list[PriorFitment]      (may be empty)                    #}
+{#   anomaly_flags   list[str]              (may be empty)                     #}
 <system>
 You are a senior Microsoft Dynamics 365 Finance and Operations functional consultant
 performing requirement fitment analysis. Your task is to classify a business
@@ -50,6 +51,16 @@ Do not skip factors. Do not form a conclusion before completing all four.
   </prior>
 {% endfor %}
 </historical_precedent>
+{% endif %}
+{% if anomaly_flags %}
+<anomaly_warning>
+  The semantic matching phase raised the following anomalies for this requirement.
+  These indicate potential false-positive capability matches. Treat them as
+  cautionary signals — verify the evidence carefully before classifying as FIT.
+{% for flag in anomaly_flags %}
+  <flag>{{ flag | e }}</flag>
+{% endfor %}
+</anomaly_warning>
 {% endif %}
 </evidence>
 

@@ -19,6 +19,12 @@ COPY pyproject.toml uv.lock ./
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --frozen --no-dev --extra ml
 
+# Bake in the spaCy NER model required by presidio PII redactor (G2).
+# uv pip install works without pip being installed as a Python module.
+# en_core_web_sm must match the installed spaCy major.minor (3.8.x here).
+RUN uv pip install \
+    "en_core_web_sm @ https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl"
+
 # Pre-download fastembed models BEFORE copying all source so this layer is
 # cached unless product_config.py or ProductConfig schema changes.
 # Only the minimal files needed for model discovery are copied here.

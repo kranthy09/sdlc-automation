@@ -140,5 +140,7 @@ def test_errors_accumulate_across_phases() -> None:
 
     state = graph.invoke(initial, config)
 
-    # Stubs add no errors; errors list stays empty (reducer doesn't break empty case)
-    assert state["errors"] == []
+    # make_raw_upload() uses stub bytes (b"%PDF-1.4") that fail the real DoclingParser.
+    # Ingestion rejects with parse_failed and the operator.add reducer accumulates it.
+    # This verifies the reducer works; for a zero-error run use a proper mock parser.
+    assert state["errors"] == ["parse_failed: requirements.pdf"]

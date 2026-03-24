@@ -450,6 +450,7 @@ class ClassificationNode:
             atom=mr.atom,
             capabilities=mr.ranked_capabilities,
             prior_fitments=priors,
+            anomaly_flags=mr.anomaly_flags,
         )
         return self._get_llm().complete(
             prompt,

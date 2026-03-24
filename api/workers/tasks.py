@@ -314,6 +314,10 @@ def run_dynafit_pipeline(
         country=str(meta.get("country", "")),
     )
 
+    # Transition status to "processing" so /progress reflects reality while
+    # the pipeline runs. Without this the batch stays "queued" until completion.
+    _write_batch_state(batch_id, status="processing")
+
     # Single event loop for phases 1-4 + phase 5
     async def _run_all() -> tuple[
         str, dict[str, Any], set[str], dict[str, list[str]],
@@ -359,6 +363,7 @@ def run_dynafit_pipeline(
         try:
             raise self.retry(exc=exc)
         except self.MaxRetriesExceededError:
+            _write_batch_state(batch_id, status="error")
             return
 
     if outcome == "complete":

@@ -267,7 +267,7 @@ class JourneyResponse(BaseModel):
 class PhaseProgressItem(BaseModel):
     phase: int
     phase_name: str
-    status: Literal["pending", "active", "complete"] = "pending"
+    status: Literal["pending", "active", "complete", "error"] = "pending"
     current_step: str | None = None
     progress_pct: int = 0
     atoms_produced: int = 0

@@ -239,6 +239,30 @@ class IngestionNode:
         return self._embedder
 
     # ------------------------------------------------------------------
+    # Rejection helper — always publishes phase_complete before returning
+    # ------------------------------------------------------------------
+
+    def _reject(self, batch_id: str, reason: str, t0: float) -> dict[str, Any]:
+        """Publish PhaseCompleteEvent (zeros) then return a rejection result.
+
+        Ensures the Redis ``batch:{batch_id}`` hash transitions from
+        ``"status": "active"`` to ``"status": "complete"`` even when
+        ingestion exits early, preventing the UI from showing phase 1
+        as permanently stuck.
+        """
+        elapsed_ms = (time.monotonic() - t0) * 1000
+        publish_phase_complete(
+            batch_id,
+            phase=1,
+            phase_name="Ingestion",
+            atoms_produced=0,
+            atoms_validated=0,
+            atoms_flagged=0,
+            latency_ms=round(elapsed_ms, 1),
+        )
+        return _make_rejection_result(reason)
+
+    # ------------------------------------------------------------------
     # LangGraph entry point
     # ------------------------------------------------------------------
 
@@ -277,14 +301,12 @@ class IngestionNode:
                 batch_id=batch_id,
                 reason=file_check.rejection_reason,
             )
-            return _make_rejection_result(f"file_validation_failed: {file_check.rejection_reason}")
+            return self._reject(batch_id, f"file_validation_failed: {file_check.rejection_reason}", t0)
 
         # 2. Document parsing
         parse_result = self._parse_document(upload, batch_id)
         if parse_result is None:
-            return _make_rejection_result(
-                f"parse_failed: {upload.filename}",
-            )
+            return self._reject(batch_id, f"parse_failed: {upload.filename}", t0)
 
         # 3. Extract raw requirement texts
         raw_texts = _collect_requirement_texts(parse_result)
@@ -293,9 +315,7 @@ class IngestionNode:
                 "ingestion_no_text_found",
                 batch_id=batch_id,
             )
-            return _make_rejection_result(
-                "no_requirements_found: document produced no extractable text"
-            )
+            return self._reject(batch_id, "no_requirements_found: document produced no extractable text", t0)
         publish_step_progress(
             batch_id,
             phase=1,
@@ -313,9 +333,7 @@ class IngestionNode:
                 batch_id=batch_id,
                 patterns=injection_scan.matched_patterns,
             )
-            return _make_rejection_result(
-                f"injection_blocked: patterns={injection_scan.matched_patterns}"
-            )
+            return self._reject(batch_id, f"injection_blocked: patterns={injection_scan.matched_patterns}", t0)
 
         extra_errors: list[str] = (
             [f"injection_flagged:{p}" for p in injection_scan.matched_patterns]
@@ -357,9 +375,7 @@ class IngestionNode:
             batch_id=batch_id,
         )
         if not classified:
-            return _make_rejection_result(
-                "atomisation_produced_no_atoms",
-            )
+            return self._reject(batch_id, "atomisation_produced_no_atoms", t0)
 
         # 6. Deduplicate
         unique, duplicates = _deduplicate_requirements(

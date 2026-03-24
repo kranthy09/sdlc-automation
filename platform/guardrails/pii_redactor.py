@@ -71,8 +71,13 @@ def _get_analyzer():  # type: ignore[no-untyped-def]
 
         try:
             from presidio_analyzer import AnalyzerEngine  # type: ignore[import-untyped]
+            from presidio_analyzer.nlp_engine import NlpEngineProvider  # type: ignore[import-untyped]
 
-            _analyzer = AnalyzerEngine()
+            provider = NlpEngineProvider(nlp_configuration={
+                "nlp_engine_name": "spacy",
+                "models": [{"lang_code": "en", "model_name": "en_core_web_sm"}],
+            })
+            _analyzer = AnalyzerEngine(nlp_engine=provider.create_engine())
             _presidio_available = True
             log.info("pii_redactor_init", backend="presidio", model="en_core_web_sm")
         except (ImportError, OSError):

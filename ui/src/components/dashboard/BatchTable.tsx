@@ -52,7 +52,7 @@ export function BatchTable({ batches, loading }: BatchTableProps) {
           key={batch.batch_id}
           className="grid grid-cols-[minmax(0,2fr)_80px_60px_100px_100px_100px_80px_40px] items-center gap-3 border-b border-bg-border/50 px-4 py-3 hover:bg-bg-raised/50 last:border-0 cursor-pointer transition-colors"
           onClick={() =>
-            batch.status === 'complete' || batch.status === 'review_pending'
+            batch.status === 'complete' || batch.status === 'review_required'
               ? navigate(`/results/${batch.batch_id}`)
               : navigate(`/progress/${batch.batch_id}`)
           }

@@ -62,7 +62,8 @@ export default function DashboardPage() {
                 <option value="">All statuses</option>
                 <option value="queued">Queued</option>
                 <option value="running">Running</option>
-                <option value="review_pending">Review pending</option>
+                <option value="review_required">Review required</option>
+                <option value="resuming">Resuming</option>
                 <option value="complete">Complete</option>
                 <option value="failed">Failed</option>
               </select>

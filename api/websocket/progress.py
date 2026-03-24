@@ -26,6 +26,7 @@ from fastapi import WebSocket, WebSocketDisconnect
 
 from platform.config.settings import get_settings
 from platform.schemas.events import (
+    ClassificationEvent,
     CompleteEvent,
     PhaseCompleteEvent,
     PhaseStartEvent,
@@ -118,6 +119,59 @@ async def _replay_phases(
     )
 
 
+async def _replay_classifications(
+    websocket: WebSocket,
+    batch: dict[str, str],
+    batch_id: str,
+) -> None:
+    """Replay persisted classification events on reconnect.
+
+    Reads the ``classifications`` field from the batch Redis hash — written
+    by ``RedisPubSub.persist_classification_sync()`` during Phase 4 — and
+    emits a synthetic ``ClassificationEvent`` for each stored entry.
+
+    This ensures a reconnecting client sees all classifications that were
+    produced before the disconnect, without relying on pub/sub history.
+    """
+    raw = batch.get("classifications")
+    if not raw:
+        return
+
+    try:
+        rows: list[dict[str, Any]] = json.loads(raw)
+    except (json.JSONDecodeError, TypeError):
+        return
+
+    for entry in rows:
+        try:
+            evt = ClassificationEvent(
+                batch_id=batch_id,
+                atom_id=entry["atom_id"],
+                classification=entry["classification"],
+                confidence=entry["confidence"],
+                requirement_text=entry.get("requirement_text", ""),
+                module=entry.get("module", ""),
+                rationale=entry.get("rationale", ""),
+                d365_capability=entry.get("d365_capability", ""),
+                d365_navigation=entry.get("d365_navigation", ""),
+                journey=entry.get("journey"),
+            )
+            await websocket.send_text(evt.model_dump_json())
+        except Exception as exc:
+            log.warning(
+                "ws_replay_classification_failed",
+                batch_id=batch_id,
+                atom_id=entry.get("atom_id"),
+                error=str(exc),
+            )
+
+    log.info(
+        "ws_replayed_classifications",
+        batch_id=batch_id,
+        count=len(rows),
+    )
+
+
 async def _catch_up(
     websocket: WebSocket,
     batch_id: str,
@@ -136,7 +190,10 @@ async def _catch_up(
     # 1. Replay all persisted phase states
     await _replay_phases(websocket, batch, batch_id)
 
-    # 2. Check for terminal state
+    # 2. Replay all persisted classification events
+    await _replay_classifications(websocket, batch, batch_id)
+
+    # 3. Check for terminal state
     status = batch.get("status")
 
     if status == "complete":
