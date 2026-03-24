@@ -38,7 +38,7 @@ function AutoApprovedRow({ item }: { item: AutoApprovedItem }) {
           />
         </td>
         <td className="px-4 py-2 font-mono text-text-muted">{item.atom_id}</td>
-        <td className="max-w-xs truncate px-4 py-2 text-text-primary">{item.requirement_text}</td>
+        <td className="px-4 py-2 text-sm leading-relaxed text-text-primary">{item.requirement_text}</td>
         <td className="px-4 py-2 text-text-secondary">{item.module}</td>
         <td className="px-4 py-2">
           <Badge variant={item.classification} />
@@ -50,11 +50,16 @@ function AutoApprovedRow({ item }: { item: AutoApprovedItem }) {
       {open && (
         <tr>
           <td colSpan={6} className="bg-bg-raised/30 px-6 py-4 animate-fade-in">
-            <div className="space-y-3">
+            <div className="max-w-4xl space-y-4" style={{ wordBreak: 'break-word' }}>
               {/* Rationale */}
-              <blockquote className="border-l-2 border-bg-border pl-3 text-sm italic text-text-secondary">
-                {item.rationale}
-              </blockquote>
+              <div>
+                <p className="text-xs font-medium uppercase tracking-wide text-text-muted mb-1">
+                  AI Rationale
+                </p>
+                <blockquote className="border-l-2 border-bg-border pl-3 text-sm italic text-text-secondary leading-relaxed">
+                  {item.rationale}
+                </blockquote>
+              </div>
 
               {/* D365 capability + navigation */}
               {item.d365_capability && (
@@ -144,9 +149,11 @@ export default function ReviewPage() {
 
   const items = query.data?.items ?? []
   const autoApproved = query.data?.auto_approved ?? []
-  const pendingItems = items.filter((i) => !decidedIds.has(i.atom_id))
+  // An item is pending when neither the server nor this session has recorded a decision.
+  // Using server-side `reviewed` means the page survives navigation and remount correctly.
+  const pendingItems = items.filter((i) => !i.reviewed && !decidedIds.has(i.atom_id))
 
-  // Group counts by classification (pending items only — these are flagged for review)
+  // Group counts by classification (pending + auto-approved)
   const tabCounts = useMemo(() => {
     const counts = { ALL: 0, FIT: 0, PARTIAL_FIT: 0, GAP: 0 }
     for (const item of pendingItems) {
@@ -154,8 +161,13 @@ export default function ReviewPage() {
       const cls = item.ai_classification as Classification
       if (cls in counts) counts[cls]++
     }
+    for (const item of autoApproved) {
+      counts.ALL++
+      const cls = item.classification as Classification
+      if (cls in counts) counts[cls]++
+    }
     return counts
-  }, [pendingItems])
+  }, [pendingItems, autoApproved])
 
   // Filter pending items by active tab
   const filteredItems = useMemo(() => {
@@ -169,7 +181,7 @@ export default function ReviewPage() {
     return autoApproved.filter((i) => i.classification === activeTab)
   }, [autoApproved, activeTab])
 
-  const reviewed = decidedIds.size
+  const reviewed = items.filter((i) => i.reviewed || decidedIds.has(i.atom_id)).length
 
   const handleDecide = async (
     atomId: string,
@@ -241,7 +253,7 @@ export default function ReviewPage() {
     setSelectedIds(new Set())
   }
 
-  const allReviewed = items.length > 0 && reviewed === items.length
+  const allReviewed = items.length > 0 && items.every((i) => i.reviewed || decidedIds.has(i.atom_id))
 
   return (
     <div>
@@ -257,7 +269,7 @@ export default function ReviewPage() {
         }
       />
 
-      <div className="space-y-4 px-6 pb-6 max-w-3xl">
+      <div className="space-y-4 px-6 pb-6 max-w-6xl">
         {/* Progress */}
         {items.length > 0 && (
           <ReviewProgress reviewed={reviewed} total={items.length} />
@@ -335,10 +347,18 @@ export default function ReviewPage() {
             </button>
             {showAutoApproved && (
               <div className="border-t border-bg-border">
-                <table className="w-full text-left text-xs">
+                <table className="w-full table-fixed text-left text-xs">
+                  <colgroup>
+                    <col className="w-8" />
+                    <col className="w-32" />
+                    <col />
+                    <col className="w-36" />
+                    <col className="w-28" />
+                    <col className="w-20" />
+                  </colgroup>
                   <thead>
                     <tr className="border-b border-bg-border text-text-muted">
-                      <th className="w-6 px-2 py-2" />
+                      <th className="px-2 py-2" />
                       <th className="px-4 py-2 font-medium">Atom</th>
                       <th className="px-4 py-2 font-medium">Requirement</th>
                       <th className="px-4 py-2 font-medium">Module</th>

@@ -108,7 +108,6 @@ def _finish_complete(
     _write_batch_state(
         batch_id,
         status="complete",
-        results=json.dumps(data["results"]),
         summary=json.dumps(data["summary"]),
         journey=json.dumps(data["journey"]),
         report_path=data["report_path"],
@@ -155,22 +154,26 @@ def _finish_hitl(
 
 
 async def _run_phase5(
-    batch_id: str, thread_config: dict[str, Any]
+    batch_id: str, thread_config: dict[str, Any], checkpointer: Any = None
 ) -> tuple[str, dict[str, Any], set[str], dict[str, list[str]]]:
     """Enter Phase 5 by resuming from the interrupt_before checkpoint.
 
     Passes None to graph.ainvoke() — LangGraph resumes from the saved
     checkpoint and runs the "validate" node for the first time.
 
+    Args:
+        checkpointer: An already-open AsyncPostgresSaver instance. When
+            provided (e.g. called from _run_all), no new DB connection is
+            opened. When None, a new connection is created (standalone call).
+
     Returns a 4-tuple:
         ("complete", final_state, set(), {})        — Phase 5 finished; validated_batch present
         ("hitl",     final_state, atom_ids, reasons) — Phase 5 called interrupt(); graph paused
     """
-    async with AsyncPostgresSaver.from_conn_string(
-        POSTGRES_CHECKPOINT_URL, serde=JsonPlusSerializer()
-    ) as checkpointer:
-        await checkpointer.setup()
-        graph = build_dynafit_graph(checkpointer=checkpointer)
+    async def _execute(
+        cp: Any,
+    ) -> tuple[str, dict[str, Any], set[str], dict[str, list[str]]]:
+        graph = build_dynafit_graph(checkpointer=cp)
         final_state: dict[str, Any] = await graph.ainvoke(None, config=thread_config)
 
         if final_state.get("validated_batch"):
@@ -194,6 +197,16 @@ async def _run_phase5(
             )
 
         return ("hitl", final_state, flagged_ids, flagged_reasons)
+
+    if checkpointer is not None:
+        # Reuse the caller's connection — avoid a redundant open/setup.
+        return await _execute(checkpointer)
+
+    async with AsyncPostgresSaver.from_conn_string(
+        POSTGRES_CHECKPOINT_URL, serde=JsonPlusSerializer()
+    ) as cp:
+        await cp.setup()
+        return await _execute(cp)
 
 
 async def _resume_phase5_hitl(
@@ -326,9 +339,10 @@ def run_dynafit_pipeline(
                 initial, config=thread_config,
             )
 
-            # Phase 5 — resume from interrupt_before
+            # Phase 5 — resume from interrupt_before; reuse the open checkpointer
+            # to avoid a second DB connection + setup() round-trip.
             return await _run_phase5(
-                batch_id, thread_config,
+                batch_id, thread_config, checkpointer,
             )
 
     try:

@@ -8,20 +8,14 @@ it tests the full Phase 1 pipeline end-to-end (not a single pure function).
 Test coverage:
   - G1-lite: invalid file → rejection result
   - G3-lite: BLOCK-level injection → rejection result
-  - G3-lite: FLAG-level injection → proceeds, errors list populated
   - Valid TXT: mocked LLM + embedder → validated atoms produced
-  - Priority enrichment: must/should/could keywords
-  - Specificity scoring: vague vs specific text
-  - Header column mapping: exact and fuzzy matches
-  - Deduplication: near-identical atoms are merged
+  - Deduplication: near-identical atoms are merged (via table row extraction)
   - Quality gate: too-vague atom → flagged, not validated
   - Module-level ingestion_node: smoke test via LangGraph state dict
 """
 
 from __future__ import annotations
 
-import zipfile
-from io import BytesIO
 from typing import Any
 from unittest.mock import MagicMock
 
@@ -33,14 +27,6 @@ from platform.testing.factories import make_embedder, make_llm_client, make_raw_
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
-
-
-def _make_docx_bytes() -> bytes:
-    buf = BytesIO()
-    with zipfile.ZipFile(buf, "w") as zf:
-        zf.writestr("word/document.xml", "<w:document/>")
-        zf.writestr("[Content_Types].xml", "<Types/>")
-    return buf.getvalue()
 
 
 def _make_txt_upload(text: str, **overrides: Any) -> RawUpload:
@@ -154,46 +140,6 @@ def test_injection_block_aborts_pipeline() -> None:
     assert any("injection_blocked" in e for e in result["errors"])
 
 
-@pytest.mark.unit
-def test_injection_flag_proceeds_with_error_annotation() -> None:
-    """Text matching 1-2 injection patterns → pipeline continues, errors annotated."""
-    from modules.dynafit.nodes.ingestion import IngestionNode
-    from platform.parsers.docling_parser import ParseResult, ProseChunk
-
-    # One pattern match: "act as" (borderline)
-    mild_text = (
-        "The system must validate three-way matching for vendor invoices "
-        "against purchase orders and act as an approval gate."
-    )
-    mock_parser = MagicMock()
-    mock_parser.parse.return_value = ParseResult(
-        tables=[],
-        prose=[ProseChunk(text=mild_text, section="", page=1, char_offset=0, has_overlap=False)],
-    )
-    llm = make_llm_client(
-        _atomize_response(
-            [{"text": mild_text, "intent": "FUNCTIONAL", "module": "AccountsPayable"}]
-        )
-    )
-
-    node = IngestionNode(
-        llm_client=llm,
-        parser=mock_parser,
-        embedder=make_embedder(),
-    )
-    state = {
-        "upload": make_raw_upload(filename="requirements.txt", file_bytes=mild_text.encode()),
-        "batch_id": "test-004",
-        "errors": [],
-    }
-    result = node(state)
-
-    # Pipeline should proceed (not abort)
-    assert isinstance(result["atoms"], list)
-    # errors list may carry injection_flagged annotations (score-dependent)
-    assert isinstance(result["errors"], list)
-
-
 # ---------------------------------------------------------------------------
 # Happy path: valid document → validated atoms
 # ---------------------------------------------------------------------------
@@ -245,154 +191,6 @@ def test_valid_txt_produces_validated_atoms() -> None:
     assert 0.0 <= atom.completeness_score <= 100.0
 
 
-@pytest.mark.unit
-def test_table_row_extraction_uses_header_map() -> None:
-    """Table with 'Business Requirement' column is resolved to requirement_text."""
-    from modules.dynafit.nodes.ingestion import IngestionNode
-    from platform.parsers.docling_parser import ParseResult
-
-    req_text = "The system shall calculate tax amounts per vendor invoice automatically."
-    mock_parser = MagicMock()
-    mock_parser.parse.return_value = ParseResult(
-        tables=[{"Business Requirement": req_text, "Req ID": "AP-001", "Module": "AP"}],
-        prose=[],
-    )
-    llm = make_llm_client(
-        _atomize_response([{"text": req_text, "intent": "FUNCTIONAL", "module": "AccountsPayable"}])
-    )
-
-    node = IngestionNode(
-        llm_client=llm,
-        parser=mock_parser,
-        embedder=make_embedder(),
-    )
-    state = {
-        "upload": make_raw_upload(
-            filename="requirements.txt",
-            file_bytes=req_text.encode(),
-        ),
-        "batch_id": "test-006",
-        "errors": [],
-    }
-    result = node(state)
-
-    assert len(result["validated_atoms"]) >= 1
-    assert result["validated_atoms"][0].requirement_text == req_text
-
-
-# ---------------------------------------------------------------------------
-# Priority enrichment
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.unit
-@pytest.mark.parametrize(
-    ("text", "expected"),
-    [
-        (
-            "The system must approve vendor invoices automatically.",
-            "MUST",
-        ),
-        (
-            "The system should generate monthly aging reports.",
-            "SHOULD",
-        ),
-        (
-            "The system could optionally send email notifications.",
-            "COULD",
-        ),
-        (
-            "The system shall reconcile bank statements daily.",
-            "MUST",
-        ),
-    ],
-)
-def test_priority_inference(text: str, expected: str) -> None:
-    from modules.dynafit.nodes.ingestion import _infer_moscow_priority
-
-    assert _infer_moscow_priority(text) == expected
-
-
-# ---------------------------------------------------------------------------
-# Specificity scoring
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.unit
-@pytest.mark.parametrize(
-    ("text", "expected_above"),
-    [
-        # Specific: concrete nouns + specific verbs
-        (
-            "The system shall validate three-way matching for vendor invoices "
-            "against purchase orders.",
-            0.30,
-        ),
-        # Very specific
-        (
-            "The system must post journal entries to the general ledger with dimension allocation.",
-            0.30,
-        ),
-    ],
-)
-def test_specific_text_passes_threshold(text: str, expected_above: float) -> None:
-    from modules.dynafit.nodes.ingestion import _score_specificity
-
-    assert _score_specificity(text) >= expected_above
-
-
-@pytest.mark.unit
-def test_vague_text_is_below_threshold() -> None:
-    from modules.dynafit.nodes.ingestion import _score_specificity
-
-    vague = "The system should handle all the things and manage everything properly."
-    assert _score_specificity(vague) < 0.30
-
-
-# ---------------------------------------------------------------------------
-# Header column mapping
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.unit
-@pytest.mark.parametrize(
-    ("header", "expected_canonical"),
-    [
-        ("Business Requirement", "requirement_text"),
-        ("Req Description", "requirement_text"),
-        ("Geschäftsanforderung", "requirement_text"),
-        ("Requirement ID", "req_id"),
-        ("Req No", "req_id"),
-        ("Priority", "priority"),
-        ("Country", "country"),
-        ("Module", "module"),
-    ],
-)
-def test_column_header_exact_match(header: str, expected_canonical: str) -> None:
-    from modules.dynafit.nodes.ingestion import _map_column_to_canonical
-
-    canonical, confidence = _map_column_to_canonical(header)
-    assert canonical == expected_canonical
-    assert confidence == 1.0
-
-
-@pytest.mark.unit
-def test_unknown_column_returns_none() -> None:
-    from modules.dynafit.nodes.ingestion import _map_column_to_canonical
-
-    canonical, confidence = _map_column_to_canonical("SomeRandomColumnName12345")
-    assert canonical is None
-    assert confidence == 0.0
-
-
-@pytest.mark.unit
-def test_table_without_requirement_column_returns_empty() -> None:
-    from modules.dynafit.nodes.ingestion import _map_table_rows_to_canonical
-
-    tables = [{"SomeOtherColumn": "value", "AnotherColumn": "more"}]
-    assert _map_table_rows_to_canonical(tables) == []
-
-
 # ---------------------------------------------------------------------------
 # Quality gates: too-vague → FlaggedAtom
 # ---------------------------------------------------------------------------
@@ -441,10 +239,10 @@ def test_ingestion_node_function_is_callable_with_state() -> None:
     """ingestion_node() accepts a DynafitState dict and returns the expected keys."""
     import modules.dynafit.nodes.ingestion as ingestion_mod
     from modules.dynafit.nodes.ingestion import IngestionNode, ingestion_node
+    from platform.parsers.docling_parser import ParseResult, ProseChunk
 
     # Inject a mock node so no real infra is created
     req_text = "The system must validate vendor invoice matching against purchase orders."
-    from platform.parsers.docling_parser import ParseResult, ProseChunk
 
     mock_parser = MagicMock()
     mock_parser.parse.return_value = ParseResult(

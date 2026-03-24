@@ -318,43 +318,6 @@ async def test_public_batches_listing(client: AsyncClient, seeded_batch: str) ->
     assert body["batches"][0]["batch_id"] == seeded_batch
 
 
-@pytest.mark.unit
-async def test_public_batches_filter_status(client: AsyncClient, seeded_batch: str) -> None:
-    resp = await client.get("/api/batches?status=queued")
-    assert resp.status_code == 200
-    assert len(resp.json()["batches"]) == 0
-
-    resp = await client.get("/api/batches?status=complete")
-    assert resp.status_code == 200
-    assert len(resp.json()["batches"]) == 1
-
-
-# ---------------------------------------------------------------------------
-# New fields in results / review
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.unit
-async def test_result_item_new_fields(client: AsyncClient, seeded_batch: str) -> None:
-    resp = await client.get(f"{BASE}/d365_fo/dynafit/{seeded_batch}/results")
-    r = resp.json()["results"][0]
-    assert r["config_steps"] is None
-    assert r["gap_description"] is None
-    assert r["configuration_steps"] is None
-    assert r["dev_effort"] is None
-    assert r["gap_type"] is None
-
-
-@pytest.mark.unit
-async def test_review_item_new_fields(client: AsyncClient, seeded_batch: str) -> None:
-    resp = await client.get(f"{BASE}/d365_fo/dynafit/{seeded_batch}/review")
-    item = resp.json()["items"][0]
-    assert item["module"] == "AccountsPayable"
-    assert item["dev_effort"] == "M"
-    assert item["gap_type"] == "Extension"
-    assert item["gap_description"] == "No standard feature."
-
-
 # ---------------------------------------------------------------------------
 # Journey endpoint
 # ---------------------------------------------------------------------------

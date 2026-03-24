@@ -324,12 +324,22 @@ class IngestionNode:
         )
 
         # 4b. G2 — PII redaction (before any text reaches an LLM)
+        # Dispatched concurrently — presidio AnalyzerEngine singleton is thread-safe.
+        from concurrent.futures import ThreadPoolExecutor  # noqa: PLC0415
+
+        def _redact_one(args: tuple[int, str, str]) -> tuple[str, str, dict[str, str]]:
+            idx, text, source_ref = args
+            result = redact_pii(text, prefix=f"T{idx}_")
+            return result.redacted_text, source_ref, result.redaction_map
+
         combined_redaction_map: dict[str, str] = {}
         redacted_texts: list[tuple[str, str]] = []
-        for idx, (text, source_ref) in enumerate(raw_texts):
-            pii_result = redact_pii(text, prefix=f"T{idx}_")
-            redacted_texts.append((pii_result.redacted_text, source_ref))
-            combined_redaction_map.update(pii_result.redaction_map)
+        _pii_args = [(i, t, r) for i, (t, r) in enumerate(raw_texts)]
+        max_pii_workers = min(len(_pii_args), 4)
+        with ThreadPoolExecutor(max_workers=max_pii_workers) as _pool:
+            for _redacted_text, _source_ref, _rmap in _pool.map(_redact_one, _pii_args):
+                redacted_texts.append((_redacted_text, _source_ref))
+                combined_redaction_map.update(_rmap)
 
         if combined_redaction_map:
             log.info(

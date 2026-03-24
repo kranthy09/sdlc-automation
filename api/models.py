@@ -77,7 +77,7 @@ class ResultItem(BaseModel):
     confidence: float
     module: str
     country: str
-    wave: int
+    wave: int = 1
     rationale: str
     reviewer_override: bool = False
     d365_capability: str = ""
@@ -88,6 +88,7 @@ class ResultItem(BaseModel):
     configuration_steps: list[str] | None = None
     dev_effort: str | None = None
     gap_type: str | None = None
+    journey: AtomJourney | None = None
 
 
 class ResultsResponse(BaseModel):
@@ -114,6 +115,7 @@ class ReviewItem(BaseModel):
     configuration_steps: list[str] | None = None
     dev_effort: str | None = None
     gap_type: str | None = None
+    reviewed: bool = False
 
 
 class AutoApprovedItem(BaseModel):
@@ -192,6 +194,7 @@ class JourneyIngest(BaseModel):
     atom_id: str
     requirement_text: str
     module: str
+    country: str = ""
     intent: str
     priority: str
     entity_hints: list[str] = Field(default_factory=list)
@@ -277,6 +280,12 @@ class ProgressClassificationItem(BaseModel):
     atom_id: str
     classification: str
     confidence: float
+    requirement_text: str = ""
+    module: str = ""
+    rationale: str = ""
+    d365_capability: str = ""
+    d365_navigation: str = ""
+    journey: dict[str, Any] | None = None
 
 
 class ProgressResponse(BaseModel):

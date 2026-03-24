@@ -186,9 +186,43 @@ class MatchingNode:
         total_steps = n + 1  # n scoring + 1 routing summary
 
         product_id: str = state["upload"].product_id
+        embedder = self._get_embedder(product_id)
+
+        # Pre-compute ALL embeddings in a single embed_batch call.
+        # Collecting every unique text (atom texts + capability descriptions) across
+        # all contexts avoids N separate embed_batch calls (one per atom) and
+        # replaces them with one batched ONNX inference pass over the full set.
+        _text_to_idx: dict[str, int] = {}
+        _ordered_texts: list[str] = []
+
+        for ctx in contexts:
+            atom_text = ctx.atom.requirement_text
+            if atom_text not in _text_to_idx:
+                _text_to_idx[atom_text] = len(_ordered_texts)
+                _ordered_texts.append(atom_text)
+            for cap in ctx.capabilities:
+                cap_text = cap.description
+                if cap_text not in _text_to_idx:
+                    _text_to_idx[cap_text] = len(_ordered_texts)
+                    _ordered_texts.append(cap_text)
+
+        if _ordered_texts:
+            _all_vecs = np.array(
+                embedder.embed_batch(_ordered_texts), dtype=np.float32
+            )
+            _normed_all = _normalise(_all_vecs)
+            # text → pre-normalised vector, ready for dot-product cosine
+            _vec_lookup: dict[str, np.ndarray] = {
+                text: _normed_all[i] for text, i in _text_to_idx.items()
+            }
+        else:
+            _vec_lookup = {}
+
         match_results = []
         for i, ctx in enumerate(contexts):
-            match_results.append(self._score_context(ctx, product_id=product_id))
+            match_results.append(
+                self._score_context(ctx, product_id=product_id, vec_lookup=_vec_lookup)
+            )
             publish_step_progress(
                 batch_id,
                 phase=3,
@@ -236,7 +270,23 @@ class MatchingNode:
     # Per-context scoring
     # ------------------------------------------------------------------
 
-    def _score_context(self, ctx: AssembledContext, *, product_id: str) -> MatchResult:
+    def _score_context(
+        self,
+        ctx: AssembledContext,
+        *,
+        product_id: str,
+        vec_lookup: dict[str, np.ndarray] | None = None,
+    ) -> MatchResult:
+        """Score one AssembledContext against its capabilities.
+
+        Args:
+            ctx:        The assembled context from Phase 2.
+            product_id: Used to load embedder when vec_lookup is absent.
+            vec_lookup: Optional pre-normalised vector cache (text → ndarray).
+                        When provided, no embed_batch call is made — vectors are
+                        looked up directly. Falls back to embed_batch if absent
+                        or if a text is missing from the cache.
+        """
         atom = ctx.atom
         caps = ctx.capabilities
         priors: list[PriorFitment] = ctx.prior_fitments
@@ -255,12 +305,20 @@ class MatchingNode:
                 top_composite_score=0.0,
             )
 
-        # Batch embed: atom text first, then all cap descriptions
+        # Use pre-computed vectors when available; fall back to embed_batch otherwise.
         all_texts = [atom.requirement_text] + [c.description for c in caps]
-        raw_vecs = np.array(self._get_embedder(product_id).embed_batch(all_texts), dtype=np.float32)
-        normed = _normalise(raw_vecs)
-        atom_norm: np.ndarray = normed[0]  # (d,)  # type: ignore[type-arg]
-        cap_norms: np.ndarray = normed[1:]  # (n, d)  # type: ignore[type-arg]
+        if vec_lookup and all(t in vec_lookup for t in all_texts):
+            atom_norm = vec_lookup[atom.requirement_text]
+            cap_norms = np.array(
+                [vec_lookup[c.description] for c in caps], dtype=np.float32
+            )
+        else:
+            raw_vecs = np.array(
+                self._get_embedder(product_id).embed_batch(all_texts), dtype=np.float32
+            )
+            normed = _normalise(raw_vecs)
+            atom_norm = normed[0]
+            cap_norms = normed[1:]
 
         # Cosines: dot product of atom with each cap (already L2-normalised)
         cosines: list[float] = (cap_norms @ atom_norm).tolist()

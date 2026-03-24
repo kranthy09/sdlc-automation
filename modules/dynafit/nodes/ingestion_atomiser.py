@@ -195,7 +195,7 @@ def _try_batch_call(
     )
     try:
         result: _BatchAtomizationResult = llm.complete(
-            prompt, _BatchAtomizationResult, config, temperature=0.0
+            prompt, _BatchAtomizationResult, config, temperature=0.0, max_tokens=4096
         )
         if len(result.results) != len(texts):
             log.warning(
@@ -229,16 +229,33 @@ def _atomise_and_classify_batch(
 ) -> list[list[_ClassifiedAtom]]:
     """Atomize and classify all texts, sending `batch_size` chunks per LLM call.
 
-    Reduces N sequential LLM calls to ceil(N / batch_size) calls.
-    Falls back to individual _atomise_and_classify calls for any batch
-    where the batch call fails or returns a count mismatch.
+    Batches are dispatched concurrently via a ThreadPoolExecutor so that
+    ceil(N / batch_size) LLM calls run in parallel rather than sequentially.
+    Falls back to individual _atomise_and_classify calls for any batch where
+    the batch call fails or returns a count mismatch.
     """
-    all_results: list[list[_ClassifiedAtom]] = []
-    for start in range(0, len(texts), batch_size):
-        batch = texts[start : start + batch_size]
+    from concurrent.futures import ThreadPoolExecutor  # noqa: PLC0415
+
+    batches = [texts[start : start + batch_size] for start in range(0, len(texts), batch_size)]
+
+    if not batches:
+        return []
+
+    def _process(batch: list[str]) -> list[list[_ClassifiedAtom]]:
         chunk_atoms = _try_batch_call(batch, llm, config)
         if chunk_atoms is None:
             # Batch call failed — fall back to per-text calls for this group
             chunk_atoms = [_atomise_and_classify(t, llm, config) for t in batch]
-        all_results.extend(chunk_atoms)
+        return chunk_atoms
+
+    if len(batches) == 1:
+        # Fast path: skip thread-pool overhead for single batch
+        return _process(batches[0])
+
+    all_results: list[list[_ClassifiedAtom]] = []
+    max_workers = min(len(batches), 4)
+    with ThreadPoolExecutor(max_workers=max_workers) as pool:
+        # map() preserves input order
+        for chunk_atoms in pool.map(_process, batches):
+            all_results.extend(chunk_atoms)
     return all_results

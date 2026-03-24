@@ -350,11 +350,18 @@ class RedisPubSub:
 
         batch_id = event.batch_id
         hash_key = f"batch:{batch_id}"
-        entry = {
+        entry: dict[str, Any] = {
             "atom_id": event.atom_id,
             "classification": event.classification,
             "confidence": event.confidence,
+            "requirement_text": event.requirement_text,
+            "module": event.module,
+            "rationale": event.rationale,
+            "d365_capability": event.d365_capability,
+            "d365_navigation": event.d365_navigation,
         }
+        if event.journey is not None:
+            entry["journey"] = event.journey
         try:
             r = sync_redis.from_url(redis_url)
             try:
@@ -468,6 +475,83 @@ class RedisPubSub:
             return data
         except Exception:
             return {}
+
+    # ------------------------------------------------------------------
+    # Batch index — sorted set for dashboard listing
+    # ------------------------------------------------------------------
+
+    _BATCH_INDEX_KEY = "batches:index"
+
+    @staticmethod
+    def register_batch_sync(
+        redis_url: str,
+        batch_id: str,
+        created_at: str,
+    ) -> None:
+        """Add a batch to the sorted set index (score = epoch timestamp).
+
+        Idempotent — calling twice with the same batch_id updates the score.
+        """
+        import redis as sync_redis  # noqa: PLC0415
+        from datetime import datetime  # noqa: PLC0415
+
+        try:
+            r = sync_redis.from_url(redis_url)
+            try:
+                score = datetime.fromisoformat(created_at).timestamp()
+                r.zadd(RedisPubSub._BATCH_INDEX_KEY, {batch_id: score})
+            finally:
+                r.close()
+        except Exception as exc:
+            log.warning(
+                "redis_batch_index_register_failed",
+                batch_id=batch_id,
+                error=str(exc),
+            )
+
+    @staticmethod
+    def list_batches_sync(
+        redis_url: str,
+        offset: int = 0,
+        limit: int = 20,
+    ) -> list[str]:
+        """List batch IDs from sorted set, newest first.
+
+        Returns a list of batch_id strings for the requested page.
+        """
+        import redis as sync_redis  # noqa: PLC0415
+
+        try:
+            r = sync_redis.from_url(redis_url)
+            try:
+                raw = r.zrevrange(
+                    RedisPubSub._BATCH_INDEX_KEY,
+                    offset,
+                    offset + limit - 1,
+                )
+            finally:
+                r.close()
+            return [b.decode() if isinstance(b, bytes) else b for b in raw]
+        except Exception as exc:
+            log.warning(
+                "redis_batch_index_list_failed",
+                error=str(exc),
+            )
+            return []
+
+    @staticmethod
+    def count_batches_sync(redis_url: str) -> int:
+        """Return total number of batches in the index."""
+        import redis as sync_redis  # noqa: PLC0415
+
+        try:
+            r = sync_redis.from_url(redis_url)
+            try:
+                return r.zcard(RedisPubSub._BATCH_INDEX_KEY)
+            finally:
+                r.close()
+        except Exception:
+            return 0
 
     # ------------------------------------------------------------------
     # Publish (async)

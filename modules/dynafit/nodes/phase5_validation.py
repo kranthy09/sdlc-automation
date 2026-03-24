@@ -376,20 +376,37 @@ class ValidationNode:
         REVIEW_REQUIRED results are skipped — they are not final decisions and
         postgres.save_fitment() rejects them by contract.
 
+        All eligible requirement texts are embedded in a single embed_batch() call
+        instead of one embed() call per result, reducing ONNX inference overhead
+        from O(N) model invocations to a single batched pass.
+
         PostgresError per result is caught and logged as WARNING. Write-back
         failure does not fail the pipeline; the batch is already built in memory.
         """
         upload = state["upload"]
         embedder = self._get_embedder(upload.product_id)
         postgres = self._get_postgres()
-        saved = skipped = 0
 
-        for mr in merged:
-            if mr.result.classification == FitLabel.REVIEW_REQUIRED:
-                skipped += 1
-                continue
+        # Partition: skip REVIEW_REQUIRED up-front
+        eligible = [mr for mr in merged if mr.result.classification != FitLabel.REVIEW_REQUIRED]
+        skipped = len(merged) - len(eligible)
+
+        if not eligible:
+            log.info(
+                "write_back_complete",
+                batch_id=state["batch_id"],
+                saved=0,
+                skipped_review_required=skipped,
+            )
+            return
+
+        # One embed_batch call for all eligible texts
+        texts = [mr.result.requirement_text for mr in eligible]
+        embeddings: list[list[float]] = embedder.embed_batch(texts)
+
+        saved = 0
+        for mr, embedding in zip(eligible, embeddings, strict=True):
             try:
-                embedding: list[float] = embedder.embed(mr.result.requirement_text)
                 await postgres.save_fitment(
                     mr.result,
                     embedding,

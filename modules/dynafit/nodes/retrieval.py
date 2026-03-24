@@ -63,6 +63,10 @@ _DOC_BOOST = 0.05  # fixed score boost when a doc chunk confirms a capability
 _CE_THRESHOLD = 0.5  # top-1 score threshold used in retrieval quality classification
 _GAP_LO = 3  # adaptive-K: search for largest score gap starting at rank 3
 _GAP_HI = 7  # adaptive-K: stop searching after rank 7
+# Concurrent atom retrievals — each call is I/O bound (Qdrant + pgvector + ONNX reranker).
+# BM25Retriever/VectorStore/Reranker are all thread-safe; run_async() creates its own
+# event loop per thread so there are no cross-thread event loop conflicts.
+_RETRIEVAL_CONCURRENCY = 12
 
 
 # ---------------------------------------------------------------------------
@@ -415,21 +419,38 @@ class RetrievalNode:
         # Batch BM25 — IDF weights are meaningful across the whole requirement set.
         bm25 = BM25Retriever(corpus=atom_texts)
 
-        contexts = []
-        for i, (atom, dense_vec) in enumerate(zip(atoms, dense_vecs, strict=True)):
-            contexts.append(
-                self._retrieve_one(atom, dense_vec, bm25, store, reranker, postgres, config)
-            )
-            publish_step_progress(
-                batch_id,
-                phase=2,
-                step=f"Retrieving capabilities ({i + 1}/{n})",
-                completed=2 + i,
-                total=total_steps,
-            )
+        # Retrieve capabilities for all atoms concurrently.
+        # Each _retrieve_one call is network I/O bound (Qdrant × 2 + pgvector) so
+        # threads yield the GIL and run in true parallel up to _RETRIEVAL_CONCURRENCY.
+        from concurrent.futures import ThreadPoolExecutor, as_completed  # noqa: PLC0415
+
+        contexts: list[AssembledContext | None] = [None] * n
+
+        def _retrieve_indexed(idx: int) -> tuple[int, AssembledContext]:
+            atom = atoms[idx]
+            dense_vec = dense_vecs[idx]
+            return idx, self._retrieve_one(atom, dense_vec, bm25, store, reranker, postgres, config)
+
+        completed_retrievals = 0
+        with ThreadPoolExecutor(max_workers=min(n, _RETRIEVAL_CONCURRENCY)) as pool:
+            future_to_idx = {pool.submit(_retrieve_indexed, i): i for i in range(n)}
+            for future in as_completed(future_to_idx):
+                idx, ctx = future.result()
+                contexts[idx] = ctx
+                completed_retrievals += 1
+                publish_step_progress(
+                    batch_id,
+                    phase=2,
+                    step=f"Retrieving capabilities ({completed_retrievals}/{n})",
+                    completed=1 + completed_retrievals,
+                    total=total_steps,
+                )
+
+        # as_completed fills slots; cast away None (all slots filled above)
+        final_contexts: list[AssembledContext] = contexts  # type: ignore[assignment]
 
         # Warn if Qdrant returned nothing — capability KB likely not seeded
-        if all(not ctx.capabilities for ctx in contexts):
+        if all(not ctx.capabilities for ctx in final_contexts):
             log.warning(
                 "retrieval_capability_kb_empty",
                 batch_id=batch_id,
@@ -446,12 +467,12 @@ class RetrievalNode:
             publish_step_progress(
                 batch_id,
                 phase=2,
-                step="Reranking results",
+                step="Reranking complete",
                 completed=total_steps,
                 total=total_steps,
             )
 
-        return contexts
+        return final_contexts
 
     def _retrieve_one(
         self,

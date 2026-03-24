@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import type {
+  AtomJourney,
   Classification,
   ProgressResponse,
   ResultsResponse,
@@ -32,6 +33,9 @@ export interface LiveClassificationRow {
   confidence: number
   module: string
   rationale: string
+  d365Capability: string
+  d365Navigation: string
+  journey: AtomJourney | null
 }
 
 interface ReviewRequiredState {
@@ -138,11 +142,14 @@ function applyClassification(
     ...rows,
     {
       atomId: msg.atom_id,
-      requirementText: '',
+      requirementText: msg.requirement_text ?? '',
       classification: msg.classification as Classification,
       confidence: msg.confidence,
-      module: '',
-      rationale: '',
+      module: msg.module ?? '',
+      rationale: msg.rationale ?? '',
+      d365Capability: msg.d365_capability ?? '',
+      d365Navigation: msg.d365_navigation ?? '',
+      journey: msg.journey ?? null,
     },
   ]
 }
@@ -235,6 +242,9 @@ export const useProgressStore = create<ProgressState>((set) => ({
           confidence: r.confidence,
           module: r.module,
           rationale: r.rationale,
+          d365Capability: r.d365_capability,
+          d365Navigation: r.d365_navigation,
+          journey: r.journey ?? null,
         }))
         const { fit, partial_fit, gap } = resultsData.summary
         return {
@@ -310,11 +320,14 @@ export const useProgressStore = create<ProgressState>((set) => ({
           .filter((c) => !existing.has(c.atom_id))
           .map((c) => ({
             atomId: c.atom_id,
-            requirementText: '',
+            requirementText: c.requirement_text ?? '',
             classification: c.classification,
             confidence: c.confidence,
-            module: '',
-            rationale: '',
+            module: c.module ?? '',
+            rationale: c.rationale ?? '',
+            d365Capability: c.d365_capability ?? '',
+            d365Navigation: c.d365_navigation ?? '',
+            journey: c.journey ?? null,
           }))
         if (newRows.length > 0) {
           classifications = [...classifications, ...newRows]

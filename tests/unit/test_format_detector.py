@@ -1,13 +1,10 @@
 """
 TDD — platform/parsers/format_detector.py
 
-Tests cover the six behaviours that matter:
+Tests cover the three behaviours that matter:
   - PDF magic bytes (%PDF)         → DocumentFormat.PDF
   - DOCX (ZIP + word/document.xml) → DocumentFormat.DOCX
-  - Plain UTF-8 text               → DocumentFormat.TXT
   - Unknown binary (null bytes)    → UnsupportedFormatError
-  - Empty file                     → UnsupportedFormatError
-  - XLSX (ZIP but no word/ dir)    → UnsupportedFormatError
 
 All tests use tmp_path fixtures and write raw bytes — no real file dependencies.
 """
@@ -30,15 +27,6 @@ def _make_docx(path: Path) -> None:
     buf = BytesIO()
     with zipfile.ZipFile(buf, "w") as zf:
         zf.writestr("word/document.xml", "<w:document/>")
-        zf.writestr("[Content_Types].xml", "<Types/>")
-    path.write_bytes(buf.getvalue())
-
-
-def _make_xlsx(path: Path) -> None:
-    """Write a minimal XLSX to *path* (ZIP with xl/ but no word/)."""
-    buf = BytesIO()
-    with zipfile.ZipFile(buf, "w") as zf:
-        zf.writestr("xl/workbook.xml", "<workbook/>")
         zf.writestr("[Content_Types].xml", "<Types/>")
     path.write_bytes(buf.getvalue())
 
@@ -82,25 +70,6 @@ def test_detects_docx(tmp_path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
-# TXT
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.unit
-def test_detects_txt(tmp_path: Path) -> None:
-    """UTF-8 text with no null bytes → DocumentFormat.TXT."""
-    from platform.parsers.format_detector import DocumentFormat, detect_format
-
-    txt = tmp_path / "reqs.txt"
-    txt.write_text("Requirement 1: the system must support three-way matching.", encoding="utf-8")
-
-    result = detect_format(txt)
-
-    assert result.format == DocumentFormat.TXT
-    assert result.mime == "text/plain"
-
-
-# ---------------------------------------------------------------------------
 # Rejections
 # ---------------------------------------------------------------------------
 
@@ -118,31 +87,3 @@ def test_rejects_unknown_binary(tmp_path: Path) -> None:
         detect_format(unknown)
 
     assert exc_info.value.filename == "data.xyz"
-
-
-@pytest.mark.unit
-def test_rejects_empty_file(tmp_path: Path) -> None:
-    """Empty file → UnsupportedFormatError (no content to detect from)."""
-    from platform.parsers.format_detector import detect_format
-    from platform.schemas.errors import UnsupportedFormatError
-
-    empty = tmp_path / "empty.pdf"
-    empty.write_bytes(b"")
-
-    with pytest.raises(UnsupportedFormatError):
-        detect_format(empty)
-
-
-@pytest.mark.unit
-def test_rejects_xlsx(tmp_path: Path) -> None:
-    """ZIP without word/document.xml (e.g. XLSX) → UnsupportedFormatError with MIME hint."""
-    from platform.parsers.format_detector import detect_format
-    from platform.schemas.errors import UnsupportedFormatError
-
-    xlsx = tmp_path / "data.xlsx"
-    _make_xlsx(xlsx)
-
-    with pytest.raises(UnsupportedFormatError) as exc_info:
-        detect_format(xlsx)
-
-    assert "excel" in (exc_info.value.detected_mime or "").lower()

@@ -225,6 +225,56 @@ export function ReviewCard({ item, submitting, selected, onToggleSelect, onDecid
                 </ul>
               </div>
             )}
+
+            {/* GAP: show gap details + guidance when no capabilities found */}
+            {item.ai_classification === 'GAP' && (
+              <div className="rounded-lg border border-gap/20 bg-gap-muted/10 p-3 space-y-3">
+                <div className="flex items-center gap-1.5 text-xs font-medium text-gap-text">
+                  <Code2 className="h-3.5 w-3.5" />
+                  Gap Analysis
+                </div>
+                {item.evidence.capabilities.length === 0 && (
+                  <p className="text-xs text-text-muted italic">
+                    No matching D365 capability found in the knowledge base — this requirement needs custom development or a third-party solution.
+                  </p>
+                )}
+                {(item.dev_effort || item.gap_type) && (
+                  <div className="flex flex-wrap items-center gap-2">
+                    {item.dev_effort && (
+                      <span
+                        className={cn(
+                          'inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold',
+                          DEV_EFFORT_COLOR[item.dev_effort],
+                        )}
+                      >
+                        Effort: {DEV_EFFORT_LABEL[item.dev_effort] ?? item.dev_effort}
+                      </span>
+                    )}
+                    {item.gap_type && (
+                      <span className="inline-flex items-center rounded-full border border-bg-border bg-bg-raised px-2.5 py-0.5 text-xs font-medium text-text-secondary">
+                        {item.gap_type}
+                      </span>
+                    )}
+                  </div>
+                )}
+                {item.gap_description && (
+                  <p className="text-sm text-text-secondary leading-relaxed">{item.gap_description}</p>
+                )}
+                {!item.dev_effort && !item.gap_type && !item.gap_description && (
+                  <p className="text-xs text-text-muted">
+                    No gap details available yet. Consider overriding if you believe this is a partial fit or fit.
+                  </p>
+                )}
+              </div>
+            )}
+
+            {/* Empty state for non-GAP items with no evidence */}
+            {item.ai_classification !== 'GAP' &&
+              item.evidence.capabilities.length === 0 &&
+              item.evidence.prior_fitments.length === 0 &&
+              item.evidence.anomaly_flags.length === 0 && (
+              <p className="text-xs text-text-muted italic">No additional evidence available.</p>
+            )}
           </div>
         )}
       </div>

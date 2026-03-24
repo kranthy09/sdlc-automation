@@ -111,6 +111,49 @@ def _build_overrides(review_items: list[dict[str, Any]]) -> dict[str, Any]:
     return overrides
 
 
+def _derive_results_from_journey(journey: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Extract flat results-table dicts from journey data.
+
+    Journey is the single source of truth after Step 6. This function
+    reconstructs the results list that get_results / get_public_results
+    expect, including the evidence sub-dict.
+
+    Backward compatible: if a batch was completed before Step 6 and has
+    a stored "results" blob, that takes precedence (see _sync_from_redis).
+    """
+    results: list[dict[str, Any]] = []
+    for j in journey:
+        ingest = j.get("ingest", {})
+        classify = j.get("classify", {})
+        output = j.get("output", {})
+        retrieve = j.get("retrieve", {})
+        match = j.get("match", {})
+
+        results.append({
+            "atom_id": j["atom_id"],
+            "requirement_text": ingest.get("requirement_text", ""),
+            "module": ingest.get("module", ""),
+            "country": ingest.get("country", ""),
+            "classification": output.get("classification", ""),
+            "confidence": output.get("confidence", 0.0),
+            "rationale": classify.get("rationale", ""),
+            "d365_capability": classify.get("d365_capability", ""),
+            "d365_navigation": classify.get("d365_navigation", ""),
+            "reviewer_override": output.get("reviewer_override", False),
+            "config_steps": output.get("config_steps"),
+            "configuration_steps": output.get("configuration_steps"),
+            "gap_description": output.get("gap_description"),
+            "gap_type": output.get("gap_type"),
+            "dev_effort": output.get("dev_effort"),
+            "evidence": {
+                "top_capability_score": match.get("composite_score", 0.0),
+                "retrieval_confidence": retrieve.get("retrieval_confidence", "LOW"),
+                "prior_fitments": retrieve.get("prior_fitments", []),
+            },
+        })
+    return results
+
+
 def _sync_from_redis(batch: dict[str, Any], batch_id: str) -> None:
     """Merge Celery-written state from Redis into the in-memory batch.
 
@@ -147,6 +190,7 @@ def _sync_from_redis(batch: dict[str, Any], batch_id: str) -> None:
             batch["review_items"] = json.loads(data["review_items"])
         except json.JSONDecodeError:
             pass
+    # Backward compat: old batches may still have a stored "results" blob
     if "results" in data and not batch.get("results"):
         try:
             batch["results"] = json.loads(data["results"])
@@ -163,14 +207,40 @@ def _sync_from_redis(batch: dict[str, Any], batch_id: str) -> None:
         except json.JSONDecodeError:
             pass
 
+    # Step 6: derive results from journey when results blob is absent
+    # (new batches only store journey; old batches still have results)
+    if not batch.get("results") and batch.get("journey"):
+        batch["results"] = _derive_results_from_journey(batch["journey"])
+
 
 def _get_batch(batch_id: str) -> dict[str, Any]:
     batch = _batches.get(batch_id)
     if batch is None:
-        raise HTTPException(
-            status_code=404,
-            detail=f"batch_id {batch_id!r} not found",
-        )
+        # Try recovering from Redis (survives process restart)
+        data = RedisPubSub.read_batch_state_sync(REDIS_URL, batch_id)
+        if data and "status" in data:
+            batch = {
+                "batch_id": batch_id,
+                "upload_id": data.get("upload_id", ""),
+                "upload_filename": data.get("upload_filename", ""),
+                "product": data.get("product", "d365_fo"),
+                "country": data.get("country", ""),
+                "wave": int(data.get("wave", "1")),
+                "status": data["status"],
+                "results": [],
+                "review_items": [],
+                "summary": {"total": 0, "fit": 0, "partial_fit": 0, "gap": 0},
+                "report_path": data.get("report_path"),
+                "created_at": data.get("created_at", ""),
+                "completed_at": data.get("completed_at"),
+            }
+            _batches[batch_id] = batch
+            log.info("batch_recovered_from_redis", batch_id=batch_id)
+        else:
+            raise HTTPException(
+                status_code=404,
+                detail=f"batch_id {batch_id!r} not found",
+            )
     _sync_from_redis(batch, batch_id)
     return batch
 
@@ -273,6 +343,24 @@ def run_pipeline(body: RunRequest) -> RunResponse:
         "created_at": _now(),
         "completed_at": None,
     }
+    # Persist initial batch state to Redis (crash-resilient)
+    RedisPubSub.write_batch_state_sync(
+        REDIS_URL,
+        batch_id,
+        status="queued",
+        upload_id=body.upload_id,
+        upload_filename=up["filename"],
+        product=up["product"],
+        country=up["country"],
+        wave=str(up["wave"]),
+        created_at=_batches[batch_id]["created_at"],
+    )
+
+    # Register in sorted set index for dashboard listing
+    RedisPubSub.register_batch_sync(
+        REDIS_URL, batch_id, _batches[batch_id]["created_at"],
+    )
+
     # Pass upload metadata so the Celery worker can read the file
     full_config = {**body.config_overrides, "_upload_meta": dict(up)}
     _dispatch(batch_id, body.upload_id, full_config)
@@ -289,6 +377,31 @@ def run_pipeline(body: RunRequest) -> RunResponse:
 # ---------------------------------------------------------------------------
 
 
+def _load_all_batches() -> list[dict[str, Any]]:
+    """Load all known batches from the sorted set index + in-memory fallback.
+
+    Queries the Redis sorted set (newest first), hydrates each via _get_batch
+    (which recovers from Redis hash on cache miss). Merges any in-memory-only
+    batches not yet indexed (e.g. just created, index write pending).
+    """
+    indexed_ids = RedisPubSub.list_batches_sync(REDIS_URL, offset=0, limit=1000)
+    batches_by_id: dict[str, dict[str, Any]] = {}
+
+    for bid in indexed_ids:
+        try:
+            batches_by_id[bid] = _get_batch(bid)
+        except HTTPException:
+            continue  # stale index entry — batch hash expired
+
+    # Merge any in-memory batches not in the index (edge case)
+    for bid, b in _batches.items():
+        if bid not in batches_by_id:
+            _sync_from_redis(b, bid)
+            batches_by_id[bid] = b
+
+    return list(batches_by_id.values())
+
+
 @router.get("/d365_fo/dynafit/batches")
 def list_batches(
     country: str | None = None,
@@ -297,10 +410,7 @@ def list_batches(
     page: int = 1,
     limit: int = 10,
 ) -> BatchHistoryResponse:
-    batches = list(_batches.values())
-    # Sync status/summary from Redis so batch history reflects pipeline state
-    for b in batches:
-        _sync_from_redis(b, b["batch_id"])
+    batches = _load_all_batches()
     if country:
         batches = [b for b in batches if b["country"] == country]
     if wave is not None:
@@ -353,14 +463,29 @@ def get_results(
     if module:
         results = [r for r in results if r["module"] == module]
 
+    # Index journey data by atom_id for inline attachment (eliminates N+1)
+    journey_by_atom: dict[str, dict[str, Any]] = {
+        j["atom_id"]: j for j in batch.get("journey", [])
+    }
+
     start = (page - 1) * limit
+    page_results = results[start : start + limit]
+
+    result_items: list[ResultItem] = []
+    for r in page_results:
+        item = ResultItem(**r)
+        j = journey_by_atom.get(r["atom_id"])
+        if j:
+            item.journey = AtomJourney(**j)
+        result_items.append(item)
+
     return ResultsResponse(
         batch_id=batch_id,
         status=batch["status"],
         total=len(results),
         page=page,
         limit=limit,
-        results=[ResultItem(**r) for r in results[start : start + limit]],
+        results=result_items,
         summary=BatchSummary(**batch["summary"]),
     )
 
@@ -448,6 +573,18 @@ def get_progress(batch_id: str) -> ProgressResponse:
             atom_id=c["atom_id"],
             classification=c["classification"],
             confidence=c["confidence"],
+            requirement_text=c.get(
+                "requirement_text", ""
+            ),
+            module=c.get("module", ""),
+            rationale=c.get("rationale", ""),
+            d365_capability=c.get(
+                "d365_capability", ""
+            ),
+            d365_navigation=c.get(
+                "d365_navigation", ""
+            ),
+            journey=c.get("journey"),
         )
         for c in persisted_cls
     ]
@@ -485,13 +622,19 @@ def get_review_queue(batch_id: str) -> ReviewQueueResponse:
 def complete_review(batch_id: str) -> dict[str, str]:
     batch = _get_batch(batch_id)
     overrides = _build_overrides(batch["review_items"])
+    # Write status transition immediately — before dispatching Celery task — so
+    # that any GET /progress poll that arrives after this returns "resuming", not
+    # "review_required".  Without this, the progress page sees review_required
+    # and bounces the user back to the review queue before the worker runs.
+    RedisPubSub.write_batch_state_sync(REDIS_URL, batch_id, status="resuming")
+    batch["status"] = "resuming"
     _dispatch_resume(batch_id, overrides)
     log.info(
         "review_complete_dispatched",
         batch_id=batch_id,
         override_count=len(overrides),
     )
-    return {"batch_id": batch_id, "status": "resumed"}
+    return {"batch_id": batch_id, "status": "resuming"}
 
 
 # ---------------------------------------------------------------------------
@@ -524,6 +667,13 @@ def submit_review(
     item["decision"] = body.decision
     item["reviewer"] = body.reviewer
     item["override_classification"] = body.override_classification
+
+    # Persist decisions to Redis so they survive process restart and are
+    # visible to complete_review even if this process dies between submissions.
+    RedisPubSub.write_batch_state_sync(
+        REDIS_URL, batch_id,
+        review_items=json.dumps(batch["review_items"]),
+    )
 
     final = (
         body.override_classification if body.decision == "OVERRIDE" else item["ai_classification"]
@@ -630,9 +780,7 @@ def list_all_batches(
     status: str | None = None,
     page: int = 1,
 ) -> BatchHistoryResponse:
-    batches = list(_batches.values())
-    for b in batches:
-        _sync_from_redis(b, b["batch_id"])
+    batches = _load_all_batches()
     if status:
         batches = [b for b in batches if b["status"] == status]
     total = len(batches)

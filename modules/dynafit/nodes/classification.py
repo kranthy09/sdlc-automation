@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import time
 from collections import Counter
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field
@@ -53,6 +54,7 @@ from ..events import (
     publish_phase_start,
     publish_step_progress,
 )
+from ..presentation import build_single_atom_journey
 from ..product_config import get_product_config
 from ..prompts.loader import render_prompt
 from ..state import DynafitState
@@ -68,6 +70,10 @@ _FIT_SANITY_MIN: float = 0.50
 
 # Number of independent LLM calls for DEEP_REASON majority vote
 _DEEP_REASON_CALLS: int = 3
+
+# Max concurrent LLM classification calls (thread pool size).
+# Each call averages ~1.5s network I/O; 10 threads ≈ 10x throughput.
+_CLASSIFICATION_CONCURRENCY: int = 10
 
 
 # ---------------------------------------------------------------------------
@@ -171,28 +177,66 @@ class ClassificationNode:
         # Build prior_fitments lookup from Phase 2 AssembledContexts.
         # Phase 3 (MatchResult) does not carry prior_fitments forward,
         # so we cross-reference state["retrieval_contexts"] by atom_id.
+        contexts = state.get("retrieval_contexts", [])
         priors_by_atom: dict[str, list[PriorFitment]] = {
-            ctx.atom.atom_id: ctx.prior_fitments for ctx in state.get("retrieval_contexts", [])
+            ctx.atom.atom_id: ctx.prior_fitments
+            for ctx in contexts
+        }
+
+        # Lookups for per-atom journey building (streaming)
+        atom_by_id = {
+            a.atom_id: a
+            for a in state.get("validated_atoms", [])
+        }
+        ctx_by_id = {
+            c.atom.atom_id: c for c in contexts
         }
 
         t0 = time.monotonic()
         n = len(match_results)
         classifications: list[ClassificationResult] = []
-        for i, mr in enumerate(match_results):
-            result = self._classify_one(
-                mr,
-                priors_by_atom.get(mr.atom.atom_id, []),
-                config,
-            )
-            publish_classification_event(batch_id, result)
-            classifications.append(result)
-            publish_step_progress(
-                batch_id,
-                phase=4,
-                step=f"Classifying requirements ({i + 1}/{n})",
-                completed=i + 1,
-                total=n,
-            )
+        completed_count = 0
+
+        # Submit ALL atoms to the pool at once — the pool internally limits
+        # concurrency to _CLASSIFICATION_CONCURRENCY workers, so at most that many
+        # LLM calls are in-flight simultaneously. Using as_completed on the full
+        # future set (rather than batching) means fast atoms don't wait for slow
+        # DEEP_REASON neighbours before new work starts.
+        with ThreadPoolExecutor(max_workers=_CLASSIFICATION_CONCURRENCY) as pool:
+            future_to_mr = {
+                pool.submit(
+                    self._classify_one,
+                    mr,
+                    priors_by_atom.get(mr.atom.atom_id, []),
+                    config,
+                ): mr
+                for mr in match_results
+            }
+
+            # Stream results to the WebSocket as each atom finishes
+            for future in as_completed(future_to_mr):
+                mr = future_to_mr[future]
+                result = future.result()  # _classify_one never raises (catches LLMError)
+                journey = build_single_atom_journey(
+                    atom_id=mr.atom.atom_id,
+                    atom=atom_by_id.get(mr.atom.atom_id),
+                    ctx=ctx_by_id.get(mr.atom.atom_id),
+                    mr=mr,
+                    cls=result,
+                )
+                publish_classification_event(
+                    batch_id, result, journey=journey,
+                )
+                classifications.append(result)
+                completed_count += 1
+                publish_step_progress(
+                    batch_id,
+                    phase=4,
+                    step=f"Classifying requirements ({completed_count}/{n})",
+                    completed=completed_count,
+                    total=n,
+                )
+
         elapsed_ms = (time.monotonic() - t0) * 1000
 
         counts: Counter[FitLabel] = Counter(r.classification for r in classifications)
@@ -346,11 +390,17 @@ class ClassificationNode:
         priors: list[PriorFitment],
         config: ProductConfig,
     ) -> ClassificationResult:
+        # Run all _DEEP_REASON_CALLS LLM calls concurrently — each is an independent
+        # network round-trip, so parallelising them cuts latency from 3× to ~1×.
         outputs: list[LLMClassificationOutput] = []
-        for i in range(_DEEP_REASON_CALLS):
+        with ThreadPoolExecutor(max_workers=_DEEP_REASON_CALLS) as _dr_pool:
+            dr_futures = [
+                _dr_pool.submit(self._call_llm, mr, priors, config, 0.3)
+                for _ in range(_DEEP_REASON_CALLS)
+            ]
+        for i, f in enumerate(dr_futures):
             try:
-                out = self._call_llm(mr, priors, config, temperature=0.3)
-                outputs.append(out)
+                outputs.append(f.result())
             except LLMError as exc:
                 log.warning(
                     "classification_deep_reason_call_failed",

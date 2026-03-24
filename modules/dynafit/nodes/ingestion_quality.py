@@ -44,11 +44,11 @@ _spacy_unavailable: bool = False
 _spacy_lock = threading.Lock()
 
 
-def _extract_entity_hints(text: str) -> list[str]:
-    """Return NER entity strings from text. Returns [] if spaCy is not installed."""
+def _load_spacy() -> bool:
+    """Ensure spaCy model is loaded. Returns True if available."""
     global _spacy_nlp, _spacy_unavailable
     if _spacy_unavailable:
-        return []
+        return False
     if _spacy_nlp is None:
         with _spacy_lock:
             if _spacy_nlp is None and not _spacy_unavailable:
@@ -61,12 +61,36 @@ def _extract_entity_hints(text: str) -> list[str]:
 
                     get_logger(__name__).warning("spacy_load_failed", error=str(exc))
                     _spacy_unavailable = True
-                    return []
+                    return False
+    return not _spacy_unavailable
+
+
+def _extract_entity_hints(text: str) -> list[str]:
+    """Return NER entity strings from text. Returns [] if spaCy is not installed."""
+    if not _load_spacy():
+        return []
     try:
         doc = _spacy_nlp(text[:512])
         return list({ent.text.lower() for ent in doc.ents if len(ent.text) > 2})
     except Exception:
         return []
+
+
+def _extract_entity_hints_batch(texts: list[str]) -> list[list[str]]:
+    """Batch NER using spaCy pipe() — 3-5x faster than per-text calls.
+
+    Returns a list of entity-hint lists, one per input text.
+    Falls back to empty lists if spaCy is unavailable.
+    """
+    if not texts or not _load_spacy():
+        return [[] for _ in texts]
+    try:
+        results: list[list[str]] = []
+        for doc in _spacy_nlp.pipe([t[:512] for t in texts]):
+            results.append(list({ent.text.lower() for ent in doc.ents if len(ent.text) > 2}))
+        return results
+    except Exception:
+        return [[] for _ in texts]
 
 
 # ---------------------------------------------------------------------------
@@ -265,6 +289,13 @@ def _apply_quality_gates(
     validated: list[ValidatedAtom] = []
     flagged: list[FlaggedAtom] = []
 
+    # Pre-compute entity hints for all unique atoms in one batched spaCy pipe() call.
+    _unique_texts = [req.atom.requirement_text for req in unique]
+    _hints_batch = _extract_entity_hints_batch(_unique_texts)
+    _entity_hints_map: dict[str, list[str]] = {
+        req.atom.atom_id: hints for req, hints in zip(unique, _hints_batch)
+    }
+
     duplicate_ids = {r.atom.atom_id for r in potential_duplicates}
     for dup in potential_duplicates:
         flagged.append(
@@ -358,7 +389,7 @@ def _apply_quality_gates(
                 priority=_infer_moscow_priority(text),
                 intent=req.intent,
                 content_type=req.atom.content_type,
-                entity_hints=_extract_entity_hints(text),
+                entity_hints=_entity_hints_map.get(req.atom.atom_id, []),
                 specificity_score=specificity,
                 completeness_score=completeness,
                 source_refs=[req.atom.source_ref] if req.atom.source_ref else [],

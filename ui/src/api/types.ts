@@ -68,6 +68,7 @@ export interface FitmentResult {
   configuration_steps: string[] | null
   dev_effort: 'S' | 'M' | 'L' | null
   gap_type: string | null
+  journey: AtomJourney | null
 }
 
 export interface ModuleSummary {
@@ -130,6 +131,7 @@ export interface ReviewItem {
   configuration_steps: string[] | null
   dev_effort: 'S' | 'M' | 'L' | null
   gap_type: string | null
+  reviewed: boolean
 }
 
 export interface AutoApprovedItem {
@@ -210,6 +212,7 @@ export interface JourneyIngest {
   atom_id: string
   requirement_text: string
   module: string
+  country: string
   intent: string
   priority: string
   entity_hints: string[]
@@ -311,6 +314,12 @@ export interface ProgressClassificationItem {
   atom_id: string
   classification: Classification
   confidence: number
+  requirement_text: string
+  module: string
+  rationale: string
+  d365_capability: string
+  d365_navigation: string
+  journey: AtomJourney | null
 }
 
 export interface ProgressResponse {
@@ -358,6 +367,12 @@ export interface WSClassification {
   atom_id: string
   classification: Classification
   confidence: number
+  requirement_text: string
+  module: string
+  rationale: string
+  d365_capability: string
+  d365_navigation: string
+  journey: AtomJourney | null
   timestamp: string
 }
 

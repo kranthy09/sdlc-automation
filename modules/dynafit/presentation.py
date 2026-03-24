@@ -35,6 +35,120 @@ def review_reason(flags: list[str]) -> str:
     return "low_confidence"
 
 
+def build_single_atom_journey(
+    atom_id: str,
+    atom: Any | None,
+    ctx: Any | None,
+    mr: Any | None,
+    cls: Any | None,
+    *,
+    reviewer_override: bool = False,
+) -> dict[str, Any] | None:
+    """Build journey data for a single atom.
+
+    This is the streaming counterpart to build_journey_data(). Called
+    per-atom as classifications complete, so the consultant can drill
+    into evidence immediately. Also used by build_journey_data() to
+    eliminate duplication.
+
+    Returns None if cls is missing (no classification result).
+    """
+    if not cls:
+        return None
+
+    ingest = {
+        "atom_id": atom_id,
+        "requirement_text": cls.requirement_text,
+        "module": cls.module,
+        "country": cls.country,
+        "intent": atom.intent if atom else "FUNCTIONAL",
+        "priority": atom.priority if atom else "SHOULD",
+        "entity_hints": atom.entity_hints if atom else [],
+        "specificity_score": (
+            atom.specificity_score if atom else 0.0
+        ),
+        "completeness_score": (
+            atom.completeness_score if atom else 0.0
+        ),
+        "content_type": atom.content_type if atom else "text",
+        "source_refs": atom.source_refs if atom else [],
+    }
+
+    retrieve = {
+        "capabilities": [
+            {
+                "name": cap.feature,
+                "score": cap.composite_score,
+                "navigation": cap.navigation,
+            }
+            for cap in (ctx.capabilities[:5] if ctx else [])
+        ],
+        "ms_learn_refs": [
+            {"title": ref.title, "score": ref.score}
+            for ref in (
+                ctx.ms_learn_refs[:3] if ctx else []
+            )
+        ],
+        "prior_fitments": [
+            {
+                "wave": pf.wave,
+                "country": pf.country,
+                "classification": pf.classification,
+            }
+            for pf in (ctx.prior_fitments if ctx else [])
+        ],
+        "retrieval_confidence": (
+            ctx.retrieval_confidence if ctx else "LOW"
+        ),
+    }
+
+    match = {
+        "signal_breakdown": (
+            mr.signal_breakdown if mr else {}
+        ),
+        "composite_score": (
+            mr.top_composite_score if mr else 0.0
+        ),
+        "route": str(mr.route) if mr else "",
+        "anomaly_flags": mr.anomaly_flags if mr else [],
+    }
+
+    d365_nav = (
+        mr.ranked_capabilities[0].navigation
+        if mr and mr.ranked_capabilities
+        else ""
+    )
+    classify = {
+        "classification": str(cls.classification),
+        "confidence": cls.confidence,
+        "rationale": cls.rationale,
+        "route_used": str(cls.route_used),
+        "llm_calls_used": cls.llm_calls_used,
+        "d365_capability": cls.d365_capability_ref or "",
+        "d365_navigation": d365_nav,
+    }
+
+    output = {
+        "classification": str(cls.classification),
+        "confidence": cls.confidence,
+        "config_steps": cls.config_steps,
+        "configuration_steps": cls.configuration_steps,
+        "gap_description": cls.gap_description,
+        "gap_type": cls.gap_type,
+        "dev_effort": cls.dev_effort,
+        "reviewer_override": reviewer_override,
+    }
+
+    return {
+        "atom_id": atom_id,
+        "ingest": ingest,
+        "retrieve": retrieve,
+        "match": match,
+        "classify": classify,
+        "output": output,
+    }
+
+
 def build_journey_data(
     final_state: dict[str, Any],
 ) -> list[dict[str, Any]]:
@@ -63,106 +177,16 @@ def build_journey_data(
     all_ids = list(cls_by_id.keys()) or list(atom_by_id.keys())
 
     for atom_id in all_ids:
-        atom = atom_by_id.get(atom_id)
-        ctx = ctx_by_id.get(atom_id)
-        mr = mr_by_id.get(atom_id)
-        cls = cls_by_id.get(atom_id)
-
-        if not cls:
-            continue
-
-        ingest = {
-            "atom_id": atom_id,
-            "requirement_text": cls.requirement_text,
-            "module": cls.module,
-            "intent": atom.intent if atom else "FUNCTIONAL",
-            "priority": atom.priority if atom else "SHOULD",
-            "entity_hints": atom.entity_hints if atom else [],
-            "specificity_score": (
-                atom.specificity_score if atom else 0.0
-            ),
-            "completeness_score": (
-                atom.completeness_score if atom else 0.0
-            ),
-            "content_type": atom.content_type if atom else "text",
-            "source_refs": atom.source_refs if atom else [],
-        }
-
-        retrieve = {
-            "capabilities": [
-                {
-                    "name": cap.feature,
-                    "score": cap.composite_score,
-                    "navigation": cap.navigation,
-                }
-                for cap in (ctx.capabilities[:5] if ctx else [])
-            ],
-            "ms_learn_refs": [
-                {"title": ref.title, "score": ref.score}
-                for ref in (
-                    ctx.ms_learn_refs[:3] if ctx else []
-                )
-            ],
-            "prior_fitments": [
-                {
-                    "wave": pf.wave,
-                    "country": pf.country,
-                    "classification": pf.classification,
-                }
-                for pf in (ctx.prior_fitments if ctx else [])
-            ],
-            "retrieval_confidence": (
-                ctx.retrieval_confidence if ctx else "LOW"
-            ),
-        }
-
-        match = {
-            "signal_breakdown": (
-                mr.signal_breakdown if mr else {}
-            ),
-            "composite_score": (
-                mr.top_composite_score if mr else 0.0
-            ),
-            "route": str(mr.route) if mr else "",
-            "anomaly_flags": mr.anomaly_flags if mr else [],
-        }
-
-        d365_nav = (
-            mr.ranked_capabilities[0].navigation
-            if mr and mr.ranked_capabilities
-            else ""
+        journey = build_single_atom_journey(
+            atom_id=atom_id,
+            atom=atom_by_id.get(atom_id),
+            ctx=ctx_by_id.get(atom_id),
+            mr=mr_by_id.get(atom_id),
+            cls=cls_by_id.get(atom_id),
+            reviewer_override=atom_id in reviewed_ids,
         )
-        classify = {
-            "classification": str(cls.classification),
-            "confidence": cls.confidence,
-            "rationale": cls.rationale,
-            "route_used": str(cls.route_used),
-            "llm_calls_used": cls.llm_calls_used,
-            "d365_capability": cls.d365_capability_ref or "",
-            "d365_navigation": d365_nav,
-        }
-
-        output = {
-            "classification": str(cls.classification),
-            "confidence": cls.confidence,
-            "config_steps": cls.config_steps,
-            "configuration_steps": cls.configuration_steps,
-            "gap_description": cls.gap_description,
-            "gap_type": cls.gap_type,
-            "dev_effort": cls.dev_effort,
-            "reviewer_override": atom_id in reviewed_ids,
-        }
-
-        journeys.append(
-            {
-                "atom_id": atom_id,
-                "ingest": ingest,
-                "retrieve": retrieve,
-                "match": match,
-                "classify": classify,
-                "output": output,
-            }
-        )
+        if journey:
+            journeys.append(journey)
 
     return journeys
 

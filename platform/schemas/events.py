@@ -15,7 +15,7 @@ ProgressEvent is the union type used at the API boundary.
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
 from pydantic import Field
 
@@ -50,13 +50,24 @@ class StepProgressEvent(PlatformModel):
 
 
 class ClassificationEvent(PlatformModel):
-    """Emitted when Phase 4 classifies a single requirement."""
+    """Emitted when Phase 4 classifies a single requirement.
+
+    The optional fields (requirement_text, module, rationale, etc.) are
+    populated during streaming so the consultant can inspect evidence
+    immediately — not just after the full batch completes.
+    """
 
     event: Literal["classification"] = "classification"
     batch_id: str
     atom_id: str
     classification: FitLabel
     confidence: Annotated[float, Field(ge=0.0, le=1.0)]
+    requirement_text: str = ""
+    module: str = ""
+    rationale: str = ""
+    d365_capability: str = ""
+    d365_navigation: str = ""
+    journey: dict[str, Any] | None = None
     timestamp: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 

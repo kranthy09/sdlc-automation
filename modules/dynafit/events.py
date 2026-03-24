@@ -122,13 +122,33 @@ def publish_step_progress(
 def publish_classification_event(
     batch_id: str,
     result: Any,
+    *,
+    journey: dict[str, Any] | None = None,
 ) -> None:
-    """Publish ClassificationEvent. Non-fatal."""
+    """Publish ClassificationEvent with context. Non-fatal.
+
+    When *journey* is provided the consultant can drill into
+    evidence immediately from the live classification table.
+    """
+    d365_nav = ""
+    if journey and journey.get("classify"):
+        d365_nav = journey["classify"].get(
+            "d365_navigation", ""
+        )
+
     event = ClassificationEvent(
         batch_id=batch_id,
         atom_id=result.atom_id,
         classification=result.classification,
         confidence=result.confidence,
+        requirement_text=result.requirement_text,
+        module=result.module,
+        rationale=result.rationale,
+        d365_capability=(
+            result.d365_capability_ref or ""
+        ),
+        d365_navigation=d365_nav,
+        journey=journey,
     )
     _persist_classification(event, batch_id)
     _publish_sync(event, batch_id, phase=4)

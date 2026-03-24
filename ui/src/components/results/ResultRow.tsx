@@ -13,8 +13,10 @@ interface ResultRowProps {
 
 export function ResultRow({ result, batchId }: ResultRowProps) {
   const [open, setOpen] = useState(false)
-  const { data: journeyData } = useJourney(batchId, open ? result.atom_id : undefined)
-  const atomJourney = journeyData?.atoms?.[0] ?? null
+  // Prefer inline journey from results response; fall back to per-atom fetch
+  const needsFetch = open && !result.journey
+  const { data: journeyData } = useJourney(batchId, needsFetch ? result.atom_id : undefined)
+  const atomJourney = result.journey ?? journeyData?.atoms?.[0] ?? null
 
   return (
     <div className="border-b border-bg-border/50 last:border-0">
@@ -30,7 +32,7 @@ export function ResultRow({ result, batchId }: ResultRowProps) {
           )}
         />
         <p className="w-24 shrink-0 font-mono text-xs text-text-secondary">{result.atom_id}</p>
-        <p className="flex-1 truncate text-sm text-text-primary">{result.requirement_text}</p>
+        <p className="flex-1 text-sm text-text-primary leading-relaxed">{result.requirement_text}</p>
         <p className="w-24 shrink-0 text-xs text-text-muted">{result.module}</p>
         <div className="w-24 shrink-0">
           <Badge variant={result.classification} />
