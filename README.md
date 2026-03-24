@@ -26,6 +26,10 @@ Import boundaries are enforced by CI on every PR — violations block merges.
 
 ![Dashboard Page](./docs/platform_screenshots/dashboard_home.png)
 
+### HITL, Validation
+
+![Human Review validation](./docs/platform_screenshots/HITL.png)
+
 ### Batch Results
 
 ![Results Page](./docs/platform_screenshots/batch_results.png)
