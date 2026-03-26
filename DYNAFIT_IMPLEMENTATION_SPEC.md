@@ -854,7 +854,7 @@ DE:
 #### A: Excel Builder (openpyxl)
 ```
 Fitment Matrix columns:
-  Req ID | Requirement | Module | Country | Wave | Classification | Confidence | 
+  Req ID | Requirement | Module | Country | Wave | Classification | Confidence |
   D365 Capability | Rationale | Config Steps | Gap Description | Reviewer | Override
 ```
 - Conditional formatting: FIT = green, PARTIAL_FIT = amber, GAP = red
@@ -900,21 +900,21 @@ class RequirementState(TypedDict):
 
 def build_dynafit_graph() -> StateGraph:
     graph = StateGraph(RequirementState)
-    
+
     graph.add_node("ingest", phase1_ingestion_node)
     graph.add_node("retrieve", phase2_retrieval_node)
     graph.add_node("match", phase3_matching_node)
     graph.add_node("classify", phase4_classification_node)
     graph.add_node("validate", phase5_validation_node)
-    
+
     graph.add_edge("ingest", "retrieve")
     graph.add_edge("retrieve", "match")
     graph.add_edge("match", "classify")
     graph.add_edge("classify", "validate")
     graph.add_edge("validate", END)
-    
+
     graph.set_entry_point("ingest")
-    
+
     return graph.compile(
         checkpointer=PostgresSaver.from_conn_string(POSTGRES_URL),
         interrupt_before=["validate"],  # HITL pause point

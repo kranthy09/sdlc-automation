@@ -2,13 +2,13 @@
 Import boundary and manifest schema validator.
 
 Enforces architectural import rules on every PR:
-  - platform/ cannot import from agents/, modules/, or api/
+  - platforms/ cannot import from agents/, modules/, or api/
   - agents/ cannot import from modules/ or api/
   - modules/X/ cannot import from modules/Y/ (no cross-module imports)
-  - api/ routes may only import from modules/ entry points and platform/schemas/
+  - api/ routes may only import from modules/ entry points and platforms/schemas/
 
 Also validates manifest.yaml files:
-  - input_schema and output_schema fields must resolve to real classes in platform/schemas/
+  - input_schema and output_schema fields must resolve to real classes in platforms/schemas/
 
 Run via: make validate-contracts
 Exit code 0 = all contracts valid. Exit code 1 = violations found.
@@ -27,9 +27,9 @@ from pathlib import Path
 # Each rule: (layer_prefix, forbidden_prefixes, description)
 LAYER_RULES: list[tuple[str, list[str], str]] = [
     (
-        "platform",
+        "platforms",
         ["agents", "modules", "api"],
-        "platform/ cannot import from agents/, modules/, or api/",
+        "platforms/ cannot import from agents/, modules/, or api/",
     ),
     (
         "agents",
@@ -170,9 +170,9 @@ def check_manifests(root: Path) -> list[str]:
 
     violations: list[str] = []
 
-    # Collect all class names defined in platform/schemas/
+    # Collect all class names defined in platforms/schemas/
     schema_classes: set[str] = set()
-    schemas_dir = root / "platform" / "schemas"
+    schemas_dir = root / "platforms" / "schemas"
     if schemas_dir.exists():
         for py_file in schemas_dir.rglob("*.py"):
             try:

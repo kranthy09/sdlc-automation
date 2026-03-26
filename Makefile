@@ -13,7 +13,7 @@ setup:
 # Testing
 # ---------------------------------------------------------------------------
 test:
-	uv run pytest -x --cov=platform --cov=modules --cov=agents -v
+	uv run pytest -x --cov=platforms --cov=modules --cov=agents -v
 
 test-unit:
 	uv run pytest -m unit -v
@@ -33,7 +33,7 @@ test-golden:
 lint:
 	uv run ruff check .
 	uv run ruff format --check .
-	uv run mypy platform/ agents/ modules/ api/
+	uv run mypy platforms/ agents/ modules/ api/
 
 format:
 	uv run ruff check --fix .

@@ -33,24 +33,24 @@ class TestLayerImportRules:
     def test_platform_importing_agents_is_violation(self, tmp_path: Path) -> None:
         self._write_py(
             tmp_path,
-            "platform/llm/client.py",
+            "platforms/llm/client.py",
             """
             from agents.ingestion import something  # forbidden
             """,
         )
         violations = _vc.check_layer_imports(tmp_path)
-        assert any("platform/ cannot import" in v for v in violations)
+        assert any("platforms/ cannot import" in v for v in violations)
 
     def test_platform_importing_modules_is_violation(self, tmp_path: Path) -> None:
         self._write_py(
             tmp_path,
-            "platform/storage/postgres.py",
+            "platforms/storage/postgres.py",
             """
             import modules.dynafit.graph  # forbidden
             """,
         )
         violations = _vc.check_layer_imports(tmp_path)
-        assert any("platform/ cannot import" in v for v in violations)
+        assert any("platforms/ cannot import" in v for v in violations)
 
     def test_agents_importing_modules_is_violation(self, tmp_path: Path) -> None:
         self._write_py(
@@ -66,10 +66,10 @@ class TestLayerImportRules:
     def test_clean_platform_file_passes(self, tmp_path: Path) -> None:
         self._write_py(
             tmp_path,
-            "platform/schemas/base.py",
+            "platforms/schemas/base.py",
             """
             from pydantic import BaseModel  # external dep, fine
-            from platform.schemas.errors import ParseError  # same layer, fine
+            from platforms.schemas.errors import ParseError  # same layer, fine
             """,
         )
         violations = _vc.check_layer_imports(tmp_path)
@@ -80,7 +80,7 @@ class TestLayerImportRules:
             tmp_path,
             "agents/rag/agent.py",
             """
-            from platform.retrieval.vector_store import VectorStore  # allowed
+            from platforms.retrieval.vector_store import VectorStore  # allowed
             """,
         )
         violations = _vc.check_layer_imports(tmp_path)
@@ -112,7 +112,7 @@ class TestCrossModuleImports:
             tmp_path,
             "modules/dynafit/nodes.py",
             """
-            from platform.llm.client import classify  # allowed (up-layer import)
+            from platforms.llm.client import classify  # allowed (up-layer import)
             """,
         )
         violations = _vc.check_cross_module_imports(tmp_path)

@@ -25,10 +25,16 @@ repos:
         entry: uv run mypy
         language: system
         types: [python]
-        args: [--strict, --ignore-missing-imports]
+        args:
+          - --strict
+          - --ignore-missing-imports
+          - platforms/
+          - agents/
+          - modules/
+          - api/
         pass_filenames: false
         always_run: false
-        files: ^(platform|agents|modules|api)/
+        files: ^(platforms|agents|modules|api)/
 
       - id: validate-contracts
         name: validate import contracts

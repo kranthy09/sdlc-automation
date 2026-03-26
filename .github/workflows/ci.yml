@@ -76,14 +76,14 @@ jobs:
         run: make validate-contracts
 
       - name: Unit tests
-        run: uv run pytest -m "unit or not integration" --cov=platform --cov=modules --cov=agents -v --tb=short
+        run: uv run pytest -m "unit or not integration" --cov=platforms --cov=modules --cov=agents -v --tb=short
         env:
           POSTGRES_URL: ${{ env.POSTGRES_URL }}
           REDIS_URL: ${{ env.REDIS_URL }}
           QDRANT_URL: ${{ env.QDRANT_URL }}
 
       - name: Integration tests
-        run: uv run pytest -m integration --cov=platform --cov=modules --cov=agents -v --tb=short
+        run: uv run pytest -m integration --cov=platforms --cov=modules --cov=agents -v --tb=short
         env:
           POSTGRES_URL: ${{ env.POSTGRES_URL }}
           REDIS_URL: ${{ env.REDIS_URL }}

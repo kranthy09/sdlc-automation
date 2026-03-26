@@ -367,20 +367,20 @@ app = Celery("dynafit", broker="redis://localhost:6379/0")
 @app.task(bind=True, max_retries=2, default_retry_delay=30)
 def run_dynafit_pipeline(self, batch_id: str, upload_id: str, config: dict):
     """Execute the full DYNAFIT LangGraph pipeline."""
-    
+
     r = redis.Redis()
     channel = f"progress:{batch_id}"
-    
+
     def emit(msg: dict):
         """Publish progress to Redis → WebSocket."""
         r.publish(channel, json.dumps(msg))
-    
+
     # Build graph with progress callback
     graph = build_dynafit_graph()
-    
+
     # Load upload
     upload = load_upload(upload_id)
-    
+
     # Initial state
     state = {
         "raw_upload": upload,
@@ -388,7 +388,7 @@ def run_dynafit_pipeline(self, batch_id: str, upload_id: str, config: dict):
         "config": config,
         "progress_callback": emit,   # each node calls this
     }
-    
+
     try:
         # Run graph — checkpoints to PostgreSQL automatically
         # When graph hits interrupt() at Phase 5, it pauses
@@ -399,12 +399,12 @@ def run_dynafit_pipeline(self, batch_id: str, upload_id: str, config: dict):
                 "product": load_product_config("d365_fo"),
             }
         })
-        
+
         if result.get("status") == "interrupted":
             emit({"type": "review_required", "batch_id": batch_id, ...})
         else:
             emit({"type": "complete", "batch_id": batch_id, ...})
-            
+
     except Exception as e:
         emit({"type": "error", "message": str(e), "recoverable": True})
         self.retry(exc=e)
@@ -418,15 +418,15 @@ def run_dynafit_pipeline(self, batch_id: str, upload_id: str, config: dict):
 @router.post("/{batch_id}/review/complete")
 async def complete_review(batch_id: str):
     """All reviews submitted — resume the pipeline."""
-    
+
     graph = build_dynafit_graph()
-    
+
     # Resume from checkpoint — LangGraph loads saved state
     result = graph.invoke(
         None,  # no new input — resume from checkpoint
         config={"configurable": {"thread_id": batch_id}},
     )
-    
+
     return {"status": "resumed", "batch_id": batch_id}
 ```
 
@@ -442,11 +442,11 @@ import redis.asyncio as aioredis
 
 async def progress_handler(websocket: WebSocket, batch_id: str):
     await websocket.accept()
-    
+
     r = aioredis.Redis()
     pubsub = r.pubsub()
     await pubsub.subscribe(f"progress:{batch_id}")
-    
+
     try:
         async for message in pubsub.listen():
             if message["type"] == "message":

@@ -65,8 +65,8 @@ redhat.vscode-yaml
 
 **Session 1 — Bootstrap:**
 ```
-@claude Read CLAUDE.md and TDD_IMPLEMENTATION_GUIDE.md. 
-Set up the monorepo scaffold, write pyproject.toml, 
+@claude Read CLAUDE.md and TDD_IMPLEMENTATION_GUIDE.md.
+Set up the monorepo scaffold, write pyproject.toml,
 create base schemas with tests. Run `make test` at the end.
 ```
 

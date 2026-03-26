@@ -188,37 +188,37 @@ dependencies = [
     "langgraph>=0.2",
     "langchain-core>=0.3",
     "langchain-anthropic>=0.3",
-    
+
     # Parsing
     "docling>=2.0",
     "openpyxl>=3.1",
-    
+
     # NLP
     "spacy>=3.7",
     "rapidfuzz>=3.6",
-    
+
     # Vector / Retrieval
     "qdrant-client>=1.8",
     "sentence-transformers>=2.5",
     "rank-bm25>=0.2",
-    
+
     # Storage
     "sqlalchemy[asyncio]>=2.0",
     "asyncpg>=0.29",
     "redis>=5.0",
-    
+
     # API
     "fastapi>=0.110",
     "uvicorn[standard]>=0.27",
     "celery[redis]>=5.3",
-    
+
     # Observability
     "structlog>=24.1",
     "prometheus-client>=0.20",
-    
+
     # Templating
     "jinja2>=3.1",
-    
+
     # Reports
     "openpyxl>=3.1",
 ]
@@ -268,7 +268,7 @@ from pydantic import ValidationError
 def test_requirement_atom_valid():
     """A well-formed requirement atom passes validation."""
     from platform.schemas.requirement import RequirementAtom
-    
+
     atom = RequirementAtom(
         atom_id="REQ-AP-001",
         requirement_text="System must support three-way matching for purchase invoices",
@@ -287,7 +287,7 @@ def test_requirement_atom_valid():
 def test_requirement_atom_rejects_empty_text():
     """Requirement text cannot be empty."""
     from platform.schemas.requirement import RequirementAtom
-    
+
     with pytest.raises(ValidationError):
         RequirementAtom(
             atom_id="REQ-AP-001",
@@ -302,7 +302,7 @@ def test_requirement_atom_rejects_empty_text():
 def test_classification_result_valid():
     """Classification must be FIT, PARTIAL_FIT, or GAP."""
     from platform.schemas.fitment import ClassificationResult
-    
+
     result = ClassificationResult(
         requirement_id="REQ-AP-001",
         classification="FIT",
@@ -320,7 +320,7 @@ def test_classification_result_valid():
 def test_classification_rejects_invalid_type():
     """Classification must be one of the three allowed values."""
     from platform.schemas.fitment import ClassificationResult
-    
+
     with pytest.raises(ValidationError):
         ClassificationResult(
             requirement_id="REQ-AP-001",
@@ -536,17 +536,17 @@ from sentence_transformers import SentenceTransformer
 def seed(product: str):
     config_path = Path(f"knowledge_bases/{product}/product_config.yaml")
     # ... load config, read JSONL, embed, upsert to Qdrant
-    
+
     caps_path = Path(f"knowledge_bases/{product}/seed_data/capabilities.jsonl")
     model = SentenceTransformer("BAAI/bge-large-en-v1.5")
     client = QdrantClient(url="http://localhost:6333")
-    
+
     # Create collection
     client.recreate_collection(
         collection_name=f"{product}_capabilities",
         vectors_config=VectorParams(size=1024, distance=Distance.COSINE),
     )
-    
+
     # Load and embed
     points = []
     for i, line in enumerate(caps_path.read_text().splitlines()):
@@ -558,7 +558,7 @@ def seed(product: str):
             vector=embedding,
             payload=cap,
         ))
-    
+
     client.upsert(collection_name=f"{product}_capabilities", points=points)
     click.echo(f"Seeded {len(points)} capabilities into {product}_capabilities")
 
@@ -637,45 +637,45 @@ class TestFormatDetector:
 
     def test_detects_excel(self, tmp_path):
         from platform.parsers.format_detector import detect_format, DocumentFormat
-        
+
         xlsx = tmp_path / "reqs.xlsx"
         xlsx.write_bytes(b"PK\x03\x04")  # ZIP magic bytes (Excel is ZIP)
-        
+
         result = detect_format(xlsx)
         assert result.format == DocumentFormat.EXCEL
 
     def test_detects_pdf(self, tmp_path):
         from platform.parsers.format_detector import detect_format, DocumentFormat
-        
+
         pdf = tmp_path / "reqs.pdf"
         pdf.write_bytes(b"%PDF-1.4")
-        
+
         result = detect_format(pdf)
         assert result.format == DocumentFormat.PDF
 
     def test_detects_docx(self, tmp_path):
         from platform.parsers.format_detector import detect_format, DocumentFormat
-        
+
         docx = tmp_path / "reqs.docx"
         docx.write_bytes(b"PK\x03\x04")
         # Differentiate from Excel by checking internal structure
         # In real test: create actual minimal DOCX
-        
+
     def test_rejects_unknown_format(self, tmp_path):
         from platform.parsers.format_detector import detect_format, UnsupportedFormatError
-        
+
         unknown = tmp_path / "data.xyz"
         unknown.write_bytes(b"\x00\x00\x00")
-        
+
         with pytest.raises(UnsupportedFormatError):
             detect_format(unknown)
 
     def test_handles_empty_file(self, tmp_path):
         from platform.parsers.format_detector import detect_format, UnsupportedFormatError
-        
+
         empty = tmp_path / "empty.pdf"
         empty.write_bytes(b"")
-        
+
         with pytest.raises(UnsupportedFormatError):
             detect_format(empty)
 ```
@@ -717,18 +717,18 @@ GOLDEN_DIR = Path("tests/fixtures/golden")
 
 @pytest.mark.golden
 class TestClassificationGolden:
-    
+
     @pytest.fixture
     def golden_cases(self):
         return json.loads((GOLDEN_DIR / "phase4_classification.json").read_text())
-    
+
     def test_classification_matches_golden(self, golden_cases, mock_llm):
         """Classification output matches golden fixture expectations."""
         from modules.dynafit.nodes import classify_requirement
-        
+
         result = classify_requirement(golden_cases["input"], llm=mock_llm)
         expected = golden_cases["expected_output"]
-        
+
         assert result.classification == expected["classification"]
         assert result.confidence >= expected["confidence_min"]
         for term in expected["rationale_contains"]:
