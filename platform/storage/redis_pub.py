@@ -43,6 +43,7 @@ from platform.schemas.events import (
     CompleteEvent,
     ErrorEvent,
     PhaseCompleteEvent,
+    PhaseGateEvent,
     PhaseStartEvent,
     ReviewRequiredEvent,
     StepProgressEvent,
@@ -62,6 +63,7 @@ type _AnyEvent = (
     | CompleteEvent
     | ErrorEvent
     | ReviewRequiredEvent
+    | PhaseGateEvent
 )
 
 _adapter: TypeAdapter[Any] = TypeAdapter(
@@ -72,9 +74,10 @@ _adapter: TypeAdapter[Any] = TypeAdapter(
     | CompleteEvent
     | ErrorEvent
     | ReviewRequiredEvent
+    | PhaseGateEvent
 )
 
-_TERMINAL = (CompleteEvent, ErrorEvent, ReviewRequiredEvent)
+_TERMINAL = (CompleteEvent, ErrorEvent, ReviewRequiredEvent, PhaseGateEvent)
 
 
 # ---------------------------------------------------------------------------
@@ -391,6 +394,50 @@ class RedisPubSub:
                 "redis_classification_persist_failed",
                 batch_id=batch_id,
                 atom_id=event.atom_id,
+                error=str(exc),
+            )
+
+    # ------------------------------------------------------------------
+    # Gate data persistence (phase gates 1–4)
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def persist_gate_data_sync(
+        redis_url: str,
+        batch_id: str,
+        field: str,
+        rows: list[dict[str, Any]],
+    ) -> None:
+        """Persist gate summary data to the batch Redis hash.
+
+        Args:
+            redis_url:  Redis connection URL
+            batch_id:   Batch identifier
+            field:      Redis hash field name (e.g., 'phase1_atoms', 'phase2_contexts')
+            rows:       List of dicts to persist as JSON
+        """
+        import json as _json  # noqa: PLC0415
+
+        import redis as sync_redis  # noqa: PLC0415
+
+        hash_key = f"batch:{batch_id}"
+        try:
+            r = sync_redis.from_url(redis_url)
+            try:
+                r.hset(hash_key, field, _json.dumps(rows))
+            finally:
+                r.close()
+            log.debug(
+                "redis_gate_data_persisted",
+                batch_id=batch_id,
+                field=field,
+                rows_count=len(rows),
+            )
+        except Exception as exc:
+            log.warning(
+                "redis_gate_data_persist_failed",
+                batch_id=batch_id,
+                field=field,
                 error=str(exc),
             )
 

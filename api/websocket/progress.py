@@ -29,6 +29,7 @@ from platform.schemas.events import (
     ClassificationEvent,
     CompleteEvent,
     PhaseCompleteEvent,
+    PhaseGateEvent,
     PhaseStartEvent,
     ReviewRequiredEvent,
     StepProgressEvent,
@@ -242,6 +243,50 @@ async def _catch_up(
         log.info(
             "ws_replayed_review_required",
             batch_id=batch_id,
+        )
+        return True
+
+    if status and status.startswith("gate_"):
+        try:
+            gate = int(status.split("_")[1])
+        except (ValueError, IndexError):
+            return False
+
+        gate_names = {1: "Ingestion", 2: "RAG", 3: "Matching", 4: "Classification"}
+        phase_name = gate_names.get(gate, f"Phase {gate + 1}")
+
+        # Get atoms count from the corresponding Redis field
+        atoms_count = 0
+        field_map = {
+            1: "phase1_atoms",
+            2: "phase2_contexts",
+            3: "phase3_matches",
+            4: "classifications",
+        }
+        field = field_map.get(gate, "")
+        if field in batch:
+            try:
+                if gate == 4:
+                    rows = json.loads(batch.get("classifications", "[]"))
+                else:
+                    rows = json.loads(batch.get(field, "[]"))
+                atoms_count = len(rows)
+            except (json.JSONDecodeError, ValueError):
+                atoms_count = 0
+
+        gate_event = PhaseGateEvent(
+            batch_id=batch_id,
+            gate=gate,
+            phase_name=phase_name,
+            atoms_count=atoms_count,
+        )
+        await websocket.send_text(
+            gate_event.model_dump_json(),
+        )
+        log.info(
+            "ws_replayed_gate",
+            batch_id=batch_id,
+            gate=gate,
         )
         return True
 

@@ -376,3 +376,24 @@ class ProgressResponse(BaseModel):
     classifications: list[ProgressClassificationItem] = Field(
         default_factory=list,
     )
+
+
+# ---------------------------------------------------------------------------
+# Phase gate responses
+# ---------------------------------------------------------------------------
+
+
+class ProceedResponse(BaseModel):
+    """Response when analyst approves proceeding from a phase gate."""
+
+    batch_id: str
+    status: Literal["proceeding"] = "proceeding"
+    next_phase: int
+
+
+class GateAtomsResponse(BaseModel):
+    """Response containing summary data for a phase gate."""
+
+    batch_id: str
+    gate: int
+    rows: list[dict[str, Any]]

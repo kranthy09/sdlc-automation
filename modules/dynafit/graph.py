@@ -77,10 +77,10 @@ def build_dynafit_graph(checkpointer: Any = None) -> Any:
     # --- Entry point ---------------------------------------------------------
     graph.set_entry_point("ingest")
 
-    # --- Compile with HITL interrupt before Phase 5 --------------------------
+    # --- Compile with analyst gates before phases 2–5 + HITL in Phase 5 --------
     compiled = graph.compile(
         checkpointer=checkpointer,
-        interrupt_before=["validate"],
+        interrupt_before=["retrieve", "match", "classify", "validate"],
     )
 
     log.debug("dynafit_graph_compiled",

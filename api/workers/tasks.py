@@ -46,7 +46,7 @@ from modules.dynafit.presentation import (
     build_complete_data,
     build_hitl_data,
 )
-from platform.schemas.events import ErrorEvent, ReviewRequiredEvent
+from platform.schemas.events import ErrorEvent, PhaseGateEvent, ReviewRequiredEvent
 from platform.schemas.requirement import RawUpload
 from platform.storage.postgres import PostgresStore
 from platform.storage.redis_pub import RedisPubSub
@@ -96,6 +96,95 @@ def _write_batch_state(batch_id: str, **fields: str) -> None:
     RedisPubSub.write_batch_state_sync(
         REDIS_URL, batch_id, **fields,
     )
+
+
+# ---------------------------------------------------------------------------
+# Gate data extraction helpers
+# ---------------------------------------------------------------------------
+
+
+def _extract_gate1_rows(state: dict[str, Any]) -> list[dict[str, Any]]:
+    """Extract ingestion phase summary from state (gate 1).
+
+    state["validated_atoms"] is list[ValidatedAtom] — Pydantic models, not dicts.
+    completeness_score is 0–100 (per ValidatedAtom schema); sent as-is.
+    specificity_score is 0–1.
+    """
+    rows: list[dict[str, Any]] = []
+    for atom in state.get("validated_atoms", []):
+        rows.append({
+            "atom_id": atom.atom_id,
+            "requirement_text": atom.requirement_text,
+            "intent": atom.intent,
+            "module": atom.module,
+            "priority": atom.priority,
+            "completeness_score": atom.completeness_score,  # 0–100
+            "specificity_score": atom.specificity_score,    # 0–1
+        })
+    return rows
+
+
+def _extract_gate2_rows(state: dict[str, Any]) -> list[dict[str, Any]]:
+    """Extract retrieval phase summary from state (gate 2).
+
+    state["retrieval_contexts"] is list[AssembledContext] — Pydantic models.
+    atom_id / requirement_text live on ctx.atom (a nested ValidatedAtom).
+    Top capability is ctx.capabilities[0] (a RankedCapability); score is 0–1.
+    """
+    rows: list[dict[str, Any]] = []
+    for ctx in state.get("retrieval_contexts", []):
+        top_cap = ctx.capabilities[0] if ctx.capabilities else None
+        rows.append({
+            "atom_id": ctx.atom.atom_id,
+            "requirement_text": ctx.atom.requirement_text,
+            "top_capability": top_cap.feature if top_cap else "",
+            "top_capability_score": top_cap.composite_score if top_cap else 0.0,  # 0–1
+            "retrieval_confidence": ctx.retrieval_confidence,
+        })
+    return rows
+
+
+def _extract_gate3_rows(state: dict[str, Any]) -> list[dict[str, Any]]:
+    """Extract matching phase summary from state (gate 3).
+
+    state["match_results"] is list[MatchResult] — Pydantic models.
+    atom_id / requirement_text live on match.atom (a nested ValidatedAtom).
+    Composite score is match.top_composite_score (0–1).
+    """
+    rows: list[dict[str, Any]] = []
+    for match in state.get("match_results", []):
+        rows.append({
+            "atom_id": match.atom.atom_id,
+            "requirement_text": match.atom.requirement_text,
+            "composite_score": match.top_composite_score,  # 0–1
+            "route": match.route,
+            "anomaly_flags": match.anomaly_flags,
+        })
+    return rows
+
+
+async def _extract_interrupt_payload(
+    graph: Any, thread_config: dict[str, Any]
+) -> tuple[set[str], dict[str, list[str]]]:
+    """Extract flagged atom IDs and reasons from graph interrupt state.
+
+    Returns (flagged_ids, flagged_reasons) for HITL review.
+    """
+    flagged_ids: set[str] = set()
+    flagged_reasons: dict[str, list[str]] = {}
+    try:
+        snapshot = await graph.aget_state(thread_config)
+        for task in snapshot.tasks:
+            for intr in task.interrupts:
+                flagged_ids.update(intr.value.get("flagged_atom_ids", []))
+                flagged_reasons.update(
+                    intr.value.get("flagged_reasons", {}))
+    except Exception as exc:
+        log.warning(
+            "interrupt_payload_extract_failed",
+            error=str(exc),
+        )
+    return flagged_ids, flagged_reasons
 
 
 async def _update_batch_complete(
@@ -359,21 +448,7 @@ async def _run_phase5(
 
         # Phase 5 called interrupt() — graph is paused inside the validate node.
         # Retrieve the interrupt payload to learn which atoms were flagged and why.
-        flagged_ids: set[str] = set()
-        flagged_reasons: dict[str, list[str]] = {}
-        try:
-            snapshot = await graph.aget_state(thread_config)
-            for task in snapshot.tasks:
-                for intr in task.interrupts:
-                    flagged_ids.update(intr.value.get("flagged_atom_ids", []))
-                    flagged_reasons.update(
-                        intr.value.get("flagged_reasons", {}))
-        except Exception as exc:
-            log.warning(
-                "phase5_interrupt_payload_read_failed",
-                batch_id=batch_id,
-                error=str(exc),
-            )
+        flagged_ids, flagged_reasons = await _extract_interrupt_payload(graph, thread_config)
 
         return ("hitl", final_state, flagged_ids, flagged_reasons)
 
@@ -405,6 +480,115 @@ async def _resume_phase5_hitl(
         return state
 
 
+async def _proceed_phase(
+    batch_id: str,
+    proceed_from_gate: int,
+    thread_config: dict[str, Any],
+) -> None:
+    """Resume from a phase gate and run the next phase.
+
+    For gates 1–3: resume the graph to run the next phase, pause at the next gate,
+    extract summary data, publish gate event, and exit.
+
+    For gate 4: resume the graph to run Phase 5 (validate), then handle completion
+    or HITL flow.
+
+    Args:
+        batch_id:           Batch identifier
+        proceed_from_gate:  Which gate to proceed from (1, 2, 3, or 4)
+        thread_config:      LangGraph thread configuration
+    """
+    pg = PostgresStore(POSTGRES_ASYNC_URL)
+    try:
+        await pg.ensure_schema()
+        await _update_batch_status_sync(batch_id, "processing", pg)
+        _write_batch_state(batch_id, status="processing")
+
+        async with AsyncPostgresSaver.from_conn_string(
+            POSTGRES_CHECKPOINT_URL, serde=JsonPlusSerializer()
+        ) as checkpointer:
+            await checkpointer.setup()
+            graph = build_dynafit_graph(checkpointer=checkpointer)
+
+            # Resume from checkpoint — runs next phase, pauses at next interrupt
+            state: dict[str, Any] = await graph.ainvoke(None, config=thread_config)
+
+            if proceed_from_gate == 1:
+                # Phase 2 (retrieve) just ran, paused before phase 3 (match)
+                rows = _extract_gate2_rows(state)
+                RedisPubSub.persist_gate_data_sync(
+                    REDIS_URL, batch_id, "phase2_contexts", rows
+                )
+                await _update_batch_status_sync(batch_id, "gate_2", pg)
+                _write_batch_state(batch_id, status="gate_2")
+                gate_event = PhaseGateEvent(
+                    batch_id=batch_id,
+                    gate=2,
+                    phase_name="RAG",
+                    atoms_count=len(rows),
+                )
+                RedisPubSub.publish_sync(REDIS_URL, gate_event)
+                log.info("gate_2_published", batch_id=batch_id, atoms_count=len(rows))
+
+            elif proceed_from_gate == 2:
+                # Phase 3 (match) just ran, paused before phase 4 (classify)
+                rows = _extract_gate3_rows(state)
+                RedisPubSub.persist_gate_data_sync(
+                    REDIS_URL, batch_id, "phase3_matches", rows
+                )
+                await _update_batch_status_sync(batch_id, "gate_3", pg)
+                _write_batch_state(batch_id, status="gate_3")
+                gate_event = PhaseGateEvent(
+                    batch_id=batch_id,
+                    gate=3,
+                    phase_name="Matching",
+                    atoms_count=len(rows),
+                )
+                RedisPubSub.publish_sync(REDIS_URL, gate_event)
+                log.info("gate_3_published", batch_id=batch_id, atoms_count=len(rows))
+
+            elif proceed_from_gate == 3:
+                # Phase 4 (classify) just ran, paused before phase 5 (validate)
+                # Classifications already streamed live to Redis by phase 4 node
+                classifications = state.get("classifications", [])
+                class_count = len(classifications)
+                await _update_batch_status_sync(batch_id, "gate_4", pg)
+                _write_batch_state(batch_id, status="gate_4")
+                gate_event = PhaseGateEvent(
+                    batch_id=batch_id,
+                    gate=4,
+                    phase_name="Classification",
+                    atoms_count=class_count,
+                )
+                RedisPubSub.publish_sync(REDIS_URL, gate_event)
+                log.info("gate_4_published", batch_id=batch_id, atoms_count=class_count)
+
+            elif proceed_from_gate == 4:
+                # Phase 5 (validate) just ran
+                # Check if it completed or needs HITL
+                if state.get("validated_batch"):
+                    # Phase 5 completed without issues
+                    await _finish_complete(batch_id, state, pg)
+                else:
+                    # Phase 5 called interrupt() — needs HITL review
+                    flagged_ids, flagged_reasons = await _extract_interrupt_payload(graph, thread_config)
+                    await _finish_hitl(
+                        batch_id, state, flagged_ids, flagged_reasons, pg
+                    )
+
+    except Exception as exc:
+        log.error(
+            "gate_proceed_failed",
+            batch_id=batch_id,
+            gate=proceed_from_gate,
+            error=str(exc),
+        )
+        _emit_error(batch_id, exc)
+        raise
+    finally:
+        await pg.dispose()
+
+
 # ---------------------------------------------------------------------------
 # Task
 # ---------------------------------------------------------------------------
@@ -433,6 +617,26 @@ def run_dynafit_pipeline(
                      _overrides    — human review decisions (keyed by atom_id)
     """
     thread_config: dict[str, Any] = {"configurable": {"thread_id": batch_id}}
+
+    # --- Gate proceed path (after analyst approves a phase gate) ----------
+    if config.get("_proceed_from_gate"):
+        gate_num = config["_proceed_from_gate"]
+        log.info(
+            "pipeline_proceed_gate",
+            batch_id=batch_id,
+            gate=gate_num,
+        )
+        try:
+            asyncio.run(_proceed_phase(batch_id, gate_num, thread_config))
+        except Exception as exc:
+            log.error(
+                "pipeline_proceed_gate_failed",
+                batch_id=batch_id,
+                gate=gate_num,
+                error=str(exc),
+            )
+            _emit_error(batch_id, exc)
+        return
 
     # --- Resume path (after HITL review) -----------
     if config.get("_resume"):
@@ -539,26 +743,28 @@ def run_dynafit_pipeline(
                 if run_overrides:
                     initial["config_overrides"] = run_overrides
 
-                # Phases 1-4 (interrupt_before=["validate"])
-                await graph.ainvoke(
+                # Phase 1 (ingest) — pauses before retrieve (phase 2)
+                state = await graph.ainvoke(
                     initial, config=thread_config,
                 )
 
-                # Phase 5 — reuse the open checkpointer
-                outcome, final_state, flagged_ids, flagged_reasons = (
-                    await _run_phase5(
-                        batch_id, thread_config, checkpointer,
-                    )
+                # Extract and persist gate 1 data
+                phase1_rows = _extract_gate1_rows(state)
+                RedisPubSub.persist_gate_data_sync(
+                    REDIS_URL, batch_id, "phase1_atoms", phase1_rows
                 )
+                await _update_batch_status_sync(batch_id, "gate_1", pg)
+                _write_batch_state(batch_id, status="gate_1")
 
-                # Finish operations (write to PostgreSQL + Redis)
-                if outcome == "complete":
-                    await _finish_complete(batch_id, final_state, pg)
-                else:
-                    await _finish_hitl(
-                        batch_id, final_state,
-                        flagged_ids, flagged_reasons, pg,
-                    )
+                # Publish gate 1 event and exit
+                gate_event = PhaseGateEvent(
+                    batch_id=batch_id,
+                    gate=1,
+                    phase_name="Ingestion",
+                    atoms_count=len(phase1_rows),
+                )
+                RedisPubSub.publish_sync(REDIS_URL, gate_event)
+                log.info("gate_1_published", batch_id=batch_id, atoms_count=len(phase1_rows))
         finally:
             await pg.dispose()
 

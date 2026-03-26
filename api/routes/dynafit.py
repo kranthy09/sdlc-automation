@@ -33,9 +33,11 @@ from api.models import (
     BatchSummary,
     BatchView,
     EvidenceItem,
+    GateAtomsResponse,
     JourneyResponse,
     PhaseProgressItem,
     PriorFitmentItem,
+    ProceedResponse,
     ProgressClassificationItem,
     ProgressResponse,
     PublicResultsResponse,
@@ -901,6 +903,131 @@ async def submit_review(
         reviewer_override=body.decision == "OVERRIDE",
         remaining_reviews=remaining,
     )
+
+
+# ---------------------------------------------------------------------------
+# 6b. Phase gates (analyst approval to proceed)
+# ---------------------------------------------------------------------------
+
+
+def _dispatch_proceed(batch_id: str, gate: int) -> None:
+    """Dispatch a Celery task to proceed from a phase gate."""
+    from api.workers.tasks import run_dynafit_pipeline
+
+    run_dynafit_pipeline.delay(batch_id, "", {"_proceed_from_gate": gate})
+
+
+@router.post("/d365_fo/dynafit/{batch_id}/proceed", status_code=202)
+async def proceed_gate(
+    request: Request, batch_id: str,
+) -> ProceedResponse:
+    """Analyst approves proceeding from a phase gate.
+
+    The batch must be in a gate_N status. Dispatches a Celery task
+    to resume from that gate and run the next phase.
+    """
+    batch = await _get_batch(request, batch_id, include_journey=False)
+
+    # Extract gate number from status (e.g., "gate_1" -> 1)
+    if not batch.status or not batch.status.startswith("gate_"):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Batch not at a gate (status: {batch.status})",
+        )
+
+    try:
+        gate = int(batch.status.split("_")[1])
+    except (ValueError, IndexError):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid gate status: {batch.status}",
+        ) from None
+
+    # Write "processing" to Redis immediately to prevent race conditions
+    RedisPubSub.write_batch_state_sync(REDIS_URL, batch_id, status="processing")
+
+    # Dispatch Celery task with gate proceeding config
+    try:
+        _dispatch_proceed(batch_id, gate)
+    except Exception as exc:
+        log.error(
+            "gate_proceed_dispatch_failed",
+            batch_id=batch_id,
+            gate=gate,
+            error=str(exc),
+        )
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to dispatch gate proceed task",
+        ) from exc
+
+    log.info(
+        "gate_proceed_requested",
+        batch_id=batch_id,
+        gate=gate,
+        next_phase=gate + 1,
+    )
+    return ProceedResponse(batch_id=batch_id, next_phase=gate + 1)
+
+
+@router.get("/d365_fo/dynafit/{batch_id}/gate/{gate}/atoms")
+async def get_gate_atoms(
+    request: Request,
+    batch_id: str,
+    gate: int,
+) -> GateAtomsResponse:
+    """Retrieve summary data for a phase gate.
+
+    Returns the atoms/contexts/matches produced by the phase that paused
+    at this gate, for analyst review before proceeding.
+
+    Gate 1: ingestion atoms (phase1_atoms)
+    Gate 2: retrieval contexts (phase2_contexts)
+    Gate 3: matching results (phase3_matches)
+    Gate 4: classifications (already-streamed, from classifications field)
+    """
+    batch = await _get_batch(request, batch_id, include_journey=False)
+
+    if gate < 1 or gate > 4:
+        raise HTTPException(
+            status_code=400,
+            detail="Gate must be 1-4",
+        )
+
+    # Read gate data from Redis
+    batch_state = RedisPubSub.read_batch_state_sync(REDIS_URL, batch_id)
+
+    field_map = {
+        1: "phase1_atoms",
+        2: "phase2_contexts",
+        3: "phase3_matches",
+        4: "classifications",  # classifications is a JSON list, not hash field
+    }
+    field = field_map.get(gate, "")
+
+    rows: list[dict[str, Any]] = []
+    if gate == 4:
+        # Gate 4 uses the classifications list field (different structure)
+        if "classifications" in batch_state:
+            try:
+                rows = json.loads(batch_state["classifications"])
+            except (json.JSONDecodeError, ValueError):
+                rows = []
+    else:
+        # Gates 1-3 use hash fields
+        if field in batch_state:
+            try:
+                rows = json.loads(batch_state[field])
+            except (json.JSONDecodeError, ValueError):
+                rows = []
+
+    log.info(
+        "gate_atoms_retrieved",
+        batch_id=batch_id,
+        gate=gate,
+        rows_count=len(rows),
+    )
+    return GateAtomsResponse(batch_id=batch_id, gate=gate, rows=rows)
 
 
 # ---------------------------------------------------------------------------

@@ -137,6 +137,20 @@ class ReviewRequiredEvent(PlatformModel):
     timestamp: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 
+class PhaseGateEvent(PlatformModel):
+    """Emitted when the pipeline pauses at a phase gate (after phases 1–4).
+
+    The analyst reviews the gate data and clicks "Proceed" to advance to the next phase.
+    """
+
+    event: Literal["phase_gate"] = "phase_gate"
+    batch_id: str
+    gate: Annotated[int, Field(ge=1, le=4)]
+    phase_name: str
+    atoms_count: Annotated[int, Field(ge=0)]
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+
 # ---------------------------------------------------------------------------
 # Discriminated union — used at the WebSocket boundary
 # ---------------------------------------------------------------------------
@@ -148,6 +162,7 @@ type ProgressEvent = Annotated[
     | PhaseCompleteEvent
     | CompleteEvent
     | ErrorEvent
-    | ReviewRequiredEvent,
+    | ReviewRequiredEvent
+    | PhaseGateEvent,
     Field(discriminator="event"),
 ]

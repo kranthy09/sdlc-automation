@@ -1,7 +1,7 @@
 // ─── Shared enums ────────────────────────────────────────────────────────────
 
 export type Classification = 'FIT' | 'PARTIAL_FIT' | 'GAP'
-export type BatchStatus = 'queued' | 'running' | 'review_required' | 'resuming' | 'complete' | 'failed'
+export type BatchStatus = 'queued' | 'processing' | 'gate_1' | 'gate_2' | 'gate_3' | 'gate_4' | 'review_required' | 'resuming' | 'complete' | 'failed'
 export type ReviewDecision = 'APPROVE' | 'OVERRIDE' | 'FLAG'
 
 // ─── Upload ───────────────────────────────────────────────────────────────────
@@ -410,6 +410,54 @@ export interface WSError {
   message: string
 }
 
+export interface WSPhaseGate {
+  event: 'phase_gate'
+  batch_id: string
+  gate: 1 | 2 | 3 | 4
+  phase_name: string
+  atoms_count: number
+  timestamp: string
+}
+
+// Gate-specific row types for analyst review
+export interface Phase1AtomRow {
+  atom_id: string
+  requirement_text: string
+  intent: string
+  module: string
+  priority: string
+  completeness_score: number  // 0–100 (per ValidatedAtom schema)
+  specificity_score: number   // 0–1
+}
+
+export interface Phase2ContextRow {
+  atom_id: string
+  requirement_text: string
+  top_capability: string
+  top_capability_score: number
+  retrieval_confidence: 'HIGH' | 'MEDIUM' | 'LOW'
+}
+
+export interface Phase3MatchRow {
+  atom_id: string
+  requirement_text: string
+  composite_score: number
+  route: string
+  anomaly_flags: string[]
+}
+
+export interface GateAtomsResponse {
+  batch_id: string
+  gate: number
+  rows: Phase1AtomRow[] | Phase2ContextRow[] | Phase3MatchRow[] | ProgressClassificationItem[]
+}
+
+export interface ProceedResponse {
+  batch_id: string
+  status: 'proceeding'
+  next_phase: number
+}
+
 export type WSMessage =
   | WSPhaseStart
   | WSStepProgress
@@ -418,6 +466,7 @@ export type WSMessage =
   | WSReviewRequired
   | WSComplete
   | WSError
+  | WSPhaseGate
 
 // Discriminator used by the backend (Pydantic `event` field)
 export type WSEventType = WSMessage['event']

@@ -10,7 +10,7 @@ from platform.schemas.product import ProductConfig
 _D365_FO_CONFIG: ProductConfig = ProductConfig(
     product_id="d365_fo",
     display_name="Dynamics 365 Finance & Operations",
-    llm_model="claude-haiku-4-5-20251001",
+    llm_model="claude-sonnet-4-6",
     embedding_model="BAAI/bge-small-en-v1.5",
     capability_kb_namespace="d365_fo_capabilities",
     doc_corpus_namespace="d365_fo_docs",

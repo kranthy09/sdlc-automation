@@ -61,6 +61,7 @@ interface ProgressState {
   reviewRequired: ReviewRequiredState | null
   complete: CompleteSummary | null
   error: string | null
+  activeGate: 1 | 2 | 3 | 4 | null
 
   // Actions
   init: (batchId: string) => void
@@ -163,6 +164,7 @@ export const useProgressStore = create<ProgressState>((set) => ({
   reviewRequired: null,
   complete: null,
   error: null,
+  activeGate: null,
 
   init: (batchId) =>
     set({
@@ -172,19 +174,23 @@ export const useProgressStore = create<ProgressState>((set) => ({
       reviewRequired: null,
       complete: null,
       error: null,
+      activeGate: null,
     }),
 
   dispatch: (msg) =>
     set((state) => {
       switch (msg.event) {
         case 'phase_start':
-          return { phases: applyPhaseStart(state.phases, msg) }
+          return { phases: applyPhaseStart(state.phases, msg), activeGate: null }
 
         case 'step_progress':
           return { phases: applyStepProgress(state.phases, msg) }
 
         case 'phase_complete':
           return { phases: applyPhaseComplete(state.phases, msg) }
+
+        case 'phase_gate':
+          return { activeGate: msg.gate }
 
         case 'classification':
           return { classifications: applyClassification(state.classifications, msg) }
@@ -334,7 +340,17 @@ export const useProgressStore = create<ProgressState>((set) => ({
         }
       }
 
-      return { phases, classifications }
+      // Check if batch is at a gate
+      let activeGate: 1 | 2 | 3 | 4 | null = null
+      if (data.status?.startsWith('gate_')) {
+        try {
+          activeGate = parseInt(data.status.split('_')[1]) as 1 | 2 | 3 | 4
+        } catch {
+          activeGate = null
+        }
+      }
+
+      return { phases, classifications, activeGate }
     }),
 
   reset: () =>

@@ -2,7 +2,9 @@ import { apiClient } from './client'
 import type {
   BatchesQuery,
   BatchesResponse,
+  GateAtomsResponse,
   JourneyResponse,
+  ProceedResponse,
   ProgressResponse,
   ResultsQuery,
   ResultsResponse,
@@ -101,5 +103,21 @@ export async function getProgress(batchId: string): Promise<ProgressResponse> {
 // ─── 9. Batch history ─────────────────────────────────────────────────────────
 export async function getBatches(query: BatchesQuery = {}): Promise<BatchesResponse> {
   const res = await apiClient.get<BatchesResponse>('/d365_fo/dynafit/batches', { params: query })
+  return res.data
+}
+
+// ─── 10. Phase gates (analyst approval) ────────────────────────────────────────
+export async function proceedGate(batchId: string): Promise<ProceedResponse> {
+  const res = await apiClient.post<ProceedResponse>(`/d365_fo/dynafit/${batchId}/proceed`)
+  return res.data
+}
+
+export async function getGateAtoms(
+  batchId: string,
+  gate: number,
+): Promise<GateAtomsResponse> {
+  const res = await apiClient.get<GateAtomsResponse>(
+    `/d365_fo/dynafit/${batchId}/gate/${gate}/atoms`,
+  )
   return res.data
 }

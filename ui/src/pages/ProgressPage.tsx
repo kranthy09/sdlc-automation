@@ -3,22 +3,26 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { PhaseTimeline } from '@/components/progress/PhaseTimeline'
 import { PhaseStatsCard } from '@/components/progress/PhaseStatsCard'
+import { PhaseGatePanel } from '@/components/progress/PhaseGatePanel'
 import { LiveClassTable } from '@/components/progress/LiveClassTable'
 import { ReviewBanner } from '@/components/progress/ReviewBanner'
 import { Button } from '@/components/ui/Button'
 import { useProgress } from '@/hooks/useProgress'
 import { formatDuration } from '@/lib/utils'
 import { CheckCircle2, AlertCircle, Wifi, Download, Link2, Check } from 'lucide-react'
-import { downloadReport } from '@/api/dynafit'
+import { downloadReport, proceedGate } from '@/api/dynafit'
 import { useUIStore } from '@/stores/uiStore'
+import { useProgressStore } from '@/stores/progressStore'
 
 export default function ProgressPage() {
   const { batchId } = useParams<{ batchId: string }>()
   const navigate = useNavigate()
   const { phases, classifications, reviewRequired, complete, error, wsStatus } = useProgress(batchId!)
   const { addNotification } = useUIStore()
+  const activeGate = useProgressStore((s) => s.activeGate)
   const [downloading, setDownloading] = useState(false)
   const [copied, setCopied] = useState(false)
+  const [proceeding, setProceeding] = useState(false)
 
   const handleDownloadReport = async () => {
     setDownloading(true)
@@ -44,10 +48,24 @@ export default function ProgressPage() {
     setTimeout(() => setCopied(false), 2000)
   }
 
+  const handleProceed = async () => {
+    setProceeding(true)
+    try {
+      await proceedGate(batchId!)
+    } catch (err) {
+      addNotification({
+        type: 'error',
+        message: err instanceof Error ? err.message : 'Failed to proceed',
+      })
+    } finally {
+      setProceeding(false)
+    }
+  }
+
   const activePhase = phases.find((p) => p.status === 'active')
   const completedPhases = phases.filter((p) => p.status === 'complete').length
   const totalProcessed = phases.reduce((sum, p) => sum + p.atomsProduced, 0)
-  const isRunning = !complete && !error && !reviewRequired
+  const isRunning = !complete && !error && !reviewRequired && !activeGate
 
   const PHASE_HINTS: Record<number, string> = {
     1: 'Parsing document, extracting & atomising requirements',
@@ -72,6 +90,21 @@ export default function ProgressPage() {
       />
 
       <div className="space-y-4 px-6 pb-6">
+        {/* Gate paused banner */}
+        {activeGate && !complete && !reviewRequired && (
+          <div className="flex items-center gap-3 rounded-xl border border-partial/30 bg-partial-muted/10 px-5 py-3">
+            <span className="h-2 w-2 rounded-full bg-partial-text animate-pulse-slow" />
+            <div className="flex-1">
+              <p className="text-sm font-medium text-text-primary">
+                Pipeline paused — Phase {activeGate} complete
+              </p>
+              <p className="text-xs text-text-muted">
+                Review the results below and click Proceed to continue to Phase {activeGate + 1}
+              </p>
+            </div>
+          </div>
+        )}
+
         {/* Current step summary — always visible while running */}
         {isRunning && (
           <div className="flex items-center gap-3 rounded-xl border border-accent/20 bg-accent/5 px-5 py-3">
@@ -111,6 +144,16 @@ export default function ProgressPage() {
 
         {/* Phase stepper */}
         <PhaseTimeline phases={phases} />
+
+        {/* Phase gate panel */}
+        {activeGate && !complete && !reviewRequired && (
+          <PhaseGatePanel
+            batchId={batchId!}
+            gate={activeGate}
+            onProceed={handleProceed}
+            proceeding={proceeding}
+          />
+        )}
 
         {/* Phase stat cards */}
         <div className="grid grid-cols-5 gap-3">
