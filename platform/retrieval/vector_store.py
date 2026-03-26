@@ -345,8 +345,25 @@ class VectorStore:
         except VectorStoreError:
             raise
         except Exception as exc:
+            try:
+                from qdrant_client.http.exceptions import (  # noqa: PLC0415
+                    UnexpectedResponse,
+                )
+                if (
+                    isinstance(exc, UnexpectedResponse)
+                    and exc.status_code == 404
+                ):
+                    log.warning(
+                        "vector_store_collection_missing",
+                        collection=collection,
+                    )
+                    return []
+            except ImportError:
+                pass
             raise VectorStoreError(
-                f"search({collection!r}) failed: {exc}", cause=exc) from exc
+                f"search({collection!r}) failed: {exc}",
+                cause=exc,
+            ) from exc
 
     def _run_query(
         self,

@@ -196,8 +196,16 @@ def build_complete_data(
 ) -> dict[str, Any] | None:
     """Build result dicts, summary, and journey for a completed batch.
 
+    Called by Celery worker (_finish_complete) when pipeline completes.
+    Builds dicts that are:
+      - Written to PostgreSQL: results (batch_results table), summary (batches table)
+      - Cached in Redis: journey (transient, for /journey queries)
+
+    The API layer reads the PostgreSQL results and builds typed responses.
+    Journey is optional — if Redis is unavailable, /journey returns empty gracefully.
+
     Returns None if validated_batch is absent.
-    Returns dict with keys: results, summary, journey, report_path.
+    Returns dict with keys: results, summary, journey, report_path, total_atoms.
     """
     vb = final_state.get("validated_batch")
     if not vb:
@@ -303,7 +311,15 @@ def build_hitl_data(
     flagged_ids: set[str],
     flagged_reasons: dict[str, list[str]],
 ) -> dict[str, Any]:
-    """Build review items, auto-approved items, summary, and journey.
+    """Build review items, auto-approved items, summary, and journey for HITL pause.
+
+    Called by Celery worker (_finish_hitl) during Phase 5 pause.
+    Builds dicts that are:
+      - Written to PostgreSQL: auto_approved results (batch_results table)
+      - Cached in Redis: review_items, auto_approved, journey (transient)
+
+    The API layer reads the PostgreSQL results and serves them via /results.
+    Review items are read from PostgreSQL (review_items table) during /review queries.
 
     Returns dict with keys: review_items, auto_approved, summary,
     journey, reasons_counts, review_count.
@@ -326,9 +342,9 @@ def build_hitl_data(
         )
     }
 
-    # TODO: store in psql, get the data using orms.
+    # Build review items for HITL queue (will be cached in Redis and persisted to PostgreSQL)
     review_item_dicts: list[dict[str, Any]] = []
-    # TODO: store in psql, get the data using orms.
+    # Count reasons for review (anomaly, pii_detected, low_confidence)
     reasons_counts: dict[str, int] = {}
     for c in review_needed:
         mr = match_by_atom.get(c.atom_id)
@@ -349,7 +365,7 @@ def build_hitl_data(
             reasons_counts.get(reason, 0) + 1
         )
 
-        # TODO: better response constructions
+        # Build review item dict with evidence and classification detail
         review_item_dicts.append(
             {
                 "atom_id": c.atom_id,
@@ -397,7 +413,8 @@ def build_hitl_data(
                 },
             }
         )
-    # TODO: store in psql, get the required data by using orms
+    # Build auto-approved results (atoms not flagged for review have final classifications)
+    # These will be written to PostgreSQL batch_results table immediately
     auto_approved_dicts: list[dict[str, Any]] = []
     fit_count = partial_fit_count = gap_count = 0
 
@@ -419,7 +436,7 @@ def build_hitl_data(
             if mr and mr.ranked_capabilities
             else ""
         )
-        # TODO: improve better json creations
+        # Build auto-approved result dict with full classification metadata and evidence
         auto_approved_dicts.append(
             {
                 "atom_id": c.atom_id,
@@ -444,7 +461,8 @@ def build_hitl_data(
 
     journey_data = build_journey_data(final_state)
 
-    # Better response data, with data models or classes.
+    # Return dict with separate collections for review queue (Redis) and summary
+    # API layer reads from PostgreSQL; this dict is for Celery worker caching only
     return {
         "review_items": review_item_dicts,
         "auto_approved": auto_approved_dicts,

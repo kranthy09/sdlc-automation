@@ -5,7 +5,8 @@ Execution model:
   First call  → run phases 1–4 (graph pauses before Phase 5 via
                 interrupt_before), then immediately enter Phase 5:
                   Phase 5 sanity gate runs:
-                    nothing flagged → complete; write results to Redis
+                    nothing flagged → complete; write to PostgreSQL
+                                      (durable) + Redis (transient)
                     items flagged   → Phase 5 calls interrupt(); graph
                                       pauses; emit review_required, return
   Resume call → config["_resume"] = True
@@ -17,8 +18,8 @@ Two LangGraph pause points — handled differently:
   interrupt() inside validate    → resume with graph.ainvoke(Command(resume=overrides), ...)
 
 Progress events (phase_start, step_progress, classification) are published by
-the pipeline nodes to Redis directly. This task handles only terminal events:
-  complete, review_required, error.
+the pipeline nodes to Redis directly. Terminal events (complete, review_required,
+error) are written to PostgreSQL (durable) with transient state to Redis.
 
 Checkpointer:
   AsyncPostgresSaver — stores graph snapshots in PostgreSQL so any
@@ -47,16 +48,19 @@ from modules.dynafit.presentation import (
 )
 from platform.schemas.events import ErrorEvent, ReviewRequiredEvent
 from platform.schemas.requirement import RawUpload
+from platform.storage.postgres import PostgresStore
 from platform.storage.redis_pub import RedisPubSub
 
 log = structlog.get_logger(__name__)
 
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 
-# Strip the +asyncpg SQLAlchemy driver spec — psycopg3 uses plain postgresql://
+# PostgreSQL URLs
 _raw_pg = os.getenv(
-    "POSTGRES_URL", "postgresql://localhost/dynafit",
+    "POSTGRES_URL", "postgresql+asyncpg://localhost/dynafit",
 )
+POSTGRES_ASYNC_URL = _raw_pg
+# Strip the +asyncpg SQLAlchemy driver spec — psycopg3 uses plain postgresql://
 POSTGRES_CHECKPOINT_URL = _raw_pg.replace(
     "postgresql+asyncpg://", "postgresql://",
 )
@@ -94,10 +98,110 @@ def _write_batch_state(batch_id: str, **fields: str) -> None:
     )
 
 
-def _finish_complete(
-    batch_id: str, final_state: dict[str, Any]
+async def _update_batch_complete(
+    batch_id: str,
+    completed_at: datetime,
+    report_path: str,
+    summary: dict[str, Any],
+    pg: PostgresStore,
 ) -> None:
-    """Write completed batch results to Redis."""
+    """Write batch completion to PostgreSQL (source of truth)."""
+    try:
+        await pg.update_batch_on_complete(
+            batch_id=batch_id,
+            completed_at=completed_at,
+            report_path=report_path,
+            summary=summary,
+        )
+        log.debug(
+            "batch_completion_saved_to_postgres",
+            batch_id=batch_id,
+        )
+    except Exception as exc:
+        log.error(
+            "batch_completion_postgres_write_failed",
+            batch_id=batch_id,
+            error=str(exc),
+        )
+        raise
+
+
+async def _update_batch_review_required(
+    batch_id: str,
+    pg: PostgresStore,
+) -> None:
+    """Write review_required status to PostgreSQL."""
+    try:
+        await pg.update_batch_status(batch_id, status="review_required")
+        log.debug(
+            "batch_review_required_saved_to_postgres",
+            batch_id=batch_id,
+        )
+    except Exception as exc:
+        log.error(
+            "batch_review_required_postgres_write_failed",
+            batch_id=batch_id,
+            error=str(exc),
+        )
+        raise
+
+
+async def _update_batch_error(
+    batch_id: str,
+) -> None:
+    """Write error status to PostgreSQL."""
+    pg = PostgresStore(POSTGRES_ASYNC_URL)
+    try:
+        await pg.ensure_schema()
+        await pg.update_batch_status(batch_id, status="error")
+        log.debug(
+            "batch_error_saved_to_postgres",
+            batch_id=batch_id,
+        )
+    except Exception as exc:
+        log.error(
+            "batch_error_postgres_write_failed",
+            batch_id=batch_id,
+            error=str(exc),
+        )
+        raise
+    finally:
+        await pg.dispose()
+
+
+async def _update_batch_status_sync(
+    batch_id: str,
+    status: str,
+    pg: PostgresStore,
+) -> None:
+    """Write batch status to PostgreSQL (async helper)."""
+    try:
+        await pg.update_batch_status(batch_id, status=status)
+        log.debug(
+            "batch_status_updated_postgres",
+            batch_id=batch_id,
+            status=status,
+        )
+    except Exception as exc:
+        log.warning(
+            "batch_status_postgres_write_failed",
+            batch_id=batch_id,
+            status=status,
+            error=str(exc),
+        )
+        # Don't raise - status update is not critical for pipeline execution
+
+
+async def _finish_complete(
+    batch_id: str,
+    final_state: dict[str, Any],
+    pg: PostgresStore,
+) -> None:
+    """Write completed batch results to PostgreSQL + Redis.
+
+    PostgreSQL: status, completed_at, report_path, summary, batch_results (durable)
+    Redis: journey (transient, for WebSocket progress queries)
+    """
     data = build_complete_data(final_state)
     if not data:
         log.warning(
@@ -105,14 +209,39 @@ def _finish_complete(
         )
         return
 
+    completed_at = datetime.now(UTC)
+
+    # Write durable state to PostgreSQL
+    await _update_batch_complete(
+        batch_id=batch_id,
+        completed_at=completed_at,
+        report_path=data["report_path"],
+        summary=data["summary"],
+        pg=pg,
+    )
+
+    # Write per-atom results to PostgreSQL (durable, source of truth for /results API)
+    try:
+        await pg.save_batch_results(batch_id, data["results"])
+        log.debug(
+            "batch_results_saved_to_postgres",
+            batch_id=batch_id,
+            count=len(data["results"]),
+        )
+    except Exception as exc:
+        log.error(
+            "batch_results_postgres_write_failed",
+            batch_id=batch_id,
+            error=str(exc),
+        )
+        # Don't raise — results saving is non-critical if batch summary is saved
+
+    # Write transient state to Redis (for live progress queries)
     _write_batch_state(
         batch_id,
-        status="complete",
-        summary=json.dumps(data["summary"]),
         journey=json.dumps(data["journey"]),
-        report_path=data["report_path"],
-        completed_at=datetime.now(UTC).isoformat(),
     )
+
     log.info(
         "pipeline_complete",
         batch_id=batch_id,
@@ -120,25 +249,74 @@ def _finish_complete(
     )
 
 
-def _finish_hitl(
+async def _finish_hitl(
     batch_id: str,
     final_state: dict[str, Any],
     flagged_ids: set[str],
     flagged_reasons: dict[str, list[str]],
+    pg: PostgresStore,
 ) -> None:
-    """Write review_required state to Redis."""
+    """Write review_required state to PostgreSQL + Redis.
+
+    PostgreSQL: status="review_required", auto_approved results (durable)
+    Redis: review_items, auto_approved, journey, summary (in-flight;
+           summary is temporary and replaced when Phase 5 resumes)
+    """
     data = build_hitl_data(
         final_state, flagged_ids, flagged_reasons
     )
 
+    # Write durable status to PostgreSQL
+    await _update_batch_review_required(batch_id, pg)
+
+    # Save flagged review items to PostgreSQL (durable review queue)
+    try:
+        await pg.save_review_items(batch_id, data["review_items"])
+    except Exception as exc:
+        log.error(
+            "batch_review_items_postgres_write_failed",
+            batch_id=batch_id,
+            error=str(exc),
+        )
+        # Don't raise — review items in Redis take priority
+
+    # Save all results (auto-approved + flagged for review) to PostgreSQL
+    # so results are visible during HITL period. Flagged items will be
+    # updated when Phase 5 resumes with reviewer decisions.
+    # Note: review items use "ai_classification" (for review queue),
+    # but batch_results expects "classification". Normalize before saving.
+    try:
+        flagged_for_batch = [
+            {**item, "classification": item.pop("ai_classification")}
+            for item in data["review_items"]
+        ]
+        all_results = data["auto_approved"] + flagged_for_batch
+        if all_results:
+            await pg.save_batch_results(batch_id, all_results)
+            log.debug(
+                "batch_all_results_saved_to_postgres",
+                batch_id=batch_id,
+                auto_approved=len(data["auto_approved"]),
+                flagged=len(flagged_for_batch),
+                total=len(all_results),
+            )
+    except Exception as exc:
+        log.error(
+            "batch_all_results_postgres_write_failed",
+            batch_id=batch_id,
+            error=str(exc),
+        )
+        # Don't raise — results in Redis take priority
+
+    # Write transient state to Redis
     _write_batch_state(
         batch_id,
-        status="review_required",
         review_items=json.dumps(data["review_items"]),
         auto_approved=json.dumps(data["auto_approved"]),
         summary=json.dumps(data["summary"]),
         journey=json.dumps(data["journey"]),
     )
+
     event = ReviewRequiredEvent(
         batch_id=batch_id,
         review_items=data["review_count"],
@@ -264,12 +442,19 @@ def run_dynafit_pipeline(
             batch_id=batch_id,
             override_count=len(overrides),
         )
-        try:
-            final_state = asyncio.run(
-                _resume_phase5_hitl(
+        async def _resume_and_finish() -> None:
+            pg = PostgresStore(POSTGRES_ASYNC_URL)
+            try:
+                await pg.ensure_schema()
+                final_state = await _resume_phase5_hitl(
                     batch_id, thread_config, overrides,
-                ),
-            )
+                )
+                await _finish_complete(batch_id, final_state, pg)
+            finally:
+                await pg.dispose()
+
+        try:
+            asyncio.run(_resume_and_finish())
         except Exception as exc:
             log.error(
                 "pipeline_phase5_resume_failed",
@@ -278,22 +463,35 @@ def run_dynafit_pipeline(
             )
             _emit_error(batch_id, exc)
             return
-        _finish_complete(batch_id, final_state)
-        return
 
     # --- Normal first-run path ----------------------
+    # Parse typed configuration from API
+    from api.models import PipelineConfig  # noqa: PLC0415
+
+    try:
+        pipeline_config = PipelineConfig(**config)
+    except Exception as exc:
+        log.error(
+            "pipeline_config_parse_failed",
+            batch_id=batch_id,
+            error=str(exc),
+        )
+        _emit_error(batch_id, exc)
+        return
+
+    # Extract pipeline configuration overrides
     _OVERRIDE_KEYS = {
         "fit_confidence_threshold",
         "review_confidence_threshold",
         "auto_approve_with_history",
     }
     run_overrides: dict[str, Any] = {
-        k: v for k, v in config.items()
+        k: v for k, v in pipeline_config.config_overrides.items()
         if k in _OVERRIDE_KEYS
     }
 
-    meta = config.pop("_upload_meta", {})
-    file_path = Path(str(meta.get("path", "")))
+    upload_meta = pipeline_config.upload_meta
+    file_path = Path(upload_meta.path)
 
     try:
         file_bytes = file_path.read_bytes()
@@ -301,59 +499,71 @@ def run_dynafit_pipeline(
         log.error(
             "pipeline_file_missing",
             batch_id=batch_id,
-            path=str(file_path),
+            path=upload_meta.path,
         )
         _emit_error(batch_id, exc)
         return
 
     raw_upload = RawUpload(
         upload_id=upload_id,
-        product_id=str(meta.get("product", "d365_fo")),
-        filename=str(meta.get("filename", "upload")),
+        product_id=upload_meta.product,
+        filename=upload_meta.filename,
         file_bytes=file_bytes,
-        wave=int(meta.get("wave", 1)),
-        country=str(meta.get("country", "")),
+        wave=upload_meta.wave,
+        country=upload_meta.country,
     )
 
-    # Transition status to "processing" so /progress reflects reality while
-    # the pipeline runs. Without this the batch stays "queued" until completion.
-    _write_batch_state(batch_id, status="processing")
+    # Single event loop for phases 1-4 + phase 5 + finish.
+    # One PostgresStore for the entire invocation — prevents multiple
+    # asyncpg pools from being created and torn down in the same loop.
+    async def _run_all_and_finish() -> None:
+        pg = PostgresStore(POSTGRES_ASYNC_URL)
+        try:
+            await pg.ensure_schema()
+            # Transition status to "processing" so /progress reflects reality.
+            await _update_batch_status_sync(batch_id, "processing", pg)
 
-    # Single event loop for phases 1-4 + phase 5
-    async def _run_all() -> tuple[
-        str, dict[str, Any], set[str], dict[str, list[str]],
-    ]:
-        async with AsyncPostgresSaver.from_conn_string(
-            POSTGRES_CHECKPOINT_URL,
-            serde=JsonPlusSerializer(),
-        ) as checkpointer:
-            await checkpointer.setup()
-            graph = build_dynafit_graph(
-                checkpointer=checkpointer,
-            )
-            initial: dict[str, Any] = {
-                "upload": raw_upload,
-                "batch_id": batch_id,
-                "errors": [],
-            }
-            if run_overrides:
-                initial["config_overrides"] = run_overrides
+            async with AsyncPostgresSaver.from_conn_string(
+                POSTGRES_CHECKPOINT_URL,
+                serde=JsonPlusSerializer(),
+            ) as checkpointer:
+                await checkpointer.setup()
+                graph = build_dynafit_graph(
+                    checkpointer=checkpointer,
+                )
+                initial: dict[str, Any] = {
+                    "upload": raw_upload,
+                    "batch_id": batch_id,
+                    "errors": [],
+                }
+                if run_overrides:
+                    initial["config_overrides"] = run_overrides
 
-            # Phases 1-4 (interrupt_before=["validate"])
-            await graph.ainvoke(
-                initial, config=thread_config,
-            )
+                # Phases 1-4 (interrupt_before=["validate"])
+                await graph.ainvoke(
+                    initial, config=thread_config,
+                )
 
-            # Phase 5 — resume from interrupt_before; reuse the open checkpointer
-            # to avoid a second DB connection + setup() round-trip.
-            return await _run_phase5(
-                batch_id, thread_config, checkpointer,
-            )
+                # Phase 5 — reuse the open checkpointer
+                outcome, final_state, flagged_ids, flagged_reasons = (
+                    await _run_phase5(
+                        batch_id, thread_config, checkpointer,
+                    )
+                )
+
+                # Finish operations (write to PostgreSQL + Redis)
+                if outcome == "complete":
+                    await _finish_complete(batch_id, final_state, pg)
+                else:
+                    await _finish_hitl(
+                        batch_id, final_state,
+                        flagged_ids, flagged_reasons, pg,
+                    )
+        finally:
+            await pg.dispose()
 
     try:
-        outcome, final_state, flagged_ids, flagged_reasons = (
-            asyncio.run(_run_all())
-        )
+        asyncio.run(_run_all_and_finish())
     except Exception as exc:
         log.error(
             "pipeline_failed",
@@ -364,13 +574,6 @@ def run_dynafit_pipeline(
         try:
             raise self.retry(exc=exc)
         except self.MaxRetriesExceededError:
-            _write_batch_state(batch_id, status="error")
+            # Write error status to PostgreSQL
+            asyncio.run(_update_batch_error(batch_id))
             return
-
-    if outcome == "complete":
-        _finish_complete(batch_id, final_state)
-    else:
-        _finish_hitl(
-            batch_id, final_state,
-            flagged_ids, flagged_reasons,
-        )

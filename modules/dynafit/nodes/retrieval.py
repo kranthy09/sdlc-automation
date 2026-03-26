@@ -14,9 +14,9 @@ Pipeline:
 Design notes:
   - Batch embeddings: one embed_batch() call per phase invocation (not per atom)
   - Batch BM25:       one BM25Retriever built from all atom texts (meaningful IDF)
-  - Async bridge:     asyncio.run() used inside the sync LangGraph node so the
-                      graph.invoke() API stays synchronous; guarded against an
-                      already-running loop via a thread pool fallback
+  - Async node:       RetrievalNode.__call__ is async; LangGraph ainvoke handles
+                      it natively. asyncio.Semaphore caps concurrency at 12.
+                      All DB calls stay in one event loop — no nested loops.
   - Inject infra:     pass embedder / vector_store / reranker / postgres to
                       RetrievalNode.__init__ in tests instead of touching real infra
 """
@@ -47,7 +47,6 @@ from ..events import (
     publish_phase_complete,
     publish_phase_start,
     publish_step_progress,
-    run_async,
 )
 from ..product_config import get_product_config
 from ..state import DynafitState
@@ -63,9 +62,8 @@ _DOC_BOOST = 0.05  # fixed score boost when a doc chunk confirms a capability
 _CE_THRESHOLD = 0.5  # top-1 score threshold used in retrieval quality classification
 _GAP_LO = 3  # adaptive-K: search for largest score gap starting at rank 3
 _GAP_HI = 7  # adaptive-K: stop searching after rank 7
-# Concurrent atom retrievals — each call is I/O bound (Qdrant + pgvector + ONNX reranker).
-# BM25Retriever/VectorStore/Reranker are all thread-safe; run_async() creates its own
-# event loop per thread so there are no cross-thread event loop conflicts.
+# Concurrent atom retrievals — asyncio.Semaphore limits concurrent coroutines.
+# All I/O (Qdrant, pgvector, ONNX reranker) runs concurrently in one event loop.
 _RETRIEVAL_CONCURRENCY = 12
 
 
@@ -74,7 +72,7 @@ _RETRIEVAL_CONCURRENCY = 12
 # ---------------------------------------------------------------------------
 
 
-def _parallel_retrieve(
+async def _parallel_retrieve(
     *,
     store: VectorStore,
     postgres: PostgresStore,
@@ -93,50 +91,44 @@ def _parallel_retrieve(
     timeout is applied.  If any source times out or errors, that source returns
     an empty list — the pipeline continues with whatever is available.
     """
+    caps_task = asyncio.to_thread(
+        store.search,
+        cap_collection,
+        dense_vec,
+        top_k_caps,
+        payload_filter=module_filter,
+        sparse=sparse,
+    )
+    docs_task = asyncio.to_thread(
+        store.search,
+        doc_collection,
+        dense_vec,
+        10,
+    )
+    history_task = postgres.get_similar_fitments(
+        dense_vec, 5, module=module)
 
-    async def _gather() -> tuple[list[SearchHit], list[SearchHit], list[PriorFitment]]:
-        caps_task = asyncio.to_thread(
-            store.search,
-            cap_collection,
-            dense_vec,
-            top_k_caps,
-            payload_filter=module_filter,
-            sparse=sparse,
-        )
-        docs_task = asyncio.to_thread(
-            store.search,
-            doc_collection,
-            dense_vec,
-            10,
-        )
-        history_task = postgres.get_similar_fitments(
-            dense_vec, 5, module=module)
+    raw = await asyncio.gather(
+        asyncio.wait_for(caps_task, timeout=_SOURCE_TIMEOUT),
+        asyncio.wait_for(docs_task, timeout=_SOURCE_TIMEOUT),
+        asyncio.wait_for(history_task, timeout=_SOURCE_TIMEOUT),
+        return_exceptions=True,
+    )
+    caps_res, docs_res, hist_res = raw
 
-        raw = await asyncio.gather(
-            asyncio.wait_for(caps_task, timeout=_SOURCE_TIMEOUT),
-            asyncio.wait_for(docs_task, timeout=_SOURCE_TIMEOUT),
-            asyncio.wait_for(history_task, timeout=_SOURCE_TIMEOUT),
-            return_exceptions=True,
-        )
-        caps_res, docs_res, hist_res = raw
+    caps: list[SearchHit] = caps_res if isinstance(caps_res, list) else []
+    docs: list[SearchHit] = docs_res if isinstance(docs_res, list) else []
+    priors: list[PriorFitment] = hist_res if isinstance(
+        hist_res, list) else []
 
-        caps: list[SearchHit] = caps_res if isinstance(caps_res, list) else []
-        docs: list[SearchHit] = docs_res if isinstance(docs_res, list) else []
-        priors: list[PriorFitment] = hist_res if isinstance(
-            hist_res, list) else []
+    if not isinstance(caps_res, list):
+        log.warning("retrieval_source_a_failed", error=str(caps_res))
+    if not isinstance(docs_res, list):
+        log.warning("retrieval_source_b_failed", error=str(docs_res))
+    if not isinstance(hist_res, list):
+        log.warning("retrieval_source_c_failed", error=str(hist_res))
 
-        if not isinstance(caps_res, list):
-            log.warning("retrieval_source_a_failed", error=str(caps_res))
-        if not isinstance(docs_res, list):
-            log.warning("retrieval_source_b_failed", error=str(docs_res))
-        if not isinstance(hist_res, list):
-            log.warning("retrieval_source_c_failed", error=str(hist_res))
-
-        return caps, docs, priors
-
-    result: tuple[list[SearchHit], list[SearchHit],
-                  list[PriorFitment]] = run_async(_gather())
-    return result
+    return caps, docs, priors
 
 
 # ---------------------------------------------------------------------------
@@ -339,7 +331,7 @@ class RetrievalNode:
     # LangGraph entry point
     # ------------------------------------------------------------------
 
-    def __call__(self, state: DynafitState) -> dict[str, Any]:
+    async def __call__(self, state: DynafitState) -> dict[str, Any]:
         batch_id: str = state["batch_id"]
         atoms: list[ValidatedAtom] = state.get("validated_atoms", [])
         upload = state["upload"]
@@ -368,7 +360,7 @@ class RetrievalNode:
             return {"retrieval_contexts": []}
 
         config = get_product_config(upload.product_id)
-        contexts = self._run(atoms, config, batch_id=batch_id)
+        contexts = await self._run(atoms, config, batch_id=batch_id)
 
         elapsed_ms = (time.monotonic() - t0) * 1000
         log.info(
@@ -394,7 +386,7 @@ class RetrievalNode:
     # Pipeline
     # ------------------------------------------------------------------
 
-    def _run(
+    async def _run(
         self,
         atoms: list[ValidatedAtom],
         config: ProductConfig,
@@ -411,9 +403,11 @@ class RetrievalNode:
         # total steps: 1 (embed) + n (retrieve per atom) + 1 (rerank)
         total_steps = n + 2
 
-        # Batch embed (one model call for all atoms)
+        # Batch embed — sync ONNX, run in thread to avoid blocking the loop.
         atom_texts = [a.requirement_text for a in atoms]
-        dense_vecs = embedder.embed_batch(atom_texts)
+        dense_vecs: list[list[float]] = await asyncio.to_thread(
+            embedder.embed_batch, atom_texts
+        )
         publish_step_progress(
             batch_id,
             phase=2,
@@ -425,37 +419,40 @@ class RetrievalNode:
         # Batch BM25 — IDF weights are meaningful across the whole requirement set.
         bm25 = BM25Retriever(corpus=atom_texts)
 
-        # Retrieve capabilities for all atoms concurrently.
-        # Each _retrieve_one call is network I/O bound (Qdrant × 2 + pgvector) so
-        # threads yield the GIL and run in true parallel up to _RETRIEVAL_CONCURRENCY.
-        from concurrent.futures import ThreadPoolExecutor, as_completed  # noqa: PLC0415
-
-        contexts: list[AssembledContext | None] = [None] * n
-
-        def _retrieve_indexed(idx: int) -> tuple[int, AssembledContext]:
-            atom = atoms[idx]
-            dense_vec = dense_vecs[idx]
-            return idx, self._retrieve_one(atom, dense_vec, bm25, store, reranker, postgres, config)
-
+        # Retrieve capabilities for all atoms concurrently via asyncio.gather.
+        # asyncio.Semaphore caps concurrent coroutines at _RETRIEVAL_CONCURRENCY.
+        # All I/O (Qdrant, pgvector, ONNX reranker) runs in one event loop.
+        sem = asyncio.Semaphore(_RETRIEVAL_CONCURRENCY)
         completed_retrievals = 0
-        with ThreadPoolExecutor(max_workers=min(n, _RETRIEVAL_CONCURRENCY)) as pool:
-            future_to_idx = {pool.submit(
-                _retrieve_indexed, i): i for i in range(n)}
-            for future in as_completed(future_to_idx):
-                idx, ctx = future.result()
-                contexts[idx] = ctx
+
+        async def _retrieve_indexed(
+            idx: int,
+        ) -> tuple[int, AssembledContext]:
+            nonlocal completed_retrievals
+            async with sem:
+                ctx = await self._retrieve_one(
+                    atoms[idx], dense_vecs[idx],
+                    bm25, store, reranker, postgres, config,
+                )
                 completed_retrievals += 1
                 publish_step_progress(
                     batch_id,
                     phase=2,
-                    step=f"Retrieving capabilities ({completed_retrievals}/{n})",
+                    step=(
+                        f"Retrieving capabilities "
+                        f"({completed_retrievals}/{n})"
+                    ),
                     completed=1 + completed_retrievals,
                     total=total_steps,
                 )
+                return idx, ctx
 
-        # as_completed fills slots; cast away None (all slots filled above)
-        # type: ignore[assignment]
-        final_contexts: list[AssembledContext] = contexts
+        pairs = await asyncio.gather(
+            *[_retrieve_indexed(i) for i in range(n)]
+        )
+        final_contexts: list[AssembledContext] = [
+            ctx for _, ctx in sorted(pairs)
+        ]
 
         # Warn if Qdrant returned nothing — capability KB likely not seeded
         if all(not ctx.capabilities for ctx in final_contexts):
@@ -482,7 +479,7 @@ class RetrievalNode:
 
         return final_contexts
 
-    def _retrieve_one(
+    async def _retrieve_one(
         self,
         atom: ValidatedAtom,
         dense_vec: list[float],
@@ -501,7 +498,7 @@ class RetrievalNode:
                             float | bool] = {"module": atom.module}
 
         # ── Step 2: Parallel retrieval ───────────────────────────────────────
-        caps_hits, doc_hits, prior_fitments = _parallel_retrieve(
+        caps_hits, doc_hits, prior_fitments = await _parallel_retrieve(
             store=store,
             postgres=postgres,
             dense_vec=dense_vec,
@@ -528,8 +525,12 @@ class RetrievalNode:
         candidates = [
             (h.id, h.payload.get("description", "") or h.payload.get("feature", "")) for h in fused
         ]
-        reranked = reranker.rerank(
-            atom.requirement_text, candidates, top_k=len(candidates))
+        reranked: list[RerankResult] = await asyncio.to_thread(
+            reranker.rerank,
+            atom.requirement_text,
+            candidates,
+            top_k=len(candidates),
+        )
 
         k = _adaptive_k(reranked)
         top = reranked[:k]
@@ -619,7 +620,7 @@ _node: RetrievalNode | None = None
 _node_lock = __import__("threading").Lock()
 
 
-def retrieval_node(state: DynafitState) -> dict[str, Any]:
+async def retrieval_node(state: DynafitState) -> dict[str, Any]:
     """Phase 2 LangGraph node — delegates to the cached RetrievalNode instance.
 
     Tests should instantiate RetrievalNode directly with mock dependencies
@@ -630,4 +631,4 @@ def retrieval_node(state: DynafitState) -> dict[str, Any]:
         with _node_lock:
             if _node is None:
                 _node = RetrievalNode()
-    return _node(state)
+    return await _node(state)

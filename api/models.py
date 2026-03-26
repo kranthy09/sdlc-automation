@@ -70,6 +70,38 @@ class BatchSummary(BaseModel):
     by_module: dict[str, ModuleSummary] = Field(default_factory=dict)
 
 
+class BatchView(BaseModel):
+    """Typed view of a batch with durable + transient state.
+
+    Durable fields (from PostgreSQL):
+      batch_id, upload_id, upload_filename, product, country, wave, status,
+      summary, report_path, created_at, completed_at
+
+    Transient fields (from Redis, optional):
+      phases, classifications, journey, review_items, auto_approved
+    """
+
+    # Durable state (PostgreSQL)
+    batch_id: str
+    upload_id: str
+    upload_filename: str
+    product: str = ""
+    country: str = ""
+    wave: int = 1
+    status: str = ""
+    summary: dict[str, Any] = Field(default_factory=dict)
+    report_path: str | None = None
+    created_at: str = ""
+    completed_at: str | None = None
+
+    # Transient state (Redis)
+    phases: dict[str, Any] = Field(default_factory=dict)
+    classifications: list[dict[str, Any]] = Field(default_factory=list)
+    journey: list[dict[str, Any]] = Field(default_factory=list)
+    review_items: list[dict[str, Any]] = Field(default_factory=list)
+    auto_approved: list[dict[str, Any]] = Field(default_factory=list)
+
+
 class ResultItem(BaseModel):
     atom_id: str
     requirement_text: str
@@ -118,6 +150,22 @@ class ReviewItem(BaseModel):
     reviewed: bool = False
 
 
+class ReviewItemBasic(BaseModel):
+    """Lightweight review item from PostgreSQL — decision metadata only.
+
+    Contains only durable fields persisted to PostgreSQL. Rich context
+    (requirement_text, ai_confidence, ai_rationale, evidence, etc.) is
+    stored in Redis and may be stale or unavailable after process restart.
+    """
+
+    atom_id: str
+    ai_classification: str
+    decision: str | None = None
+    override_classification: str | None = None
+    reviewer: str | None = None
+    reviewed: bool = False
+
+
 class AutoApprovedItem(BaseModel):
     atom_id: str
     requirement_text: str
@@ -137,7 +185,7 @@ class AutoApprovedItem(BaseModel):
 class ReviewQueueResponse(BaseModel):
     batch_id: str
     status: str
-    items: list[ReviewItem]
+    items: list[ReviewItemBasic]
     auto_approved: list[AutoApprovedItem] = Field(default_factory=list)
 
 
@@ -155,7 +203,7 @@ class ReviewDecisionResponse(BaseModel):
     remaining_reviews: int
 
 
-class BatchRecord(BaseModel):
+class BatchHistoryItem(BaseModel):
     batch_id: str
     upload_filename: str
     product: str = ""
@@ -165,13 +213,46 @@ class BatchRecord(BaseModel):
     summary: BatchSummary
     created_at: str
     completed_at: str | None = None
+    report_path: str | None = None
 
 
 class BatchHistoryResponse(BaseModel):
-    batches: list[BatchRecord]
+    batches: list[BatchHistoryItem]
     total: int
     page: int
     limit: int
+
+
+class BatchInput(BaseModel):
+    """Worker write-back for batch completion metadata."""
+
+    status: str
+    completed_at: str | None = None
+    report_path: str | None = None
+    summary: dict[str, Any] | None = None
+
+
+class UploadMetadata(BaseModel):
+    """Upload file metadata passed to Celery worker."""
+
+    upload_id: str
+    filename: str
+    path: str
+    product: str
+    country: str
+    wave: int
+    size_bytes: int
+    detected_format: str
+    content_hash: str
+
+
+class PipelineConfig(BaseModel):
+    """Full pipeline configuration for Celery task execution."""
+
+    config_overrides: dict[str, Any] = Field(default_factory=dict)
+    upload_meta: UploadMetadata
+    resume: bool = False
+    overrides: dict[str, Any] = Field(default_factory=dict)
 
 
 class PublicResultsResponse(BaseModel):

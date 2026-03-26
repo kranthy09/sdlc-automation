@@ -6,8 +6,9 @@ metadata, dispatch to Celery, and return. All computation lives in
 modules/dynafit/ and is invoked by api/workers/tasks.py (Session B).
 
 State store:
-  Uploads are persisted to PostgreSQL via platform/storage/postgres.py.
-  _batches is an in-memory dict for MVP (replaced by PostgreSQL later).
+  Uploads and batch metadata are persisted to PostgreSQL via
+  platform/storage/postgres.py (durable). In-flight progress (phases,
+  classifications, review items) are cached in Redis (transient).
 """
 
 from __future__ import annotations
@@ -27,11 +28,14 @@ from fastapi.responses import FileResponse, JSONResponse, Response
 from api.models import (
     AtomJourney,
     AutoApprovedItem,
+    BatchHistoryItem,
     BatchHistoryResponse,
-    BatchRecord,
     BatchSummary,
+    BatchView,
+    EvidenceItem,
     JourneyResponse,
     PhaseProgressItem,
+    PriorFitmentItem,
     ProgressClassificationItem,
     ProgressResponse,
     PublicResultsResponse,
@@ -39,7 +43,7 @@ from api.models import (
     ResultsResponse,
     ReviewDecisionRequest,
     ReviewDecisionResponse,
-    ReviewItem,
+    ReviewItemBasic,
     ReviewQueueResponse,
     RunRequest,
     RunResponse,
@@ -57,9 +61,6 @@ public_router = APIRouter(tags=["public"])
 
 UPLOAD_DIR = Path(os.getenv("UPLOAD_DIR", "/tmp/dynafit_uploads"))
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
-
-# In-memory state — _batches replaced by PostgreSQL in a later session.
-_batches: dict[str, dict[str, Any]] = {}
 
 
 def _get_pg(request: Request) -> PostgresStore:
@@ -119,138 +120,188 @@ def _build_overrides(review_items: list[dict[str, Any]]) -> dict[str, Any]:
     return overrides
 
 
-def _derive_results_from_journey(journey: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Extract flat results-table dicts from journey data.
+async def _load_review_items_from_db(
+    request: Request, batch_id: str
+) -> list[dict[str, Any]]:
+    """Load HITL review decisions from PostgreSQL.
 
-    Journey is the single source of truth after Step 6. This function
-    reconstructs the results list that get_results / get_public_results
-    expect, including the evidence sub-dict.
-
-    Backward compatible: if a batch was completed before Step 6 and has
-    a stored "results" blob, that takes precedence (see _sync_from_redis).
+    Review items are durable and stored in PostgreSQL. Returns them as a list
+    of dicts. Falls back gracefully to empty list if no items or DB error.
     """
-    results: list[dict[str, Any]] = []
-    for j in journey:
-        ingest = j.get("ingest", {})
-        classify = j.get("classify", {})
-        output = j.get("output", {})
-        retrieve = j.get("retrieve", {})
-        match = j.get("match", {})
+    pg = _get_pg(request)
+    try:
+        db_items = await pg.get_review_items_by_batch(batch_id)
+        if db_items:
+            # Convert ReviewItemRecord to dict format for API compatibility
+            items = [
+                {
+                    "atom_id": item.atom_id,
+                    "ai_classification": item.ai_classification,
+                    "decision": item.decision,
+                    "override_classification": item.override_classification,
+                    "reviewer": item.reviewer,
+                    "reviewed": item.reviewed,
+                }
+                for item in db_items
+            ]
+            log.debug(
+                "review_items_loaded_from_postgres",
+                batch_id=batch_id,
+                count=len(db_items),
+            )
+            return items
+    except Exception as exc:
+        log.warning(
+            "review_items_postgres_load_failed",
+            batch_id=batch_id,
+            error=str(exc),
+        )
+    # Return empty list on error or no items
+    return []
 
-        results.append({
-            "atom_id": j["atom_id"],
-            "requirement_text": ingest.get("requirement_text", ""),
-            "module": ingest.get("module", ""),
-            "country": ingest.get("country", ""),
-            "classification": output.get("classification", ""),
-            "confidence": output.get("confidence", 0.0),
-            "rationale": classify.get("rationale", ""),
-            "d365_capability": classify.get("d365_capability", ""),
-            "d365_navigation": classify.get("d365_navigation", ""),
-            "reviewer_override": output.get("reviewer_override", False),
-            "config_steps": output.get("config_steps"),
-            "configuration_steps": output.get("configuration_steps"),
-            "gap_description": output.get("gap_description"),
-            "gap_type": output.get("gap_type"),
-            "dev_effort": output.get("dev_effort"),
-            "evidence": {
-                "top_capability_score": match.get("composite_score", 0.0),
-                "retrieval_confidence": retrieve.get("retrieval_confidence", "LOW"),
-                "prior_fitments": retrieve.get("prior_fitments", []),
-            },
-        })
-    return results
 
+def _load_journey_from_redis(
+    batch_id: str,
+) -> list[dict[str, Any]]:
+    """Load journey traceability data from Redis (lazy-load).
 
-def _sync_from_redis(batch: dict[str, Any], batch_id: str) -> None:
-    """Merge Celery-written state from Redis into the in-memory batch.
+    Journey is a potentially large JSON blob of per-atom processing history.
+    Load it only when explicitly needed (for /journey endpoint).
 
-    The Celery worker (separate OS process) writes results, review_items,
-    status, summary, report_path, and completed_at to a Redis hash keyed
-    by batch:{batch_id}.  This function merges those fields so REST routes
-    return real data without shared memory.
-
-    Scalar fields (status, summary, report_path, completed_at) are always
-    refreshed from Redis — they are authoritative from the worker.
-    List fields (results, review_items) are only loaded when empty in
-    memory, preserving any submit_review() mutations made in-process.
+    Returns empty list if journey is unavailable.
     """
     data = RedisPubSub.read_batch_state_sync(REDIS_URL, batch_id)
+    if not data or "journey" not in data:
+        return []
+
+    try:
+        return json.loads(data["journey"])
+    except json.JSONDecodeError:
+        return []
+
+
+def _load_transient_from_redis(
+    batch_id: str,
+    include_journey: bool = True,
+) -> tuple[dict[str, Any], list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
+    """Load transient in-flight state from Redis.
+
+    Returns: (phases, classifications, journey, auto_approved)
+
+    Durable batch state (status, summary, report_path, completed_at)
+    lives in PostgreSQL. Redis stores only ephemeral phase progress and
+    live classifications that don't persist across process restarts.
+
+    Args:
+        batch_id:        Batch identifier.
+        include_journey: If False, skip loading journey (optimization for endpoints
+                        that don't need per-atom traceability data).
+
+    Note: results are NOT loaded or cached. They are stored in PostgreSQL.
+    """
+    data = RedisPubSub.read_batch_state_sync(REDIS_URL, batch_id)
+
+    phases: dict[str, Any] = {}
+    classifications: list[dict[str, Any]] = []
+    journey: list[dict[str, Any]] = []
+    auto_approved: list[dict[str, Any]] = []
+
     if not data:
-        return
+        return phases, classifications, journey, auto_approved
 
-    # Always refresh authoritative scalar fields from the worker
-    if "status" in data:
-        batch["status"] = data["status"]
-    if "report_path" in data and data["report_path"]:
-        batch["report_path"] = data["report_path"]
-    if "completed_at" in data and data["completed_at"]:
-        batch["completed_at"] = data["completed_at"]
-    if "summary" in data:
+    # Load phase progress (in-flight only, not persisted to DB)
+    if "phases" in data:
         try:
-            batch["summary"] = json.loads(data["summary"])
+            phases = json.loads(data["phases"])
         except json.JSONDecodeError:
             pass
 
-    # Only load lists when empty — preserves submit_review() mutations
-    if "review_items" in data and not batch.get("review_items"):
+    if "classifications" in data:
         try:
-            batch["review_items"] = json.loads(data["review_items"])
-        except json.JSONDecodeError:
-            pass
-    # Backward compat: old batches may still have a stored "results" blob
-    if "results" in data and not batch.get("results"):
-        try:
-            batch["results"] = json.loads(data["results"])
-        except json.JSONDecodeError:
-            pass
-    if "auto_approved" in data and not batch.get("auto_approved"):
-        try:
-            batch["auto_approved"] = json.loads(data["auto_approved"])
-        except json.JSONDecodeError:
-            pass
-    if "journey" in data and not batch.get("journey"):
-        try:
-            batch["journey"] = json.loads(data["journey"])
+            classifications = json.loads(data["classifications"])
         except json.JSONDecodeError:
             pass
 
-    # Step 6: derive results from journey when results blob is absent
-    # (new batches only store journey; old batches still have results)
-    if not batch.get("results") and batch.get("journey"):
-        batch["results"] = _derive_results_from_journey(batch["journey"])
+    # Load journey traceability only if requested (large JSON, optional)
+    if include_journey and "journey" in data:
+        try:
+            journey = json.loads(data["journey"])
+        except json.JSONDecodeError:
+            pass
+
+    # Load auto-approved items if any
+    if "auto_approved" in data:
+        try:
+            auto_approved = json.loads(data["auto_approved"])
+        except json.JSONDecodeError:
+            pass
+
+    return phases, classifications, journey, auto_approved
 
 
-def _get_batch(batch_id: str) -> dict[str, Any]:
-    batch = _batches.get(batch_id)
-    if batch is None:
-        # Try recovering from Redis (survives process restart)
-        data = RedisPubSub.read_batch_state_sync(REDIS_URL, batch_id)
-        if data and "status" in data:
-            batch = {
-                "batch_id": batch_id,
-                "upload_id": data.get("upload_id", ""),
-                "upload_filename": data.get("upload_filename", ""),
-                "product": data.get("product", "d365_fo"),
-                "country": data.get("country", ""),
-                "wave": int(data.get("wave", "1")),
-                "status": data["status"],
-                "results": [],
-                "review_items": [],
-                "summary": {"total": 0, "fit": 0, "partial_fit": 0, "gap": 0},
-                "report_path": data.get("report_path"),
-                "created_at": data.get("created_at", ""),
-                "completed_at": data.get("completed_at"),
-            }
-            _batches[batch_id] = batch
-            log.info("batch_recovered_from_redis", batch_id=batch_id)
-        else:
-            raise HTTPException(
-                status_code=404,
-                detail=f"batch_id {batch_id!r} not found",
-            )
-    _sync_from_redis(batch, batch_id)
-    return batch
+async def _get_batch(
+    request: Request,
+    batch_id: str,
+    include_journey: bool = True,
+) -> BatchView:
+    """Load batch from PostgreSQL (source of truth) + Redis (transient state).
+
+    Returns typed BatchView with durable fields from PostgreSQL and transient
+    fields from Redis. Raises HTTPException 404 if batch not found.
+
+    Args:
+        request:          FastAPI request context.
+        batch_id:         Batch identifier.
+        include_journey:  If False, skip loading journey JSON from Redis (optimization
+                         for endpoints that don't need per-atom traceability).
+                         Defaults to True for backward compatibility.
+    """
+    pg = _get_pg(request)
+
+    # Source of truth: PostgreSQL
+    db_batch = await pg.get_batch_by_id(batch_id)
+    if db_batch is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"batch_id {batch_id!r} not found",
+        )
+
+    # Fetch upload metadata (for upload_filename, detected_format, etc.)
+    upload = await pg.get_upload_by_id(db_batch.upload_id)
+    upload_filename = upload.filename if upload else ""
+
+    # Load durable review items from PostgreSQL (prefer over Redis)
+    review_items = await _load_review_items_from_db(request, batch_id)
+
+    # Load transient state from Redis (with optional journey lazy-loading)
+    phases, classifications, journey, auto_approved = (
+        _load_transient_from_redis(batch_id, include_journey=include_journey)
+    )
+
+    log.debug(
+        "batch_loaded",
+        batch_id=batch_id,
+        from_db=True,
+        journey_loaded=include_journey,
+    )
+    return BatchView(
+        batch_id=db_batch.batch_id,
+        upload_id=db_batch.upload_id,
+        upload_filename=upload_filename,
+        product=db_batch.product_id,
+        country=db_batch.country,
+        wave=db_batch.wave,
+        status=db_batch.status,
+        summary=db_batch.summary or {"total": 0, "fit": 0, "partial_fit": 0, "gap": 0},
+        report_path=db_batch.report_path,
+        created_at=db_batch.created_at.isoformat(),
+        completed_at=db_batch.completed_at.isoformat() if db_batch.completed_at else None,
+        phases=phases,
+        classifications=classifications,
+        journey=journey,
+        review_items=review_items,
+        auto_approved=auto_approved,
+    )
 
 
 def _now() -> str:
@@ -353,60 +404,53 @@ async def run_pipeline(
         )
 
     batch_id = f"bat_{uuid.uuid4().hex[:8]}"
-    created_at = _now()
+    created_at_dt = datetime.now(UTC)
+    created_at_str = created_at_dt.isoformat()
 
-    _batches[batch_id] = {
-        "batch_id": batch_id,
-        "upload_id": body.upload_id,
-        "upload_filename": up.filename,
-        "product": up.product_id,
-        "country": up.country,
-        "wave": up.wave,
-        "status": "queued",
-        "results": [],
-        "review_items": [],
-        "summary": {
-            "total": 0, "fit": 0,
-            "partial_fit": 0, "gap": 0,
-        },
-        "report_path": None,
-        "created_at": created_at,
-        "completed_at": None,
-    }
+    # Write to PostgreSQL (source of truth)
+    from platform.storage.postgres import BatchRecord  # noqa: PLC0415
+    from api.models import BatchSummary, UploadMetadata, PipelineConfig  # noqa: PLC0415
 
-    RedisPubSub.write_batch_state_sync(
-        REDIS_URL,
-        batch_id,
-        status="queued",
+    initial_summary = BatchSummary(
+        total=0, fit=0, partial_fit=0, gap=0
+    )
+    batch_record = BatchRecord(
+        batch_id=batch_id,
         upload_id=body.upload_id,
-        upload_filename=up.filename,
+        product_id=up.product_id,
+        country=up.country,
+        wave=up.wave,
+        status="queued",
+        created_at=created_at_dt,
+        summary=initial_summary.model_dump(),
+    )
+    await pg.save_batch(batch_record)
+
+    # Register in Redis for WebSocket progress tracking
+    RedisPubSub.register_batch_sync(
+        REDIS_URL, batch_id, created_at_str,
+    )
+
+    # Build typed configuration for Celery worker
+    upload_meta = UploadMetadata(
+        upload_id=up.upload_id,
+        filename=up.filename,
+        path=up.path,
         product=up.product_id,
         country=up.country,
-        wave=str(up.wave),
-        created_at=created_at,
+        wave=up.wave,
+        size_bytes=up.size_bytes,
+        detected_format=up.detected_format,
+        content_hash=up.content_hash,
+    )
+    config = PipelineConfig(
+        config_overrides=body.config_overrides,
+        upload_meta=upload_meta,
     )
 
-    RedisPubSub.register_batch_sync(
-        REDIS_URL, batch_id, created_at,
-    )
-
-    # Pass upload metadata so the Celery worker can read the file
-    upload_meta = {
-        "upload_id": up.upload_id,
-        "filename": up.filename,
-        "path": up.path,
-        "product": up.product_id,
-        "country": up.country,
-        "wave": up.wave,
-        "size_bytes": up.size_bytes,
-        "detected_format": up.detected_format,
-        "content_hash": up.content_hash,
-    }
-    full_config = {
-        **body.config_overrides,
-        "_upload_meta": upload_meta,
-    }
-    _dispatch(batch_id, body.upload_id, full_config)
+    # Convert to dict for Celery (which expects JSON-serializable format)
+    config_dict = config.model_dump()
+    _dispatch(batch_id, body.upload_id, config_dict)
     log.info(
         "pipeline_queued",
         batch_id=batch_id,
@@ -424,66 +468,81 @@ async def run_pipeline(
 # ---------------------------------------------------------------------------
 
 
-def _load_all_batches() -> list[dict[str, Any]]:
-    """Load all known batches from the sorted set index + in-memory fallback.
+def _to_batch_dict(db_batch: Any) -> dict[str, Any]:
+    """Convert a postgres.BatchRecord to the batch dict format.
 
-    Queries the Redis sorted set (newest first), hydrates each via _get_batch
-    (which recovers from Redis hash on cache miss). Merges any in-memory-only
-    batches not yet indexed (e.g. just created, index write pending).
+    Includes durable fields from the DB record. Transient state from Redis
+    must be loaded separately and merged by the caller.
     """
-    indexed_ids = RedisPubSub.list_batches_sync(
-        REDIS_URL, offset=0, limit=1000)
-    batches_by_id: dict[str, dict[str, Any]] = {}
-
-    for bid in indexed_ids:
-        try:
-            batches_by_id[bid] = _get_batch(bid)
-        except HTTPException:
-            continue  # stale index entry — batch hash expired
-
-    # Merge any in-memory batches not in the index (edge case)
-    for bid, b in _batches.items():
-        if bid not in batches_by_id:
-            _sync_from_redis(b, bid)
-            batches_by_id[bid] = b
-
-    return list(batches_by_id.values())
+    return {
+        "batch_id": db_batch.batch_id,
+        "upload_id": db_batch.upload_id,
+        "upload_filename": db_batch.upload_filename,
+        "product": db_batch.product_id,
+        "country": db_batch.country,
+        "wave": db_batch.wave,
+        "status": db_batch.status,
+        "summary": (
+            db_batch.summary
+            or {"total": 0, "fit": 0, "partial_fit": 0, "gap": 0}
+        ),
+        "created_at": db_batch.created_at.isoformat(),
+        "completed_at": (
+            db_batch.completed_at.isoformat()
+            if db_batch.completed_at else None
+        ),
+        "report_path": db_batch.report_path,
+    }
 
 
 @router.get("/d365_fo/dynafit/batches")
-def list_batches(
+async def list_batches(
+    request: Request,
     country: str | None = None,
     wave: int | None = None,
     status: str | None = None,
     page: int = 1,
     limit: int = 10,
 ) -> BatchHistoryResponse:
-    batches = _load_all_batches()
-    if country:
-        batches = [b for b in batches if b["country"] == country]
-    if wave is not None:
-        batches = [b for b in batches if b["wave"] == wave]
-    if status:
-        batches = [b for b in batches if b["status"] == status]
+    pg = _get_pg(request)
 
-    total = len(batches)
-    start = (page - 1) * limit
-    page_batches = batches[start: start + limit]
-    return BatchHistoryResponse(
-        batches=[
-            BatchRecord(
-                batch_id=b["batch_id"],
-                upload_filename=b["upload_filename"],
-                product=b.get("product", "d365_fo"),
-                country=b["country"],
-                wave=b["wave"],
-                status=b["status"],
-                summary=BatchSummary(**b["summary"]),
-                created_at=b["created_at"],
-                completed_at=b.get("completed_at"),
+    # Get total count for pagination (DB-level COUNT)
+    total = await pg.count_batches(
+        country=country, wave=wave, status=status
+    )
+
+    # Calculate offset and fetch this page only (DB-level OFFSET/LIMIT)
+    offset = (page - 1) * limit
+    db_batches = await pg.list_batches(
+        country=country, wave=wave, status=status,
+        offset=offset, limit=limit
+    )
+
+    # Convert DB records to API response items
+    items: list[BatchHistoryItem] = []
+    for db_batch in db_batches:
+        items.append(
+            BatchHistoryItem(
+                batch_id=db_batch.batch_id,
+                upload_filename=db_batch.upload_filename,
+                product=db_batch.product_id,
+                country=db_batch.country,
+                wave=db_batch.wave,
+                status=db_batch.status,
+                summary=BatchSummary(**(
+                    db_batch.summary
+                    or {"total": 0, "fit": 0, "partial_fit": 0, "gap": 0}
+                )),
+                created_at=db_batch.created_at.isoformat(),
+                completed_at=(
+                    db_batch.completed_at.isoformat()
+                    if db_batch.completed_at else None
+                ),
             )
-            for b in page_batches
-        ],
+        )
+
+    return BatchHistoryResponse(
+        batches=items,
         total=total,
         page=page,
         limit=limit,
@@ -500,7 +559,8 @@ _SORTABLE_FIELDS = frozenset(
 
 
 @router.get("/d365_fo/dynafit/{batch_id}/results")
-def get_results(
+async def get_results(
+    request: Request,
     batch_id: str,
     classification: str | None = None,
     module: str | None = None,
@@ -509,47 +569,99 @@ def get_results(
     page: int = 1,
     limit: int = 25,
 ) -> ResultsResponse:
-    batch = _get_batch(batch_id)
-    results: list[dict[str, Any]] = batch["results"]
+    pg = _get_pg(request)
+    batch = await _get_batch(request, batch_id)
 
-    if classification:
-        results = [r for r in results if r["classification"] == classification]
-    if module:
-        results = [r for r in results if r["module"] == module]
-
-    # Server-side sort before pagination — only allow known fields to prevent
-    # accidental exposure of internal keys.
-    sort_key = sort if sort in _SORTABLE_FIELDS else "confidence"
-    results = sorted(
-        results,
-        key=lambda r: r.get(sort_key) or 0,
-        reverse=(order == "desc"),
+    # DB-level count with optional filters
+    total = await pg.count_results_by_batch(
+        batch_id,
+        classification=classification,
+        module=module,
     )
 
-    # Index journey data by atom_id for inline attachment (eliminates N+1)
-    journey_by_atom: dict[str, dict[str, Any]] = {
-        j["atom_id"]: j for j in batch.get("journey", [])
-    }
+    if total == 0:
+        return ResultsResponse(
+            batch_id=batch_id,
+            status=batch.status,
+            total=0,
+            page=page,
+            limit=limit,
+            results=[],
+            summary=BatchSummary(**batch.summary),
+        )
 
-    start = (page - 1) * limit
-    page_results = results[start: start + limit]
+    # Allowlist sort fields to prevent injection
+    sort_key = sort if sort in _SORTABLE_FIELDS else "confidence"
+    order_str = "desc" if order == "desc" else "asc"
 
+    # DB-level pagination and filtering
+    offset = (page - 1) * limit
+    db_results = await pg.get_results_by_batch(
+        batch_id,
+        classification=classification,
+        module=module,
+        sort=sort_key,
+        order=order_str,
+        offset=offset,
+        limit=limit,
+    )
+
+    # Index journey data by atom_id for optional attachment (eliminates N+1)
+    journey_by_atom: dict[str, dict[str, Any]] = {}
+    if batch.journey:
+        journey_by_atom = {
+            j["atom_id"]: j for j in batch.journey
+        }
+
+    # Convert database records to API response items
     result_items: list[ResultItem] = []
-    for r in page_results:
-        item = ResultItem(**r)
-        j = journey_by_atom.get(r["atom_id"])
+    for db_result in db_results:
+        item = ResultItem(
+            atom_id=db_result.atom_id,
+            requirement_text=db_result.requirement_text,
+            classification=db_result.classification,
+            confidence=db_result.confidence,
+            module=db_result.module,
+            country=db_result.country,
+            wave=db_result.wave,
+            rationale=db_result.rationale,
+            reviewer_override=db_result.reviewer_override,
+            d365_capability=db_result.d365_capability,
+            d365_navigation=db_result.d365_navigation,
+            config_steps=db_result.config_steps,
+            gap_description=db_result.gap_description,
+            configuration_steps=db_result.configuration_steps,
+            dev_effort=db_result.dev_effort,
+            gap_type=db_result.gap_type,
+        )
+
+        # Attach evidence if available
+        if db_result.evidence:
+            evidence_dict = db_result.evidence
+            item.evidence = EvidenceItem(
+                top_capability_score=evidence_dict.get("top_capability_score", 0.0),
+                retrieval_confidence=evidence_dict.get("retrieval_confidence", "LOW"),
+                prior_fitments=[
+                    PriorFitmentItem(**pf)
+                    for pf in evidence_dict.get("prior_fitments", [])
+                ],
+            )
+
+        # Attach journey data if available (optional traceability)
+        j = journey_by_atom.get(db_result.atom_id)
         if j:
             item.journey = AtomJourney(**j)
+
         result_items.append(item)
 
     return ResultsResponse(
         batch_id=batch_id,
-        status=batch["status"],
-        total=len(results),
+        status=batch.status,
+        total=total,
         page=page,
         limit=limit,
         results=result_items,
-        summary=BatchSummary(**batch["summary"]),
+        summary=BatchSummary(**batch.summary),
     )
 
 
@@ -559,17 +671,18 @@ def get_results(
 
 
 @router.get("/d365_fo/dynafit/{batch_id}/journey")
-def get_journey(
+async def get_journey(
+    request: Request,
     batch_id: str,
     atom_id: str | None = None,
 ) -> JourneyResponse:
-    batch = _get_batch(batch_id)
-    if batch["status"] not in ("complete", "review_required"):
+    batch = await _get_batch(request, batch_id)
+    if batch.status not in ("complete", "review_required"):
         raise HTTPException(
             status_code=409,
             detail="Journey data available only for completed batches",
         )
-    journey: list[dict[str, Any]] = batch.get("journey", [])
+    journey = batch.journey
     if atom_id:
         journey = [j for j in journey if j["atom_id"] == atom_id]
     return JourneyResponse(
@@ -586,8 +699,8 @@ PHASE_NAMES = ["Ingestion", "RAG", "Matching", "Classification", "Validation"]
 
 
 @router.get("/d365_fo/dynafit/{batch_id}/progress")
-def get_progress(batch_id: str) -> ProgressResponse:
-    batch = _get_batch(batch_id)
+async def get_progress(request: Request, batch_id: str) -> ProgressResponse:
+    batch = await _get_batch(request, batch_id, include_journey=False)
 
     # Read persisted phase states + classifications from Redis hash
     persisted: dict[str, dict[str, Any]] = {}
@@ -654,7 +767,7 @@ def get_progress(batch_id: str) -> ProgressResponse:
 
     return ProgressResponse(
         batch_id=batch_id,
-        status=batch["status"],
+        status=batch.status,
         phases=phases,
         classifications=classifications,
     )
@@ -666,14 +779,15 @@ def get_progress(batch_id: str) -> ProgressResponse:
 
 
 @router.get("/d365_fo/dynafit/{batch_id}/review")
-def get_review_queue(batch_id: str) -> ReviewQueueResponse:
-    batch = _get_batch(batch_id)
+async def get_review_queue(
+    request: Request, batch_id: str
+) -> ReviewQueueResponse:
+    batch = await _get_batch(request, batch_id, include_journey=False)
     return ReviewQueueResponse(
         batch_id=batch_id,
-        status=batch["status"],
-        items=[ReviewItem(**i) for i in batch["review_items"]],
-        auto_approved=[AutoApprovedItem(**i)
-                       for i in batch.get("auto_approved", [])],
+        status=batch.status,
+        items=[ReviewItemBasic(**i) for i in batch.review_items],
+        auto_approved=[AutoApprovedItem(**i) for i in batch.auto_approved],
     )
 
 
@@ -683,15 +797,16 @@ def get_review_queue(batch_id: str) -> ReviewQueueResponse:
 
 
 @router.post("/d365_fo/dynafit/{batch_id}/review/complete", status_code=202)
-def complete_review(batch_id: str) -> dict[str, str]:
-    batch = _get_batch(batch_id)
-    overrides = _build_overrides(batch["review_items"])
+async def complete_review(
+    request: Request, batch_id: str
+) -> dict[str, str]:
+    batch = await _get_batch(request, batch_id, include_journey=False)
+    overrides = _build_overrides(batch.review_items)
     # Write status transition immediately — before dispatching Celery task — so
     # that any GET /progress poll that arrives after this returns "resuming", not
     # "review_required".  Without this, the progress page sees review_required
     # and bounces the user back to the review queue before the worker runs.
     RedisPubSub.write_batch_state_sync(REDIS_URL, batch_id, status="resuming")
-    batch["status"] = "resuming"
     _dispatch_resume(batch_id, overrides)
     log.info(
         "review_complete_dispatched",
@@ -707,13 +822,21 @@ def complete_review(batch_id: str) -> dict[str, str]:
 
 
 @router.post("/d365_fo/dynafit/{batch_id}/review/{atom_id}")
-def submit_review(
+async def submit_review(
+    request: Request,
     batch_id: str,
     atom_id: str,
     body: ReviewDecisionRequest,
 ) -> ReviewDecisionResponse:
-    batch = _get_batch(batch_id)
-    items: list[dict[str, Any]] = batch["review_items"]
+    pg = _get_pg(request)
+    batch = await _get_batch(request, batch_id, include_journey=False)
+    items = batch.review_items
+
+    if not items:
+        raise HTTPException(
+            status_code=409,
+            detail="Batch is not in review state or has no review items",
+        )
 
     item = next((i for i in items if i["atom_id"] == atom_id), None)
     if item is None:
@@ -732,11 +855,32 @@ def submit_review(
     item["reviewer"] = body.reviewer
     item["override_classification"] = body.override_classification
 
-    # Persist decisions to Redis so they survive process restart and are
-    # visible to complete_review even if this process dies between submissions.
+    # Write decision to PostgreSQL (durable) and Redis (transient)
+    try:
+        await pg.save_review_decision(
+            batch_id=batch_id,
+            atom_id=atom_id,
+            ai_classification=item.get("ai_classification", ""),
+            decision=body.decision,
+            override_classification=body.override_classification,
+            reviewer=body.reviewer,
+        )
+    except Exception as exc:
+        log.error(
+            "review_decision_postgres_write_failed",
+            batch_id=batch_id,
+            atom_id=atom_id,
+            error=str(exc),
+        )
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to save review decision",
+        ) from exc
+
+    # Also persist to Redis for in-process visibility
     RedisPubSub.write_batch_state_sync(
         REDIS_URL, batch_id,
-        review_items=json.dumps(batch["review_items"]),
+        review_items=json.dumps(batch.review_items),
     )
 
     final = (
@@ -765,7 +909,8 @@ def submit_review(
 
 
 @router.get("/d365_fo/dynafit/{batch_id}/report")
-def download_report(
+async def download_report(
+    request: Request,
     batch_id: str,
     file: str | None = None,
 ) -> Response:
@@ -775,8 +920,8 @@ def download_report(
     available CSVs. If ``file`` is specified, returns that
     individual CSV. No ZIP — stdlib csv only (project rule).
     """
-    batch = _get_batch(batch_id)
-    report_path = batch.get("report_path")
+    batch = await _get_batch(request, batch_id, include_journey=False)
+    report_path = batch.report_path
     if not report_path or not Path(report_path).exists():
         raise HTTPException(
             status_code=404,
@@ -819,18 +964,64 @@ def download_report(
 
 
 @public_router.get("/batches/{batch_id}/results")
-def get_public_results(batch_id: str) -> PublicResultsResponse:
-    batch = _get_batch(batch_id)
-    results: list[dict[str, Any]] = batch["results"]
+async def get_public_results(
+    request: Request, batch_id: str
+) -> PublicResultsResponse:
+    pg = _get_pg(request)
+    batch = await _get_batch(request, batch_id, include_journey=False)
+
+    # Fetch all results from PostgreSQL (no pagination for public results)
+    db_results = await pg.get_results_by_batch(
+        batch_id,
+        offset=0,
+        limit=10000,  # Reasonable upper bound for batch atom count
+    )
+
+    # Convert database records to API response items
+    result_items: list[ResultItem] = []
+    for db_result in db_results:
+        item = ResultItem(
+            atom_id=db_result.atom_id,
+            requirement_text=db_result.requirement_text,
+            classification=db_result.classification,
+            confidence=db_result.confidence,
+            module=db_result.module,
+            country=db_result.country,
+            wave=db_result.wave,
+            rationale=db_result.rationale,
+            reviewer_override=db_result.reviewer_override,
+            d365_capability=db_result.d365_capability,
+            d365_navigation=db_result.d365_navigation,
+            config_steps=db_result.config_steps,
+            gap_description=db_result.gap_description,
+            configuration_steps=db_result.configuration_steps,
+            dev_effort=db_result.dev_effort,
+            gap_type=db_result.gap_type,
+        )
+
+        # Attach evidence if available
+        if db_result.evidence:
+            evidence_dict = db_result.evidence
+            item.evidence = EvidenceItem(
+                top_capability_score=evidence_dict.get("top_capability_score", 0.0),
+                retrieval_confidence=evidence_dict.get("retrieval_confidence", "LOW"),
+                prior_fitments=[
+                    PriorFitmentItem(**pf)
+                    for pf in evidence_dict.get("prior_fitments", [])
+                ],
+            )
+
+        result_items.append(item)
+
     return PublicResultsResponse(
         batch_id=batch_id,
-        product=batch.get("product", "d365_fo"),
-        country=batch["country"],
-        wave=batch["wave"],
-        submitted_at=batch["created_at"],
+        product=batch.product,
+        country=batch.country,
+        wave=batch.wave,
+        submitted_at=batch.created_at,
         reviewed_by=None,
-        summary=BatchSummary(**batch["summary"]),
-        requirements=[ResultItem(**r) for r in results],
+        summary=BatchSummary(**batch.summary),
+        requirements=result_items,
     )
 
 
@@ -840,32 +1031,48 @@ def get_public_results(batch_id: str) -> PublicResultsResponse:
 
 
 @public_router.get("/batches")
-def list_all_batches(
+async def list_all_batches(
+    request: Request,
     limit: int = 20,
     status: str | None = None,
     page: int = 1,
 ) -> BatchHistoryResponse:
-    batches = _load_all_batches()
-    if status:
-        batches = [b for b in batches if b["status"] == status]
-    total = len(batches)
-    start = (page - 1) * limit
-    page_batches = batches[start: start + limit]
-    return BatchHistoryResponse(
-        batches=[
-            BatchRecord(
-                batch_id=b["batch_id"],
-                upload_filename=b["upload_filename"],
-                product=b.get("product", "d365_fo"),
-                country=b["country"],
-                wave=b["wave"],
-                status=b["status"],
-                summary=BatchSummary(**b["summary"]),
-                created_at=b["created_at"],
-                completed_at=b.get("completed_at"),
+    pg = _get_pg(request)
+
+    # Get total count for pagination (DB-level COUNT)
+    total = await pg.count_batches(status=status)
+
+    # Calculate offset and fetch this page only (DB-level OFFSET/LIMIT)
+    offset = (page - 1) * limit
+    db_batches = await pg.list_batches(
+        status=status, offset=offset, limit=limit
+    )
+
+    # Convert DB records to API response items
+    items: list[BatchHistoryItem] = []
+    for db_batch in db_batches:
+        items.append(
+            BatchHistoryItem(
+                batch_id=db_batch.batch_id,
+                upload_filename=db_batch.upload_filename,
+                product=db_batch.product_id,
+                country=db_batch.country,
+                wave=db_batch.wave,
+                status=db_batch.status,
+                summary=BatchSummary(**(
+                    db_batch.summary
+                    or {"total": 0, "fit": 0, "partial_fit": 0, "gap": 0}
+                )),
+                created_at=db_batch.created_at.isoformat(),
+                completed_at=(
+                    db_batch.completed_at.isoformat()
+                    if db_batch.completed_at else None
+                ),
             )
-            for b in page_batches
-        ],
+        )
+
+    return BatchHistoryResponse(
+        batches=items,
         total=total,
         page=page,
         limit=limit,

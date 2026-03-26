@@ -28,7 +28,7 @@ Pass 2 — Merge + Build + Write-back + Report (Sub-phase 5B):
 
 Design:
   - ValidationNode accepts injectable postgres / redis / embedder for tests.
-  - Async bridge (run_async from events.py) — graph.invoke() stays sync.
+  - ValidationNode.__call__ is synchronous; _write_back uses run_async.
   - Module-level singleton + validation_node() mirrors classification.py pattern.
   - Override dict keyed by atom_id; None value = human approved (keep original).
   - Write-back errors are logged as WARNING but do not fail the pipeline.
@@ -393,51 +393,63 @@ class ValidationNode:
         """
         upload = state["upload"]
         embedder = self._get_embedder(upload.product_id)
-        postgres = self._get_postgres()
+
+        # Use injected instance (tests) or create fresh per invocation (prod).
+        # Never cache in production: the module-level singleton is reused across
+        # asyncio.run() calls (Celery retries), but asyncpg pools are bound to
+        # the event loop in which they were created.
+        pg = self._postgres
+        owns_pg = pg is None
+        if owns_pg:
+            pg = PostgresStore(get_settings().postgres_url)
 
         # Partition: skip REVIEW_REQUIRED up-front
         eligible = [mr for mr in merged if mr.result.classification !=
                     FitLabel.REVIEW_REQUIRED]
         skipped = len(merged) - len(eligible)
 
-        if not eligible:
+        try:
+            if not eligible:
+                log.info(
+                    "write_back_complete",
+                    batch_id=state["batch_id"],
+                    saved=0,
+                    skipped_review_required=skipped,
+                )
+                return
+
+            # One embed_batch call for all eligible texts
+            texts = [mr.result.requirement_text for mr in eligible]
+            embeddings: list[list[float]] = embedder.embed_batch(texts)
+
+            saved = 0
+            for mr, embedding in zip(eligible, embeddings, strict=True):
+                try:
+                    await pg.save_fitment(
+                        mr.result,
+                        embedding,
+                        upload_id=upload.upload_id,
+                        product_id=upload.product_id,
+                        reviewer_override=mr.reviewer_override,
+                        consultant=mr.consultant,
+                    )
+                    saved += 1
+                except PostgresError as exc:
+                    log.warning(
+                        "write_back_failed",
+                        atom_id=mr.result.atom_id,
+                        error=str(exc),
+                    )
+
             log.info(
                 "write_back_complete",
                 batch_id=state["batch_id"],
-                saved=0,
+                saved=saved,
                 skipped_review_required=skipped,
             )
-            return
-
-        # One embed_batch call for all eligible texts
-        texts = [mr.result.requirement_text for mr in eligible]
-        embeddings: list[list[float]] = embedder.embed_batch(texts)
-
-        saved = 0
-        for mr, embedding in zip(eligible, embeddings, strict=True):
-            try:
-                await postgres.save_fitment(
-                    mr.result,
-                    embedding,
-                    upload_id=upload.upload_id,
-                    product_id=upload.product_id,
-                    reviewer_override=mr.reviewer_override,
-                    consultant=mr.consultant,
-                )
-                saved += 1
-            except PostgresError as exc:
-                log.warning(
-                    "write_back_failed",
-                    atom_id=mr.result.atom_id,
-                    error=str(exc),
-                )
-
-        log.info(
-            "write_back_complete",
-            batch_id=state["batch_id"],
-            saved=saved,
-            skipped_review_required=skipped,
-        )
+        finally:
+            if owns_pg:
+                await pg.dispose()
 
 
 # ---------------------------------------------------------------------------
