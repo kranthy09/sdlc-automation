@@ -1,0 +1,213 @@
+docs:
+
+  # ---------------------------------------------------------------------------
+  # AccountsPayable (doc-ap-*)
+  # ---------------------------------------------------------------------------
+
+  - id: doc-ap-0001
+    module: AccountsPayable
+    feature: Three-way Matching
+    title: "Set up accounts payable invoice matching validation"
+    url: "https://learn.microsoft.com/en-us/dynamics365/finance/accounts-payable/set-up-accounts-payable-invoice-matching-validation"
+    text: >
+      Three-way matching in Dynamics 365 Finance validates vendor invoices against
+      purchase orders and product receipts. You configure matching policies at
+      Accounts payable > Setup > Accounts payable parameters > Invoice validation.
+      Matching policies can be set at the legal entity, vendor, or item level.
+      Price tolerances are defined as net unit price percentage thresholds. When an
+      invoice fails matching, it generates a mismatch exception that must be resolved
+      before posting. Two-way matching compares invoice to purchase order only;
+      three-way matching adds the product receipt quantity check.
+
+  - id: doc-ap-0002
+    module: AccountsPayable
+    feature: Invoice Capture with AI
+    title: "Invoice capture solution overview"
+    url: "https://learn.microsoft.com/en-us/dynamics365/finance/accounts-payable/invoice-capture-overview"
+    text: >
+      The Invoice capture solution uses AI Builder prebuilt models to automatically
+      extract data from scanned vendor invoices. Supported input formats include PDF
+      and image files. Extracted fields include vendor name, invoice number, invoice
+      date, due date, currency, line items, quantities, and amounts. Captured invoices
+      are staged in Accounts payable > Invoices > Captured invoices for review before
+      transfer to Pending vendor invoices. The solution requires Power Platform, AI
+      Builder capacity, and Dataverse integration enabled via Feature management.
+
+  - id: doc-ap-0003
+    module: AccountsPayable
+    feature: Vendor Payment Proposal
+    title: "Create and process vendor payment proposals"
+    url: "https://learn.microsoft.com/en-us/dynamics365/finance/accounts-payable/create-vendor-payments-payment-proposal"
+    text: >
+      The Vendor payment proposal automates selection of invoices for payment based
+      on configurable filters. Navigate to Accounts payable > Payments > Vendor
+      payment journal, then select Payment proposal > Create payment proposal. Filter
+      criteria include payment date, cash discount date, vendor group, method of
+      payment, and currency. Prioritisation rules allow discount-eligible invoices to
+      be paid first. The proposal creates journal lines which must be reviewed and
+      posted. Scheduling the proposal via Batch processing enables automated payment
+      runs on a fixed calendar.
+
+  - id: doc-ap-0004
+    module: AccountsPayable
+    feature: Cash Discount Processing
+    title: "Cash discounts in Accounts payable"
+    url: "https://learn.microsoft.com/en-us/dynamics365/finance/cash-bank-management/cash-discounts"
+    text: >
+      Cash discounts reward early payment of vendor invoices. In Dynamics 365 Finance,
+      discount terms are configured at Accounts payable > Payment setup > Cash discounts
+      with a discount percentage and number of days. Terms are assigned per vendor or
+      overridden on individual purchase orders. When settling an invoice within the
+      discount window the system automatically calculates and posts the discount amount
+      to the configured cash discount account. The Accounts payable parameters control
+      whether discounts are taken automatically or require manual confirmation.
+
+  - id: doc-ap-0005
+    module: AccountsPayable
+    feature: Electronic Payment Formats (ACH / SEPA / Wire)
+    title: "Electronic payment formats for vendor payments"
+    url: "https://learn.microsoft.com/en-us/dynamics365/finance/accounts-payable/electronic-reporting-sample-vendor-checks"
+    text: >
+      Dynamics 365 Finance supports electronic payment formats for vendor disbursements
+      including NACHA ACH (United States), SEPA Credit Transfer (Eurozone), SWIFT wire,
+      and localised formats via Electronic reporting (ER) configurations. Formats are
+      assigned to bank accounts at Cash and bank management > Bank accounts > Payment
+      setup. The ER framework allows format customisation without code changes. Generated
+      payment files are exported and transmitted to the bank. Remittance advice can be
+      emailed automatically to vendors on payment posting.
+
+  # ---------------------------------------------------------------------------
+  # AccountsReceivable (doc-ar-*)
+  # ---------------------------------------------------------------------------
+
+  - id: doc-ar-0001
+    module: AccountsReceivable
+    feature: Customer Credit Limit
+    title: "Customer credit management in Finance"
+    url: "https://learn.microsoft.com/en-us/dynamics365/finance/accounts-receivable/cm-credit-management"
+    text: >
+      Credit management in Dynamics 365 Finance controls the credit exposure of each
+      customer. Credit limits are set at Accounts receivable > Customers > All customers >
+      Credit and collections > Credit limit. Blocking rules trigger when a sales order
+      causes the customer balance plus open orders to exceed the approved limit. Orders
+      on hold are released manually by a credit manager or automatically after a credit
+      limit increase. Aging snapshots and credit statistics are available in the Credit
+      and collections workspace.
+
+  - id: doc-ar-0002
+    module: AccountsReceivable
+    feature: Collections Management
+    title: "Collections in Accounts receivable"
+    url: "https://learn.microsoft.com/en-us/dynamics365/finance/accounts-receivable/collections-process-automate"
+    text: >
+      The Collections workspace centralises overdue customer invoice management.
+      Collection agents see aged balances, open transactions, and activity history.
+      Collections process automation creates activities, sends dunning letters, and
+      schedules follow-up tasks based on configurable aging pools and process rules.
+      Interest notes and collection letters are generated at Accounts receivable >
+      Periodic tasks > Assess interest and Create collection letters. Write-off
+      transactions post to a designated bad-debt account.
+
+  # ---------------------------------------------------------------------------
+  # GeneralLedger (doc-gl-*)
+  # ---------------------------------------------------------------------------
+
+  - id: doc-gl-0001
+    module: GeneralLedger
+    feature: Financial Dimensions
+    title: "Financial dimensions overview"
+    url: "https://learn.microsoft.com/en-us/dynamics365/finance/general-ledger/financial-dimensions"
+    text: >
+      Financial dimensions in Dynamics 365 Finance provide multi-dimensional cost
+      accounting without separate ledgers. Dimensions are defined at General ledger >
+      Chart of accounts > Dimensions > Financial dimensions. Account structures link
+      dimensions to main accounts and enforce entry rules. Default dimension values
+      can be inherited from customers, vendors, products, or projects. Dimension
+      combinations on journal lines and document headers drive segmented P&L and
+      balance sheet reporting by cost centre, department, or project.
+
+  - id: doc-gl-0002
+    module: GeneralLedger
+    feature: Period Close Workspace
+    title: "Financial period close workspace"
+    url: "https://learn.microsoft.com/en-us/dynamics365/finance/general-ledger/financial-period-close-workspace"
+    text: >
+      The Financial period close workspace coordinates month-end and year-end close
+      tasks across legal entities. Close process templates define tasks, owners, due
+      dates, and dependencies. Navigate to General ledger > Period close > Financial
+      period close workspace. Task status is tracked in real time; blocking tasks
+      prevent period close until resolved. Year-end close transfers net income to
+      retained earnings and optionally rolls opening balances to the new fiscal year.
+
+  # ---------------------------------------------------------------------------
+  # Inventory (doc-inv-*)
+  # ---------------------------------------------------------------------------
+
+  - id: doc-inv-0001
+    module: Inventory
+    feature: Lot and Serial Number Traceability
+    title: "Batch and serial number tracking in inventory"
+    url: "https://learn.microsoft.com/en-us/dynamics365/supply-chain/inventory/batch-and-serial-number-tracking"
+    text: >
+      Dynamics 365 Supply Chain Management tracks inventory by batch (lot) and serial
+      number throughout the supply chain. Tracking dimension groups are assigned to
+      items at Product information management > Products > Released products > Tracking
+      dimension group. Batch attributes record quality, expiry, and custom fields.
+      Forward and backward traceability reports show movement history from receipt to
+      shipment. Shelf life control can block use of expired batches automatically.
+
+  # ---------------------------------------------------------------------------
+  # Procurement (doc-proc-*)
+  # ---------------------------------------------------------------------------
+
+  - id: doc-proc-0001
+    module: Procurement
+    feature: Purchase Order Approval Workflow
+    title: "Purchase order approval workflow setup"
+    url: "https://learn.microsoft.com/en-us/dynamics365/supply-chain/procurement/purchase-order-approval-confirmation"
+    text: >
+      Purchase order approval workflows in Dynamics 365 route purchase orders to
+      designated approvers based on amount thresholds, department, or spend category.
+      Workflows are configured at Procurement and sourcing > Setup > Procurement and
+      sourcing workflows. Conditional steps allow parallel or sequential approval
+      chains. Approved orders transition to Confirmed status. Budget control checks
+      can be embedded in the workflow to block orders that exceed budget. Delegations
+      and absence handling prevent bottlenecks.
+
+  # ---------------------------------------------------------------------------
+  # ProjectManagement (doc-proj-*)
+  # ---------------------------------------------------------------------------
+
+  - id: doc-proj-0001
+    module: ProjectManagement
+    feature: Revenue Recognition
+    title: "Project revenue recognition in Finance"
+    url: "https://learn.microsoft.com/en-us/dynamics365/finance/accounts-receivable/revenue-recognition-overview"
+    text: >
+      Project-based revenue recognition in Dynamics 365 Finance supports multiple
+      methods including completed contract, percentage of completion, and time-and-
+      material billing. Rules are configured at Project management and accounting >
+      Setup > Posting > Revenue recognition. The Estimate feature calculates
+      percentage of completion from cost consumed versus total budget. Revenue
+      recognition journals post to deferred revenue and earned revenue accounts.
+      Integration with billing rules ensures revenue is recognised in line with
+      contract milestones.
+
+  # ---------------------------------------------------------------------------
+  # FixedAssets (doc-fa-*)
+  # ---------------------------------------------------------------------------
+
+  - id: doc-fa-0001
+    module: FixedAssets
+    feature: Depreciation Methods
+    title: "Depreciation methods and conventions in Fixed assets"
+    url: "https://learn.microsoft.com/en-us/dynamics365/finance/fixed-assets/depreciation-methods-conventions"
+    text: >
+      Dynamics 365 Finance supports straight-line service life, reducing balance,
+      sum-of-years digits, factor, and units-of-production depreciation methods.
+      Depreciation profiles are assigned to asset books at Fixed assets > Setup >
+      Depreciation profiles. Each book can use a different method, enabling parallel
+      tax and accounting books on the same asset. Depreciation conventions control
+      the first-period amount (full month, half-year, mid-quarter). The Depreciation
+      proposal processes all assets in a batch and generates journal lines for review
+      before posting.

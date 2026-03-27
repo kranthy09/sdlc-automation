@@ -68,7 +68,7 @@ export function PhaseGatePanel({
     if (gate === 1) {
       return (
         <div className="overflow-x-auto">
-          <table className="w-full text-sm">
+          <table className="w-full text-sm text-gray-900">
             <thead className="bg-gray-50 border-b">
               <tr>
                 <th className="px-4 py-2 text-left font-semibold">Requirement</th>
@@ -100,7 +100,7 @@ export function PhaseGatePanel({
     if (gate === 2) {
       return (
         <div className="overflow-x-auto">
-          <table className="w-full text-sm">
+          <table className="w-full text-sm text-gray-900">
             <thead className="bg-gray-50 border-b">
               <tr>
                 <th className="px-4 py-2 text-left font-semibold">Requirement</th>
@@ -142,7 +142,7 @@ export function PhaseGatePanel({
     if (gate === 3) {
       return (
         <div className="overflow-x-auto">
-          <table className="w-full text-sm">
+          <table className="w-full text-sm text-gray-900">
             <thead className="bg-gray-50 border-b">
               <tr>
                 <th className="px-4 py-2 text-left font-semibold">Requirement</th>
@@ -160,7 +160,7 @@ export function PhaseGatePanel({
                   </td>
                   <td className="px-4 py-2 truncate">{row.route}</td>
                   <td className="px-4 py-2 truncate">
-                    {row.anomaly_flags.length > 0 ? row.anomaly_flags.join(', ') : '—'}
+                    {row.anomaly_flags?.length > 0 ? row.anomaly_flags.join(', ') : '—'}
                   </td>
                 </tr>
               ))}

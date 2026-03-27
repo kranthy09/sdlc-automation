@@ -20,6 +20,7 @@ Usage:
 
 from __future__ import annotations
 
+import random
 import time
 from typing import Any, TypeVar
 
@@ -43,7 +44,26 @@ _RETRYABLE: tuple[type[Exception], ...] = (
     anthropic.InternalServerError,
     anthropic.APIConnectionError,
     anthropic.APITimeoutError,
+    anthropic.APIStatusError,  # 5xx including 529 Overloaded
 )
+
+
+# ---------------------------------------------------------------------------
+# Prompt size thresholds
+# ---------------------------------------------------------------------------
+
+# Anthropic's documented hard limit per request is 32 MB (bytes, not tokens).
+# A Python str of N chars is at most 4×N bytes in UTF-8; we compare against
+# raw char count using the same 4-byte-per-char approximation used by
+# retrieval._trim_descriptions.
+_ANTHROPIC_LIMIT_BYTES: int = 32 * 1024 * 1024           # 32 MB
+_ANTHROPIC_LIMIT_CHARS: int = _ANTHROPIC_LIMIT_BYTES // 4  # 8,388,608 chars
+
+# Warn threshold: 200,000 chars ≈ 50,000 tokens.
+# Normal Phase 4 prompts top out at ~18,000 chars (~4,500 tokens).
+# Phase 1 batch calls reach ~20,700 chars (~5,175 tokens).
+# 200,000 chars is 10× the Phase 4 maximum — fires only on runaway input.
+_PROMPT_WARN_CHARS: int = 200_000
 
 
 # ---------------------------------------------------------------------------
@@ -79,6 +99,44 @@ class LLMClient:
         self._max_retries = max_retries
         settings = get_settings()
         self._client = anthropic.Anthropic(api_key=settings.anthropic_api_key.get_secret_value())
+
+    def _check_prompt_size(self, prompt: str, schema_name: str) -> None:
+        """Log prompt size and guard against oversized requests.
+
+        Called once per complete() invocation, before the retry loop.
+        Raises LLMError only when the prompt would certainly be rejected
+        by the API. The warning threshold fires well below that limit to
+        surface runaway prompts early in logs.
+
+        Args:
+            prompt:      The fully rendered prompt string.
+            schema_name: output_schema.__name__ for log context.
+
+        Raises:
+            LLMError: prompt_chars >= _ANTHROPIC_LIMIT_CHARS.
+        """
+        prompt_chars = len(prompt)
+        estimated_tokens = prompt_chars // 4
+        log.debug(
+            "llm_prompt_size",
+            schema=schema_name,
+            prompt_chars=prompt_chars,
+            estimated_tokens=estimated_tokens,
+        )
+        if prompt_chars >= _ANTHROPIC_LIMIT_CHARS:
+            raise LLMError(
+                f"Prompt too large: {prompt_chars:,} chars"
+                f" (~{estimated_tokens:,} tokens)."
+                f" schema={schema_name!r}"
+            )
+        if prompt_chars >= _PROMPT_WARN_CHARS:
+            log.warning(
+                "llm_prompt_large",
+                schema=schema_name,
+                prompt_chars=prompt_chars,
+                estimated_tokens=estimated_tokens,
+                warn_threshold=_PROMPT_WARN_CHARS,
+            )
 
     def complete(
         self,
@@ -116,6 +174,8 @@ class LLMClient:
             "input_schema": output_schema.model_json_schema(),
         }
 
+        self._check_prompt_size(prompt, output_schema.__name__)
+
         last_exc: Exception | None = None
         for attempt in range(1, self._max_retries + 1):
             log.debug(
@@ -135,14 +195,31 @@ class LLMClient:
                 )
             except _RETRYABLE as exc:
                 last_exc = exc
-                log.warning(
-                    "llm_retry",
-                    model=model,
-                    attempt=attempt,
-                    error=str(exc),
-                )
                 if attempt < self._max_retries:
-                    time.sleep(2 ** (attempt - 1))  # 1 s, 2 s, 4 s …
+                    if isinstance(exc, anthropic.RateLimitError):
+                        # Honor retry-after header; fall back to 60 s × attempt
+                        retry_after: str | None = None
+                        if hasattr(exc, "response") and exc.response is not None:
+                            retry_after = exc.response.headers.get("retry-after")
+                        wait = float(retry_after) if retry_after else 60.0 * attempt
+                        wait += random.uniform(0, 5)  # jitter across concurrent workers
+                    else:
+                        wait = 2 ** (attempt - 1)  # 1 s, 2 s, 4 s for other transient errors
+                    log.warning(
+                        "llm_retry",
+                        model=model,
+                        attempt=attempt,
+                        wait_s=round(wait, 1),
+                        error=str(exc),
+                    )
+                    time.sleep(wait)
+                else:
+                    log.warning(
+                        "llm_retry",
+                        model=model,
+                        attempt=attempt,
+                        error=str(exc),
+                    )
                 continue
             except Exception as exc:
                 log.error("llm_non_retryable_error", model=model, error=str(exc))

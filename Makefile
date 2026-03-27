@@ -92,7 +92,13 @@ seed-kb:
 	$(COMPOSE) exec api uv run python -m infra.scripts.seed_knowledge_base --product $(PRODUCT)
 
 seed-kb-lite:
-	$(COMPOSE) exec api uv run python -m infra.scripts.seed_knowledge_base --product d365_fo --source lite --reset
+	$(COMPOSE) exec api uv run python -m infra.scripts.seed_knowledge_base --product d365_fo --source lite
+
+curl-d365:
+	curl -s http://localhost:6333/collections | python3 -m json.tool 2>/dev/null || echo "Qdrant not accessible"
+	
+populate-d365:
+	uv run python -m infra.scripts.seed_knowledge_base --product d365_fo --source lite --reset
 
 smoke-test:
 	uv run python -m infra.scripts.smoke_test

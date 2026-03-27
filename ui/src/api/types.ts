@@ -123,7 +123,7 @@ export interface ReviewItem {
   ai_classification: Classification
   ai_confidence: number
   ai_rationale: string
-  review_reason: 'low_confidence' | 'conflict' | 'anomaly' | 'pii_detected'
+  review_reason: 'low_confidence' | 'conflict' | 'anomaly' | 'pii_detected' | 'gap_review'
   module: string
   evidence: ReviewItemEvidence
   config_steps: string | null

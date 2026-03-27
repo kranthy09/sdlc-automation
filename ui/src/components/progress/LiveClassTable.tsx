@@ -148,9 +148,8 @@ function JourneyEvidence({ journey, rationale }: JourneyEvidenceProps) {
         </div>
       )}
 
-      {/* Route + composite score */}
+      {/* Composite score */}
       <div className="flex gap-4 text-text-muted">
-        {journey.match?.route && <span>Route: <span className="text-text-primary">{journey.match.route}</span></span>}
         {journey.match?.composite_score != null && (
           <span>Composite: <span className="font-mono text-text-primary">{journey.match.composite_score.toFixed(2)}</span></span>
         )}

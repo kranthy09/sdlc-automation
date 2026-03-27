@@ -90,6 +90,13 @@ class Reranker:
 
     def _get_model(self) -> Any:
         if self._model is None:
+            # tqdm's threading lock does not survive Celery's ForkPoolWorker
+            # fork(). Reinitialize it before loading the model to prevent
+            # "type object 'tqdm' has no attribute '_lock'" in child workers.
+            import tqdm.std  # noqa: PLC0415
+            if not hasattr(tqdm.std.tqdm, "_lock"):
+                tqdm.std.tqdm._lock = tqdm.std.TRLock()
+
             from fastembed.rerank.cross_encoder.text_cross_encoder import (
                 TextCrossEncoder,  # noqa: PLC0415, E501
             )

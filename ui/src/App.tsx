@@ -9,6 +9,7 @@ const UploadPage = lazy(() => import('@/pages/UploadPage'))
 const ProgressPage = lazy(() => import('@/pages/ProgressPage'))
 const ResultsPage = lazy(() => import('@/pages/ResultsPage'))
 const ReviewPage = lazy(() => import('@/pages/ReviewPage'))
+const FeatureDetailPage = lazy(() => import('@/pages/FeatureDetailPage'))
 
 // ─── Page-level loading fallback ──────────────────────────────────────────────
 function PageLoader() {
@@ -70,6 +71,14 @@ const router = createBrowserRouter([
         element: (
           <Suspense fallback={<PageLoader />}>
             <ReviewPage />
+          </Suspense>
+        ),
+      },
+      {
+        path: 'features/:batchId',
+        element: (
+          <Suspense fallback={<PageLoader />}>
+            <FeatureDetailPage />
           </Suspense>
         ),
       },

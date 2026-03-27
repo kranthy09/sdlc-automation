@@ -11,6 +11,7 @@ const REASON_LABEL: Record<ReviewItem['review_reason'], string> = {
   conflict: 'Conflicting evidence',
   anomaly: 'Anomaly detected',
   pii_detected: 'PII detected in response',
+  gap_review: 'GAP — requires sign-off',
 }
 
 const REASON_COLOR: Record<ReviewItem['review_reason'], string> = {
@@ -18,6 +19,7 @@ const REASON_COLOR: Record<ReviewItem['review_reason'], string> = {
   conflict: 'text-gap-text border-gap/30 bg-gap-muted/20',
   anomaly: 'text-accent-glow border-accent/30 bg-accent/5',
   pii_detected: 'text-gap-text border-gap/40 bg-gap-muted/30',
+  gap_review: 'text-gap-text border-gap/30 bg-gap-muted/20',
 }
 
 const DEV_EFFORT_LABEL: Record<string, string> = {
@@ -167,7 +169,7 @@ export function ReviewCard({ item, submitting, selected, onToggleSelect, onDecid
         {showEvidence && (
           <div className="border-t border-bg-border px-5 py-4 animate-fade-in space-y-4">
             {/* Top capabilities */}
-            {item.evidence.capabilities.length > 0 && (
+            {(item.evidence?.capabilities?.length ?? 0) > 0 && (
               <div>
                 <p className="mb-2 text-xs font-medium uppercase tracking-wide text-text-muted">
                   Top D365 capabilities
@@ -189,7 +191,7 @@ export function ReviewCard({ item, submitting, selected, onToggleSelect, onDecid
             )}
 
             {/* Prior fitments */}
-            {item.evidence.prior_fitments.length > 0 && (
+            {(item.evidence?.prior_fitments?.length ?? 0) > 0 && (
               <div>
                 <p className="mb-2 text-xs font-medium uppercase tracking-wide text-text-muted">
                   Prior fitments
@@ -211,7 +213,7 @@ export function ReviewCard({ item, submitting, selected, onToggleSelect, onDecid
             )}
 
             {/* Anomaly flags */}
-            {item.evidence.anomaly_flags.length > 0 && (
+            {(item.evidence?.anomaly_flags?.length ?? 0) > 0 && (
               <div>
                 <p className="mb-2 text-xs font-medium uppercase tracking-wide text-text-muted">
                   Anomaly flags
@@ -233,7 +235,7 @@ export function ReviewCard({ item, submitting, selected, onToggleSelect, onDecid
                   <Code2 className="h-3.5 w-3.5" />
                   Gap Analysis
                 </div>
-                {item.evidence.capabilities.length === 0 && (
+                {(item.evidence?.capabilities?.length ?? 0) === 0 && (
                   <p className="text-xs text-text-muted italic">
                     No matching D365 capability found in the knowledge base — this requirement needs custom development or a third-party solution.
                   </p>
@@ -270,9 +272,9 @@ export function ReviewCard({ item, submitting, selected, onToggleSelect, onDecid
 
             {/* Empty state for non-GAP items with no evidence */}
             {item.ai_classification !== 'GAP' &&
-              item.evidence.capabilities.length === 0 &&
-              item.evidence.prior_fitments.length === 0 &&
-              item.evidence.anomaly_flags.length === 0 && (
+              (item.evidence?.capabilities?.length ?? 0) === 0 &&
+              (item.evidence?.prior_fitments?.length ?? 0) === 0 &&
+              (item.evidence?.anomaly_flags?.length ?? 0) === 0 && (
               <p className="text-xs text-text-muted italic">No additional evidence available.</p>
             )}
           </div>

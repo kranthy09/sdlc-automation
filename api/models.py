@@ -160,6 +160,7 @@ class ReviewItemBasic(BaseModel):
 
     atom_id: str
     ai_classification: str
+    ai_confidence: float | None = None
     decision: str | None = None
     override_classification: str | None = None
     reviewer: str | None = None
@@ -185,7 +186,7 @@ class AutoApprovedItem(BaseModel):
 class ReviewQueueResponse(BaseModel):
     batch_id: str
     status: str
-    items: list[ReviewItemBasic]
+    items: list[ReviewItem]
     auto_approved: list[AutoApprovedItem] = Field(default_factory=list)
 
 

@@ -387,6 +387,7 @@ class VectorStore:
         return self._get_client().query_points(
             collection_name=collection,
             query=dense_vector,
+            using="dense",
             limit=top_k,
             query_filter=qdrant_filter,
             with_payload=True,

@@ -45,7 +45,7 @@ from api.models import (
     ResultsResponse,
     ReviewDecisionRequest,
     ReviewDecisionResponse,
-    ReviewItemBasic,
+    ReviewItem,
     ReviewQueueResponse,
     RunRequest,
     RunResponse,
@@ -139,10 +139,21 @@ async def _load_review_items_from_db(
                 {
                     "atom_id": item.atom_id,
                     "ai_classification": item.ai_classification,
+                    "ai_confidence": item.ai_confidence,
                     "decision": item.decision,
                     "override_classification": item.override_classification,
                     "reviewer": item.reviewer,
                     "reviewed": item.reviewed,
+                    "requirement_text": item.requirement_text,
+                    "ai_rationale": item.ai_rationale,
+                    "review_reason": item.review_reason,
+                    "module": item.module,
+                    "evidence": item.evidence or {},
+                    "config_steps": item.config_steps,
+                    "gap_description": item.gap_description,
+                    "configuration_steps": item.configuration_steps,
+                    "dev_effort": item.dev_effort,
+                    "gap_type": item.gap_type,
                 }
                 for item in db_items
             ]
@@ -185,14 +196,18 @@ def _load_journey_from_redis(
 def _load_transient_from_redis(
     batch_id: str,
     include_journey: bool = True,
-) -> tuple[dict[str, Any], list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
+) -> tuple[dict[str, Any], list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
     """Load transient in-flight state from Redis.
 
-    Returns: (phases, classifications, journey, auto_approved)
+    Returns: (phases, classifications, journey, auto_approved, review_items)
 
     Durable batch state (status, summary, report_path, completed_at)
     lives in PostgreSQL. Redis stores only ephemeral phase progress and
     live classifications that don't persist across process restarts.
+
+    review_items in Redis carries the full rich payload (evidence, rationale,
+    requirement_text, etc.) that PostgreSQL does not store. Callers must merge
+    PG decision fields on top of these Redis items.
 
     Args:
         batch_id:        Batch identifier.
@@ -207,9 +222,10 @@ def _load_transient_from_redis(
     classifications: list[dict[str, Any]] = []
     journey: list[dict[str, Any]] = []
     auto_approved: list[dict[str, Any]] = []
+    review_items: list[dict[str, Any]] = []
 
     if not data:
-        return phases, classifications, journey, auto_approved
+        return phases, classifications, journey, auto_approved, review_items
 
     # Load phase progress (in-flight only, not persisted to DB)
     if "phases" in data:
@@ -238,7 +254,14 @@ def _load_transient_from_redis(
         except json.JSONDecodeError:
             pass
 
-    return phases, classifications, journey, auto_approved
+    # Load rich review items (evidence, rationale, requirement_text, etc.)
+    if "review_items" in data:
+        try:
+            review_items = json.loads(data["review_items"])
+        except json.JSONDecodeError:
+            pass
+
+    return phases, classifications, journey, auto_approved, review_items
 
 
 async def _get_batch(
@@ -272,13 +295,25 @@ async def _get_batch(
     upload = await pg.get_upload_by_id(db_batch.upload_id)
     upload_filename = upload.filename if upload else ""
 
-    # Load durable review items from PostgreSQL (prefer over Redis)
-    review_items = await _load_review_items_from_db(request, batch_id)
-
-    # Load transient state from Redis (with optional journey lazy-loading)
-    phases, classifications, journey, auto_approved = (
+    # Load rich review items from Redis (evidence, rationale, requirement_text, etc.)
+    # and decision tracking from PostgreSQL; merge PG decisions onto Redis items.
+    phases, classifications, journey, auto_approved, redis_review_items = (
         _load_transient_from_redis(batch_id, include_journey=include_journey)
     )
+
+    if redis_review_items:
+        # Redis has the full rich payload — overlay PG decision fields on top
+        pg_decisions: dict[str, dict[str, Any]] = {}
+        for pg_item in await _load_review_items_from_db(request, batch_id):
+            pg_decisions[pg_item["atom_id"]] = pg_item
+        review_items: list[dict[str, Any]] = [
+            {**item, **{k: v for k, v in pg_decisions.get(item["atom_id"], {}).items()
+                        if k in ("ai_classification", "ai_confidence", "decision", "override_classification", "reviewer", "reviewed")}}
+            for item in redis_review_items
+        ]
+    else:
+        # Redis cache expired — fall back to PostgreSQL (minimal, no evidence)
+        review_items = await _load_review_items_from_db(request, batch_id)
 
     log.debug(
         "batch_loaded",
@@ -788,7 +823,7 @@ async def get_review_queue(
     return ReviewQueueResponse(
         batch_id=batch_id,
         status=batch.status,
-        items=[ReviewItemBasic(**i) for i in batch.review_items],
+        items=[ReviewItem(**i) for i in batch.review_items],
         auto_approved=[AutoApprovedItem(**i) for i in batch.auto_approved],
     )
 

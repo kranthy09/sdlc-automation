@@ -110,12 +110,24 @@ class ReviewItemRecord:
     batch_id: str
     atom_id: str
     ai_classification: str
+    ai_confidence: float | None = None
     decision: str | None = None  # APPROVE, OVERRIDE
     override_classification: str | None = None
     reviewer: str | None = None
     reviewed: bool = False
     created_at: datetime | None = None
     updated_at: datetime | None = None
+    # Rich HITL context (V6 migration)
+    requirement_text: str = ""
+    ai_rationale: str = ""
+    review_reason: str = ""
+    module: str = ""
+    evidence: dict[str, Any] | None = None
+    config_steps: str | None = None
+    gap_description: str | None = None
+    configuration_steps: list[str] | None = None
+    dev_effort: str | None = None
+    gap_type: str | None = None
 
 
 @dataclass
@@ -222,6 +234,7 @@ _DDL: list[str] = [
         batch_id              TEXT         NOT NULL REFERENCES batches(batch_id),
         atom_id               TEXT         NOT NULL,
         ai_classification    TEXT         NOT NULL,
+        ai_confidence         FLOAT        NULL,
         decision              TEXT         NULL,
         override_classification TEXT       NULL,
         reviewer              TEXT         NULL,
@@ -283,6 +296,19 @@ _DDL: list[str] = [
     CREATE UNIQUE INDEX IF NOT EXISTS batch_results_batch_atom_unique
     ON batch_results (batch_id, atom_id)
     """,
+    # V5 migration — add ai_confidence to review_items for HITL display.
+    "ALTER TABLE review_items ADD COLUMN IF NOT EXISTS ai_confidence FLOAT",
+    # V6 migration — add rich HITL context columns so evidence survives Redis expiry.
+    "ALTER TABLE review_items ADD COLUMN IF NOT EXISTS requirement_text TEXT NOT NULL DEFAULT ''",
+    "ALTER TABLE review_items ADD COLUMN IF NOT EXISTS ai_rationale TEXT NOT NULL DEFAULT ''",
+    "ALTER TABLE review_items ADD COLUMN IF NOT EXISTS review_reason TEXT NOT NULL DEFAULT ''",
+    "ALTER TABLE review_items ADD COLUMN IF NOT EXISTS module TEXT NOT NULL DEFAULT ''",
+    "ALTER TABLE review_items ADD COLUMN IF NOT EXISTS evidence JSONB NOT NULL DEFAULT '{}'",
+    "ALTER TABLE review_items ADD COLUMN IF NOT EXISTS config_steps TEXT",
+    "ALTER TABLE review_items ADD COLUMN IF NOT EXISTS gap_description TEXT",
+    "ALTER TABLE review_items ADD COLUMN IF NOT EXISTS configuration_steps JSONB",
+    "ALTER TABLE review_items ADD COLUMN IF NOT EXISTS dev_effort TEXT",
+    "ALTER TABLE review_items ADD COLUMN IF NOT EXISTS gap_type TEXT",
 ]
 
 
@@ -851,9 +877,12 @@ class PostgresStore:
 
         stmt = text(
             """
-            SELECT batch_id, atom_id, ai_classification, decision,
-                   override_classification, reviewer, reviewed,
-                   created_at, updated_at
+            SELECT batch_id, atom_id, ai_classification, ai_confidence,
+                   decision, override_classification, reviewer, reviewed,
+                   created_at, updated_at,
+                   requirement_text, ai_rationale, review_reason, module,
+                   evidence, config_steps, gap_description,
+                   configuration_steps, dev_effort, gap_type
             FROM review_items
             WHERE batch_id = :batch_id
             ORDER BY created_at ASC
@@ -899,11 +928,19 @@ class PostgresStore:
         stmt = text(
             """
             INSERT INTO review_items (
-                batch_id, atom_id, ai_classification,
+                batch_id, atom_id, ai_classification, ai_confidence,
+                requirement_text, ai_rationale, review_reason, module,
+                evidence, config_steps, gap_description,
+                configuration_steps, dev_effort, gap_type,
                 decision, reviewed
             )
-            VALUES (:batch_id, :atom_id, :ai_classification,
-                    NULL, FALSE)
+            VALUES (
+                :batch_id, :atom_id, :ai_classification, :ai_confidence,
+                :requirement_text, :ai_rationale, :review_reason, :module,
+                CAST(:evidence AS JSONB), :config_steps, :gap_description,
+                CAST(:configuration_steps AS JSONB), :dev_effort, :gap_type,
+                NULL, FALSE
+            )
             ON CONFLICT (batch_id, atom_id) DO NOTHING
             """
         )
@@ -911,14 +948,28 @@ class PostgresStore:
         try:
             async with engine.begin() as conn:
                 for item in items:
+                    evidence = item.get("evidence") or {}
+                    config_steps_list = item.get("configuration_steps")
                     await conn.execute(
                         stmt,
                         {
                             "batch_id": batch_id,
                             "atom_id": item["atom_id"],
-                            "ai_classification": (
-                                item["ai_classification"]
+                            "ai_classification": item["ai_classification"],
+                            "ai_confidence": item.get("ai_confidence"),
+                            "requirement_text": item.get("requirement_text", ""),
+                            "ai_rationale": item.get("ai_rationale", ""),
+                            "review_reason": item.get("review_reason", ""),
+                            "module": item.get("module", ""),
+                            "evidence": json.dumps(evidence),
+                            "config_steps": item.get("config_steps"),
+                            "gap_description": item.get("gap_description"),
+                            "configuration_steps": (
+                                json.dumps(config_steps_list)
+                                if config_steps_list is not None else None
                             ),
+                            "dev_effort": item.get("dev_effort"),
+                            "gap_type": item.get("gap_type"),
                         },
                     )
             log.debug(
@@ -1359,16 +1410,48 @@ def _row_to_batch(row: Any) -> BatchRecord:
 
 
 def _row_to_review_item(row: Any) -> ReviewItemRecord:
+    evidence: dict[str, Any] = {}
+    if row.get("evidence"):
+        try:
+            evidence = (
+                json.loads(row["evidence"])
+                if isinstance(row["evidence"], str)
+                else row["evidence"]
+            )
+        except (json.JSONDecodeError, TypeError):
+            evidence = {}
+
+    configuration_steps: list[str] | None = None
+    if row.get("configuration_steps"):
+        try:
+            raw = row["configuration_steps"]
+            configuration_steps = (
+                json.loads(raw) if isinstance(raw, str) else raw
+            )
+        except (json.JSONDecodeError, TypeError):
+            configuration_steps = None
+
     return ReviewItemRecord(
         batch_id=row["batch_id"],
         atom_id=row["atom_id"],
         ai_classification=row["ai_classification"],
+        ai_confidence=row["ai_confidence"],
         decision=row["decision"],
         override_classification=row["override_classification"],
         reviewer=row["reviewer"],
         reviewed=row["reviewed"],
         created_at=row["created_at"],
         updated_at=row["updated_at"],
+        requirement_text=row.get("requirement_text") or "",
+        ai_rationale=row.get("ai_rationale") or "",
+        review_reason=row.get("review_reason") or "",
+        module=row.get("module") or "",
+        evidence=evidence,
+        config_steps=row.get("config_steps"),
+        gap_description=row.get("gap_description"),
+        configuration_steps=configuration_steps,
+        dev_effort=row.get("dev_effort"),
+        gap_type=row.get("gap_type"),
     )
 
 

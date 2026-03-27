@@ -232,12 +232,6 @@ function MatchTab({ journey }: { journey: AtomJourney }) {
           <p className="text-xs text-text-muted">Composite score</p>
           <p className="text-sm font-semibold text-text-primary">{formatConfidence(d.composite_score)}</p>
         </div>
-        <div>
-          <p className="text-xs text-text-muted">Route</p>
-          <span className={cn('inline-block rounded-full border px-2 py-0.5 text-xs font-medium', ROUTE_COLOR[d.route] ?? 'bg-bg-raised text-text-secondary border-bg-border')}>
-            {d.route}
-          </span>
-        </div>
       </div>
       {d.anomaly_flags.length > 0 && (
         <div className="flex flex-wrap gap-1.5">
@@ -259,12 +253,6 @@ function ClassifyTab({ journey }: { journey: AtomJourney }) {
         <p className="text-sm text-text-secondary leading-relaxed">{d.rationale}</p>
       </div>
       <div className="flex flex-wrap gap-x-6 gap-y-2">
-        <div>
-          <p className="text-xs text-text-muted">Route used</p>
-          <span className={cn('inline-block rounded-full border px-2 py-0.5 text-xs font-medium', ROUTE_COLOR[d.route_used] ?? 'bg-bg-raised text-text-secondary border-bg-border')}>
-            {d.route_used}
-          </span>
-        </div>
         <div>
           <p className="text-xs text-text-muted">LLM calls</p>
           <p className="text-sm font-medium text-text-primary">{d.llm_calls_used}</p>

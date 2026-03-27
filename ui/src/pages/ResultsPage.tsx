@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { ArrowLeft, Download, FileSpreadsheet } from 'lucide-react'
+import { ArrowLeft, Download, FileSpreadsheet, LayoutList } from 'lucide-react'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { SummaryCards } from '@/components/results/SummaryCards'
 import { ResultsFilters } from '@/components/results/ResultsFilters'
@@ -100,6 +100,15 @@ export default function ResultsPage() {
             >
               <FileSpreadsheet className="h-3.5 w-3.5" />
               Export CSV
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => navigate(`/features/${batchId}`)}
+              disabled={!data?.results.length}
+            >
+              <LayoutList className="h-3.5 w-3.5" />
+              Feature Report
             </Button>
           </div>
         }

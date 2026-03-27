@@ -1,0 +1,61 @@
+Acme Corp – D365 F&O Discovery Notes
+Wave 1 Finance & Supply Chain — Reduced Scope
+Date: March 2026
+
+---
+
+AP-1: Automated Invoice Matching
+Invoices need validation against purchase orders and goods receipts with configurable tolerance thresholds. Mismatches flag for clerk review before payment.
+
+AP-2: Invoice Extraction & Ingestion
+PDF/scanned documents need automatic header and line extraction linked to purchase orders and routed to approval workflow.
+
+AP-3: Payment Batch Proposal
+System proposes payment batches based on due dates and early payment discounts, filtered by vendor/currency/entity. Controller sign-off required.
+
+AP-4: Vendor Hold Mechanism
+Formal hold covering payment, invoice, and all-transaction types. Held vendors blocked from new POs, posting, and payments. Audit trail required.
+
+---
+
+AR-1: Credit Limit Enforcement
+Enforce credit limits at order entry and invoicing. Block or escalate transactions exceeding limits to credit manager.
+
+AR-2: Automated Collections
+Auto dunning with tiered letter sequences triggered by aging thresholds. Configurable per customer classification.
+
+AR-3: Payment Matching
+Automatic customer payment matching by amount and remittance reference. Unmatched receipts to suspense account.
+
+---
+
+GL-1: Month-end Close Task Management
+Structured checklist with task owners, due dates, dependencies, and real-time status visibility.
+
+GL-2: Financial Reporting
+User-defined report layouts (income statement, balance sheet, cash flow) with live GL data and drill-through capability.
+
+GL-3: Budget Encumbrance Tracking
+Track PO/PR encumbrances against approved budgets at dimension level. Block over-budget transactions.
+
+GL-4: Bank Reconciliation
+Auto-match bank statements (MT940, SEPA, BAI2) to GL cash entries by amount, date, and reference.
+
+---
+
+INV-1: Purchase Order Approval Routing
+POs above threshold route through approval hierarchies by amount/category with mobile notifications and 48-hour escalation.
+
+INV-2: Multi-vendor Bidding
+Vendor portal for bid submission with comparison ranking (price, lead time, score). Accepted bid converts to PO.
+
+INV-3: Batch Traceability
+Capture and enforce batch attributes (expiry, origin, quality) from receipt through picking.
+
+---
+
+PM-1: Timesheet & Project Costing
+Staff submit timesheets against project tasks; approved hours auto-post to cost journals.
+
+PM-2: Milestone-based Billing
+Auto-create invoice proposals at milestone completion, routed for approval before client delivery.

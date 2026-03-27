@@ -30,6 +30,8 @@ def review_reason(flags: list[str]) -> str:
     """Map a Phase 5 flag list to the UI review_reason discriminator."""
     if "response_pii_leak" in flags:
         return "pii_detected"
+    if "gap_review" in flags:
+        return "gap_review"
     if any(f in _ANOMALY_FLAG_NAMES for f in flags):
         return "anomaly"
     return "low_confidence"

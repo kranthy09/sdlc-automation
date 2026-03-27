@@ -316,6 +316,11 @@ class ValidationNode:
                 threshold=config.review_confidence_threshold,
             )
 
+        # All GAP items require mandatory analyst sign-off
+        if result.classification == FitLabel.GAP:
+            flags.append("gap_review")
+            log.info("sanity_gap_mandatory_review", atom_id=result.atom_id)
+
         # Phase 3 anomaly flags → HITL
         if mr is not None and mr.anomaly_flags:
             flags.append("phase3_anomaly")

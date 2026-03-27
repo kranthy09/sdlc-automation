@@ -269,8 +269,9 @@ export const useProgressStore = create<ProgressState>((set) => ({
       }
       if (resultsData.status === 'review_required') {
         const reviewItems = reviewData?.items.length ?? 0
-        const { fit, partial_fit, gap } = resultsData.summary
-        const total = fit + partial_fit + gap
+        // summary.total includes REVIEW_REQUIRED atoms; fit+partial_fit+gap alone
+        // would be 0 when all atoms are flagged, causing negative atomsValidated.
+        const total = resultsData.summary.total ?? (resultsData.summary.fit + resultsData.summary.partial_fit + resultsData.summary.gap)
         const phases = state.phases.map((p) => {
           if (p.phase < 5) {
             // Phase 4 gets the classification stats; phases 1-3 just marked complete
@@ -280,7 +281,7 @@ export const useProgressStore = create<ProgressState>((set) => ({
                 status: 'complete' as const,
                 progressPct: 100,
                 atomsProduced: total,
-                atomsValidated: total - reviewItems,
+                atomsValidated: Math.max(0, total - reviewItems),
                 atomsFlagged: reviewItems,
               }
             }

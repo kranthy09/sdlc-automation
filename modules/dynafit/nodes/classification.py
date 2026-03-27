@@ -75,6 +75,14 @@ _DEEP_REASON_CALLS: int = 3
 # Each call averages ~1.5s network I/O; 10 threads ≈ 10x throughput.
 _CLASSIFICATION_CONCURRENCY: int = 10
 
+# Max capabilities passed to render_prompt() per classification call.
+# Phase 2 (_trim_descriptions) budgets description *text* to 3,072 tokens
+# but does not cap capability *count*. Each XML <capability> block adds
+# ~80 chars of structural overhead even after description trimming.
+# Caps ranked 11+ carry low composite scores with negligible evidential
+# value for the LLM — capping at 10 keeps prompts focused.
+_MAX_CAPS_IN_PROMPT: int = 10
+
 
 # ---------------------------------------------------------------------------
 # LLM output schema  (G9 — tool-use enforced by LLMClient)
@@ -292,7 +300,7 @@ class ClassificationNode:
                 country=atom.country,
                 wave=atom.wave,
                 classification=FitLabel.GAP,
-                confidence=1.0,
+                confidence=0.0,
                 rationale=(
                     "No matching D365 capability found in knowledge base."),
                 route_used=mr.route,
@@ -451,10 +459,18 @@ class ClassificationNode:
         config: ProductConfig,
         temperature: float,
     ) -> LLMClassificationOutput:
+        caps_for_prompt = mr.ranked_capabilities[:_MAX_CAPS_IN_PROMPT]
+        if len(mr.ranked_capabilities) > _MAX_CAPS_IN_PROMPT:
+            log.debug(
+                "classification_caps_capped",
+                atom_id=mr.atom.atom_id,
+                original_count=len(mr.ranked_capabilities),
+                capped_count=len(caps_for_prompt),
+            )
         prompt = render_prompt(
             "classification_v1.j2",
             atom=mr.atom,
-            capabilities=mr.ranked_capabilities,
+            capabilities=caps_for_prompt,
             prior_fitments=priors,
             anomaly_flags=mr.anomaly_flags,
         )
