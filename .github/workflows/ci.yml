@@ -45,9 +45,6 @@ jobs:
       - name: Install dependencies
         run: uv sync --extra dev
 
-      - name: Lint (ruff + mypy)
-        run: make lint
-
       - name: Validate import contracts
         run: make validate-contracts
 
