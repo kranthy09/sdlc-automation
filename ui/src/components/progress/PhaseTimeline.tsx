@@ -34,9 +34,15 @@ interface PhaseTimelineProps {
 export function PhaseTimeline({ phases }: PhaseTimelineProps) {
   return (
     <div className="rounded-xl border border-bg-border bg-bg-surface p-4">
-      <div className="flex items-start gap-0">
+      <div className="flex items-start gap-0" role="progressbar" aria-label="Pipeline progress" aria-valuenow={phases.filter(p => p.status === 'complete').length} aria-valuemin={0} aria-valuemax={phases.length}>
         {phases.map((phase, i) => (
-          <div key={phase.phase} className="flex flex-1 flex-col items-center gap-2">
+          <div
+            key={phase.phase}
+            className="flex flex-1 flex-col items-center gap-2"
+            role="step"
+            aria-current={phase.status === 'active' ? 'step' : undefined}
+            aria-label={`Phase ${phase.phase}: ${phase.phaseName} - ${phase.status}`}
+          >
             {/* Connector + dot row */}
             <div className="flex w-full items-center">
               {/* Left line */}

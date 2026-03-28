@@ -31,7 +31,6 @@ from unittest.mock import MagicMock
 
 import numpy as np
 import pytest
-from prometheus_client import CollectorRegistry
 
 from platform.retrieval.embedder import Embedder
 from platform.schemas.fitment import RouteLabel
@@ -60,7 +59,7 @@ def _make_unit_embedder(dim: int = 384) -> Embedder:
         return unit.copy()
 
     mock_model.encode.side_effect = _encode
-    return Embedder("test-unit", _model=mock_model, registry=CollectorRegistry())
+    return Embedder("test-unit", _model=mock_model)
 
 
 def _make_state(contexts: list | None = None, **upload_overrides: Any) -> dict:

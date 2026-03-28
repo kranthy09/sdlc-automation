@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Plus } from 'lucide-react'
+import { Plus, Scale } from 'lucide-react'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { BatchTable } from '@/components/dashboard/BatchTable'
 import { AggregateMetrics } from '@/components/dashboard/AggregateMetrics'
@@ -36,10 +36,16 @@ export default function DashboardPage() {
         title="Dashboard"
         description="Batch history and aggregate fitment metrics"
         action={
-          <Button size="sm" onClick={() => navigate('/upload')}>
-            <Plus className="h-3.5 w-3.5" />
-            New analysis
-          </Button>
+          <div className="flex gap-2">
+            <Button size="sm" variant="ghost" onClick={() => navigate('/compare')}>
+              <Scale className="h-3.5 w-3.5" />
+              Compare batches
+            </Button>
+            <Button size="sm" onClick={() => navigate('/upload')}>
+              <Plus className="h-3.5 w-3.5" />
+              New analysis
+            </Button>
+          </div>
         }
       />
 

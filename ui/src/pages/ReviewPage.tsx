@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { ChevronRight, Wrench, Code2 } from 'lucide-react'
+import { ChevronRight, Wrench, Code2, CheckCircle2 } from 'lucide-react'
 import { cn, formatConfidence, confidenceTier, CONFIDENCE_TIER_COLOR } from '@/lib/utils'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { ReviewCard } from '@/components/review/ReviewCard'
@@ -10,6 +10,7 @@ import { BulkActions } from '@/components/review/BulkActions'
 import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
 import { Skeleton } from '@/components/ui/Skeleton'
+import { EmptyState } from '@/components/ui/EmptyState'
 import { useReview } from '@/hooks/useReview'
 import { apiClient } from '@/api/client'
 import { useUIStore } from '@/stores/uiStore'
@@ -40,8 +41,11 @@ function AutoApprovedRow({ item }: { item: AutoApprovedItem }) {
         <td className="px-4 py-2 font-mono text-text-muted">{item.atom_id}</td>
         <td className="px-4 py-2 text-sm leading-relaxed text-text-primary">{item.requirement_text}</td>
         <td className="px-4 py-2 text-text-secondary">{item.module}</td>
-        <td className="px-4 py-2">
+        <td className="px-4 py-2 flex items-center gap-2">
           <Badge variant={item.classification} />
+          <span className="inline-flex px-2 py-0.5 rounded-full border border-fit/30 bg-fit-muted/30 text-[10px] font-medium text-fit-text">
+            Auto-approved
+          </span>
         </td>
         <td className={cn('px-4 py-2 text-right font-medium', CONFIDENCE_TIER_COLOR[tier])}>
           {formatConfidence(item.confidence)}
@@ -270,6 +274,19 @@ export default function ReviewPage() {
       />
 
       <div className="space-y-4 px-6 pb-6 max-w-6xl">
+        {/* No items state */}
+        {query.isLoaded && items.length === 0 && autoApproved.length === 0 && (
+          <EmptyState
+            icon={<CheckCircle2 className="h-12 w-12 text-fit-text" />}
+            title="No items require review"
+            description="All requirements have been processed and automatically approved."
+            action={{
+              label: 'View results',
+              onClick: () => navigate(`/results/${batchId}`),
+            }}
+          />
+        )}
+
         {/* Progress */}
         {items.length > 0 && (
           <ReviewProgress reviewed={reviewed} total={items.length} />

@@ -28,6 +28,8 @@ export function ToastRegion() {
             open
             onOpenChange={(open) => !open && dismissNotification(n.id)}
             duration={5_000}
+            role="alert"
+            aria-live="assertive"
             className={cn(
               'flex items-start gap-3 rounded-lg border bg-bg-surface px-4 py-3 shadow-lg',
               'data-[state=open]:animate-slide-up data-[state=closed]:animate-fade-in',

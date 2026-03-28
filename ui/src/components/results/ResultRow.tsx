@@ -66,6 +66,7 @@ export function ResultRow({ result, batchId }: ResultRowProps) {
             gapDescription={result.gap_description}
             devEffort={result.dev_effort}
             gapType={result.gap_type}
+            evidence={result.evidence}
           />
         </div>
       )}

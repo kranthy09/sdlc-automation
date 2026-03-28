@@ -294,14 +294,14 @@ export function ReviewCard({ item, submitting, selected, onToggleSelect, onDecid
       )}
 
       {/* Actions */}
-      <div className="flex items-center gap-2 border-t border-bg-border px-5 py-4">
+      <div className="flex flex-col md:flex-row md:items-center gap-2 border-t border-bg-border px-5 py-4">
         {!overrideMode ? (
           <>
             <Button
               size="sm"
               onClick={() => onDecide('APPROVE')}
               loading={submitting}
-              className="bg-fit/10 hover:bg-fit/20 text-fit-text border border-fit/30"
+              className="md:w-auto w-full bg-fit/10 hover:bg-fit/20 text-fit-text border border-fit/30"
             >
               <CheckCircle2 className="h-3.5 w-3.5" />
               Approve
@@ -310,7 +310,7 @@ export function ReviewCard({ item, submitting, selected, onToggleSelect, onDecid
               variant="ghost"
               size="sm"
               onClick={() => setOverrideMode(true)}
-              className="text-partial-text border-partial/30"
+              className="md:w-auto w-full text-partial-text border-partial/30"
             >
               <PenLine className="h-3.5 w-3.5" />
               Override
@@ -320,6 +320,7 @@ export function ReviewCard({ item, submitting, selected, onToggleSelect, onDecid
               size="sm"
               onClick={() => onDecide('FLAG')}
               loading={submitting}
+              className="md:w-auto w-full"
             >
               <Flag className="h-3.5 w-3.5" />
               Flag
@@ -334,7 +335,7 @@ export function ReviewCard({ item, submitting, selected, onToggleSelect, onDecid
               onClick={() =>
                 onDecide('OVERRIDE', overrideClass ?? undefined, overrideReason)
               }
-              className="bg-partial/10 hover:bg-partial/20 text-partial-text border border-partial/30"
+              className="md:w-auto w-full bg-partial/10 hover:bg-partial/20 text-partial-text border border-partial/30"
             >
               Submit override
             </Button>
@@ -346,6 +347,7 @@ export function ReviewCard({ item, submitting, selected, onToggleSelect, onDecid
                 setOverrideClass(null)
                 setOverrideReason('')
               }}
+              className="md:w-auto w-full"
             >
               Cancel
             </Button>

@@ -37,7 +37,7 @@ export function SummaryCards({ total, summary }: SummaryCardsProps) {
   const values = { total, fit: summary.fit, partial_fit: summary.partial_fit, gap: summary.gap }
 
   return (
-    <div className="grid grid-cols-4 gap-3">
+    <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
       {CARDS.map(({ key, label, valueClass, borderClass }) => (
         <div
           key={key}

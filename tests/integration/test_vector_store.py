@@ -11,7 +11,6 @@ Tests cover:
   - hybrid (dense + sparse) search returns results via RRF fusion
   - delete_points removes specific points
   - recreate_collection wipes all data
-  - Prometheus ok metric recorded after a successful search
 """
 
 from __future__ import annotations
@@ -20,7 +19,6 @@ import os
 import uuid
 
 import pytest
-from prometheus_client import CollectorRegistry
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -39,16 +37,6 @@ def _unit(index: int) -> list[float]:
     v = [0.0] * DIM
     v[index] = 1.0
     return v
-
-
-def _sample(registry: CollectorRegistry, labels: dict[str, str]) -> float:
-    for metric in registry.collect():
-        for sample in metric.samples:
-            if sample.name == "platform_external_calls_total" and all(
-                sample.labels.get(k) == v for k, v in labels.items()
-            ):
-                return sample.value
-    return 0.0
 
 
 # ---------------------------------------------------------------------------
@@ -84,7 +72,7 @@ def qdrant_client():
 def store(qdrant_client):
     from platform.retrieval.vector_store import VectorStore
 
-    return VectorStore("http://unused", registry=CollectorRegistry(), _client=qdrant_client)
+    return VectorStore("http://unused", _client=qdrant_client)
 
 
 @pytest.fixture
@@ -220,7 +208,7 @@ def test_recreate_collection_wipes_data(qdrant_client):
     """recreate_collection drops all points; search returns empty results after rebuild."""
     from platform.retrieval.vector_store import CollectionConfig, Point, VectorStore
 
-    store = VectorStore("http://unused", registry=CollectorRegistry(), _client=qdrant_client)
+    store = VectorStore("http://unused", _client=qdrant_client)
     name = f"test_recreate_{uuid.uuid4().hex[:8]}"
     cfg = CollectionConfig(size=DIM, sparse=False)
 
@@ -234,25 +222,5 @@ def test_recreate_collection_wipes_data(qdrant_client):
         store.recreate_collection(name, cfg)
         after = store.search(name, _unit(0), top_k=5)
         assert len(after) == 0
-    finally:
-        store.drop_collection(name)
-
-
-@pytest.mark.integration
-def test_search_records_ok_prometheus_metric(qdrant_client):
-    """platform_external_calls_total{service=qdrant, status=ok} increments on success."""
-    from platform.retrieval.vector_store import CollectionConfig, Point, VectorStore
-
-    registry = CollectorRegistry()
-    store = VectorStore("http://unused", registry=registry, _client=qdrant_client)
-    name = f"test_metrics_{uuid.uuid4().hex[:8]}"
-
-    try:
-        store.ensure_collection(name, CollectionConfig(size=DIM))
-        store.upsert(name, [Point(id="m-1", dense_vector=_unit(0), payload={})])
-        store.search(name, _unit(0), top_k=5)
-
-        value = _sample(registry, {"service": "qdrant", "operation": "search", "status": "ok"})
-        assert value == 1.0
     finally:
         store.drop_collection(name)

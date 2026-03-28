@@ -1,16 +1,26 @@
 import { useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { ArrowLeft, Download, FileSpreadsheet, LayoutList } from 'lucide-react'
+import { cn } from '@/lib/utils'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { SummaryCards } from '@/components/results/SummaryCards'
 import { ResultsFilters } from '@/components/results/ResultsFilters'
 import { ResultsTable } from '@/components/results/ResultsTable'
+import { ConfidenceHistogram } from '@/components/results/ConfidenceHistogram'
+import { ModuleHeatmap } from '@/components/results/ModuleHeatmap'
+import { ReportManifest } from '@/components/results/ReportManifest'
+import { CountryRulesPanel } from '@/components/results/CountryRulesPanel'
 import { Button } from '@/components/ui/Button'
 import { Skeleton } from '@/components/ui/Skeleton'
+import { EmptyState } from '@/components/ui/EmptyState'
+import { ErrorStateCard } from '@/components/ui/ErrorStateCard'
 import { useResults } from '@/hooks/useResults'
 import { downloadReport } from '@/api/dynafit'
 import { useUIStore } from '@/stores/uiStore'
 import type { ResultsQuery } from '@/api/types'
+import { BarChart3 } from 'lucide-react'
+
+type ChartView = 'histogram' | 'heatmap'
 
 export default function ResultsPage() {
   const { batchId } = useParams<{ batchId: string }>()
@@ -23,6 +33,7 @@ export default function ResultsPage() {
     limit: 25,
   })
   const [downloading, setDownloading] = useState(false)
+  const [chartView, setChartView] = useState<ChartView>('histogram')
 
   const { data, isLoading, isFetching } = useResults(batchId!, query)
 
@@ -115,6 +126,15 @@ export default function ResultsPage() {
       />
 
       <div className="space-y-4 px-6 pb-6">
+        {/* Error state */}
+        {!isLoading && !data && (
+          <ErrorStateCard
+            title="Failed to load results"
+            message="Unable to fetch results for this batch. Please try again."
+            onRetry={() => window.location.reload()}
+          />
+        )}
+
         {/* Summary cards */}
         {isLoading ? (
           <div className="grid grid-cols-4 gap-3">
@@ -138,20 +158,89 @@ export default function ResultsPage() {
           </div>
         )}
 
+        {/* Charts */}
+        {data && data.results.length > 0 && (
+          <div>
+            <div className="flex items-center gap-2 mb-4">
+              <p className="text-xs font-medium uppercase tracking-wide text-text-muted">Chart view:</p>
+              <button
+                onClick={() => setChartView('histogram')}
+                className={cn(
+                  'px-3 py-1.5 text-xs font-medium rounded transition-colors',
+                  chartView === 'histogram'
+                    ? 'bg-accent text-white'
+                    : 'bg-bg-raised text-text-secondary hover:text-text-primary'
+                )}
+              >
+                Confidence Distribution
+              </button>
+              <button
+                onClick={() => setChartView('heatmap')}
+                className={cn(
+                  'px-3 py-1.5 text-xs font-medium rounded transition-colors',
+                  chartView === 'heatmap'
+                    ? 'bg-accent text-white'
+                    : 'bg-bg-raised text-text-secondary hover:text-text-primary'
+                )}
+              >
+                Module Heatmap
+              </button>
+            </div>
+            <div className="rounded-xl border border-bg-border bg-bg-surface/50 p-6">
+              {chartView === 'histogram' ? (
+                <ConfidenceHistogram results={data.results} />
+              ) : (
+                <ModuleHeatmap
+                  summary={data.summary}
+                  onModuleClick={(module) =>
+                    setQuery((q) => ({
+                      ...q,
+                      module,
+                      page: 1,
+                    }))
+                  }
+                />
+              )}
+            </div>
+          </div>
+        )}
+
         {/* Results table */}
         {isLoading ? (
           <Skeleton className="h-96 rounded-xl" />
         ) : data ? (
-          <ResultsTable
-            batchId={batchId!}
-            results={data.results}
-            total={data.total}
-            query={query}
-            loading={isFetching}
-            onSort={handleSort}
-            onPage={(page) => setQuery((q) => ({ ...q, page }))}
-          />
+          data.results.length > 0 ? (
+            <ResultsTable
+              batchId={batchId!}
+              results={data.results}
+              total={data.total}
+              query={query}
+              loading={isFetching}
+              onSort={handleSort}
+              onPage={(page) => setQuery((q) => ({ ...q, page }))}
+            />
+          ) : (
+            <EmptyState
+              icon={<BarChart3 className="h-12 w-12" />}
+              title="No results found"
+              description="Try adjusting your filters to find matching requirements."
+              action={{
+                label: 'Reset filters',
+                onClick: () => setQuery({ sort: 'confidence', order: 'desc', page: 1, limit: 25 }),
+              }}
+            />
+          )
         ) : null}
+
+        {/* Report downloads */}
+        {data && (
+          <ReportManifest batchId={batchId!} onDownload={handleDownload} />
+        )}
+
+        {/* Country rules */}
+        {data && data.results.length > 0 && (
+          <CountryRulesPanel country={data.results[0]?.country || 'US'} />
+        )}
       </div>
     </div>
   )

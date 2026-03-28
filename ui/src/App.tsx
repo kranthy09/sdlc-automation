@@ -10,6 +10,9 @@ const ProgressPage = lazy(() => import('@/pages/ProgressPage'))
 const ResultsPage = lazy(() => import('@/pages/ResultsPage'))
 const ReviewPage = lazy(() => import('@/pages/ReviewPage'))
 const FeatureDetailPage = lazy(() => import('@/pages/FeatureDetailPage'))
+const AtomDetailPage = lazy(() => import('@/pages/AtomDetailPage'))
+const ComparePage = lazy(() => import('@/pages/ComparePage'))
+const SettingsPage = lazy(() => import('@/pages/SettingsPage'))
 
 // ─── Page-level loading fallback ──────────────────────────────────────────────
 function PageLoader() {
@@ -79,6 +82,30 @@ const router = createBrowserRouter([
         element: (
           <Suspense fallback={<PageLoader />}>
             <FeatureDetailPage />
+          </Suspense>
+        ),
+      },
+      {
+        path: 'atom/:batchId/:atomId',
+        element: (
+          <Suspense fallback={<PageLoader />}>
+            <AtomDetailPage />
+          </Suspense>
+        ),
+      },
+      {
+        path: 'compare',
+        element: (
+          <Suspense fallback={<PageLoader />}>
+            <ComparePage />
+          </Suspense>
+        ),
+      },
+      {
+        path: 'settings',
+        element: (
+          <Suspense fallback={<PageLoader />}>
+            <SettingsPage />
           </Suspense>
         ),
       },

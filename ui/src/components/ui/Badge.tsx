@@ -37,11 +37,13 @@ interface BadgeProps {
 export function Badge({ variant, label, className }: BadgeProps) {
   return (
     <span
+      role="status"
       className={cn(
         'inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium',
         STYLE[variant] ?? STYLE.default,
         className,
       )}
+      aria-label={label ?? LABEL[variant] ?? variant}
     >
       {label ?? LABEL[variant] ?? variant}
     </span>

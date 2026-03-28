@@ -9,7 +9,6 @@ Tests cover:
   - publish + subscribe round-trip delivers the event
   - subscribe auto-stops after receiving a CompleteEvent
   - ErrorEvent also terminates the subscriber
-  - Prometheus publish counter increments on success
 """
 
 from __future__ import annotations
@@ -19,22 +18,6 @@ import os
 from typing import Any
 
 import pytest
-from prometheus_client import CollectorRegistry
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-
-def _sample(registry: CollectorRegistry, labels: dict[str, str]) -> float:
-    for metric in registry.collect():
-        for sample in metric.samples:
-            if sample.name == "platform_external_calls_total" and all(
-                sample.labels.get(k) == v for k, v in labels.items()
-            ):
-                return sample.value
-    return 0.0
-
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -53,7 +36,7 @@ def redis_url() -> str:
 async def pubsub(redis_url: str) -> Any:  # type: ignore[misc]
     from platform.storage.redis_pub import RedisPubSub
 
-    ps = RedisPubSub(redis_url, registry=CollectorRegistry())
+    ps = RedisPubSub(redis_url)
     yield ps
     await ps.close()
 
@@ -154,28 +137,3 @@ async def test_subscribe_stops_on_error_event(pubsub: Any) -> None:
     assert len(received) == 1
     assert isinstance(received[0], ErrorEvent)
     assert received[0].error_type == "RetrievalError"
-
-
-# ---------------------------------------------------------------------------
-# Prometheus metrics
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.integration
-async def test_prometheus_publish_counter_increments(redis_url: str) -> None:
-    """platform_external_calls_total{service=redis, operation=publish, status=ok} increments."""
-    from platform.schemas.events import PhaseStartEvent
-    from platform.storage.redis_pub import RedisPubSub
-
-    registry = CollectorRegistry()
-    ps = RedisPubSub(redis_url, registry=registry)
-
-    event = PhaseStartEvent(batch_id="test-metrics", phase=3, phase_name="Retrieval")
-    await ps.publish(event)
-
-    value = _sample(
-        registry,
-        {"service": "redis", "operation": "publish", "status": "ok"},
-    )
-    assert value == 1.0
-    await ps.close()

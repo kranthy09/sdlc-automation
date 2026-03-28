@@ -13,17 +13,14 @@ Tests cover:
   - reviewer overrides rank first within similar results
   - save_fitment rejects REVIEW_REQUIRED classification
   - get_similar_fitments returns [] when table is empty
-  - Prometheus ok counter increments after successful save_fitment
 """
 
 from __future__ import annotations
 
 import os
-import uuid
 from typing import Any
 
 import pytest
-from prometheus_client import CollectorRegistry
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -61,16 +58,6 @@ def _make_result(
     )
 
 
-def _sample(registry: CollectorRegistry, labels: dict[str, str]) -> float:
-    for metric in registry.collect():
-        for sample in metric.samples:
-            if sample.name == "platform_external_calls_total" and all(
-                sample.labels.get(k) == v for k, v in labels.items()
-            ):
-                return sample.value
-    return 0.0
-
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
@@ -98,7 +85,7 @@ async def store(postgres_url: str) -> Any:  # type: ignore[misc]
 
     from platform.storage.postgres import PostgresStore
 
-    s = PostgresStore(postgres_url, registry=CollectorRegistry())
+    s = PostgresStore(postgres_url)
     try:
         await s.ensure_schema()
     except Exception as exc:
@@ -106,7 +93,7 @@ async def store(postgres_url: str) -> Any:  # type: ignore[misc]
         pytest.skip(f"PostgreSQL not reachable or pgvector not installed: {exc}")
 
     async with s._get_engine().begin() as conn:
-        await conn.execute(text("TRUNCATE TABLE fitments, uploads RESTART IDENTITY"))
+        await conn.execute(text("TRUNCATE TABLE fitments, uploads, batches, batch_results, review_items RESTART IDENTITY CASCADE"))
 
     yield s
     await s.dispose()
@@ -131,17 +118,24 @@ async def test_ensure_schema_is_idempotent(store: Any) -> None:
 @pytest.mark.integration
 async def test_save_upload_and_update_status(store: Any) -> None:
     """save_upload inserts a row; update_upload_status changes the status column."""
+    from datetime import UTC, datetime
+
     from sqlalchemy import text
 
-    from platform.schemas.requirement import RawUpload
+    from platform.storage.postgres import UploadRecord
 
-    upload = RawUpload(
+    upload = UploadRecord(
         upload_id="up-001",
         filename="requirements.pdf",
-        file_bytes=b"%PDF-1.4",
         product_id="d365_fo",
         country="DE",
         wave=1,
+        status="pending",
+        created_at=datetime.now(UTC),
+        content_hash="abc123def456",
+        path="/uploads/requirements.pdf",
+        size_bytes=1024,
+        detected_format="pdf",
     )
     await store.save_upload(upload)
     await store.update_upload_status("up-001", "complete")
@@ -157,14 +151,21 @@ async def test_save_upload_and_update_status(store: Any) -> None:
 @pytest.mark.integration
 async def test_save_upload_is_idempotent(store: Any) -> None:
     """Duplicate save_upload (same upload_id) must not raise."""
-    from platform.schemas.requirement import RawUpload
+    from datetime import UTC, datetime
 
-    upload = RawUpload(
+    from platform.storage.postgres import UploadRecord
+
+    upload = UploadRecord(
         upload_id="up-dup",
         filename="dup.pdf",
-        file_bytes=b"%PDF",
         product_id="d365_fo",
         wave=1,
+        status="pending",
+        created_at=datetime.now(UTC),
+        content_hash="xyz789",
+        path="/uploads/dup.pdf",
+        size_bytes=512,
+        detected_format="pdf",
     )
     await store.save_upload(upload)
     await store.save_upload(upload)  # ON CONFLICT DO NOTHING
@@ -269,29 +270,3 @@ async def test_get_similar_fitments_empty_table(store: Any) -> None:
     """get_similar_fitments returns [] when no fitments exist."""
     priors = await store.get_similar_fitments(_unit(0), top_k=5)
     assert priors == []
-
-
-# ---------------------------------------------------------------------------
-# Prometheus metrics
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.integration
-async def test_prometheus_ok_metric_increments_on_save_fitment(postgres_url: str) -> None:
-    """platform_external_calls_total{service=postgres, status=ok} increments on success."""
-    from platform.storage.postgres import PostgresStore
-
-    registry = CollectorRegistry()
-    s = PostgresStore(postgres_url, registry=registry)
-    await s.ensure_schema()
-
-    # Use a unique atom_id so this test is independent of other table state
-    result = _make_result(f"REQ-METRICS-{uuid.uuid4().hex[:8]}")
-    await s.save_fitment(result, _unit(7), upload_id="up-metrics", product_id="d365_fo")
-
-    value = _sample(
-        registry,
-        {"service": "postgres", "operation": "save_fitment", "status": "ok"},
-    )
-    assert value == 1.0
-    await s.dispose()

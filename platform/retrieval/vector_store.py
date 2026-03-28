@@ -85,7 +85,7 @@ class CollectionConfig:
         size:     Embedding dimension. Default 384 (bge-small-en-v1.5).
         distance: Similarity metric — "cosine" | "dot" | "euclidean".
         sparse:   True → hybrid collection with named "dense" + "sparse" vectors.
-                  False → dense-only collection (unnamed vector).
+                  False → dense-only collection with named "dense" vector.
     """
 
     size: int = 384
@@ -210,12 +210,15 @@ class VectorStore:
         )
 
         distance = Distance[_DISTANCE_MAP[config.distance]]
+        # Always use named "dense" field for consistency across all collection types
+        vectors_config = {
+            "dense": VectorParams(size=config.size, distance=distance)
+        }
         try:
             if config.sparse:
                 self._get_client().create_collection(
                     collection_name=name,
-                    vectors_config={"dense": VectorParams(
-                        size=config.size, distance=distance)},
+                    vectors_config=vectors_config,
                     sparse_vectors_config={
                         "sparse": SparseVectorParams(index=SparseIndexParams(on_disk=False))
                     },
@@ -223,8 +226,7 @@ class VectorStore:
             else:
                 self._get_client().create_collection(
                     collection_name=name,
-                    vectors_config=VectorParams(
-                        size=config.size, distance=distance),
+                    vectors_config=vectors_config,
                 )
             log.info(
                 "vector_store_create_collection",

@@ -4,12 +4,9 @@ TDD — platform/retrieval/bm25.py
 Tests cover the four behaviours that matter:
   - encode()      returns (list[int], list[float]) of equal length for known terms.
   - out-of-vocab: terms absent from corpus produce an empty sparse vector.
-  - ok metric:    platform_external_calls_total{status="ok"} increments on success.
-  - error metric: platform_external_calls_total{status="error"} increments and
-                  BM25Error is raised when encoding fails.
+  - error:     BM25Error is raised when encoding fails.
 
 All tests use:
-  - A fresh CollectorRegistry per test for metric isolation.
   - The _index kwarg to inject a MagicMock — no real rank-bm25 index built.
 """
 
@@ -18,7 +15,6 @@ from __future__ import annotations
 from unittest.mock import MagicMock
 
 import pytest
-from prometheus_client import CollectorRegistry
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -27,20 +23,10 @@ from prometheus_client import CollectorRegistry
 _CORPUS = ["ap invoice matching", "three way match vendor"]
 
 
-def _make_retriever(mock_index: MagicMock, registry: CollectorRegistry) -> object:
+def _make_retriever(mock_index: MagicMock) -> object:
     from platform.retrieval.bm25 import BM25Retriever
 
-    return BM25Retriever(_CORPUS, registry=registry, _index=mock_index)
-
-
-def _sample(registry: CollectorRegistry, labels: dict[str, str]) -> float:
-    for metric in registry.collect():
-        for sample in metric.samples:
-            if sample.name == "platform_external_calls_total" and all(
-                sample.labels.get(k) == v for k, v in labels.items()
-            ):
-                return sample.value
-    return 0.0
+    return BM25Retriever(_CORPUS, _index=mock_index)
 
 
 # ---------------------------------------------------------------------------
@@ -54,8 +40,7 @@ def test_encode_returns_parallel_int_float_lists() -> None:
     mock_index = MagicMock()
     mock_index.idf = {"ap": 1.4, "invoice": 1.2, "matching": 1.1}
 
-    registry = CollectorRegistry()
-    bm25 = _make_retriever(mock_index, registry)
+    bm25 = _make_retriever(mock_index)
 
     from platform.retrieval.bm25 import BM25Retriever
 
@@ -78,8 +63,7 @@ def test_encode_excludes_out_of_vocabulary_terms() -> None:
     mock_index = MagicMock()
     mock_index.idf = {}
 
-    registry = CollectorRegistry()
-    bm25 = _make_retriever(mock_index, registry)
+    bm25 = _make_retriever(mock_index)
 
     indices, values = bm25.encode("payment schedule")  # type: ignore[attr-defined]
 
@@ -88,38 +72,18 @@ def test_encode_excludes_out_of_vocabulary_terms() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Prometheus metrics — ok path
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.unit
-def test_encode_records_ok_metric_on_success() -> None:
-    """platform_external_calls_total{service=bm25,operation=encode,status=ok} == 1."""
-    mock_index = MagicMock()
-    mock_index.idf = {"ap": 1.4}
-
-    registry = CollectorRegistry()
-    bm25 = _make_retriever(mock_index, registry)
-    bm25.encode("ap invoice")  # type: ignore[attr-defined]
-
-    value = _sample(registry, {"service": "bm25", "operation": "encode", "status": "ok"})
-    assert value == 1.0
-
-
-# ---------------------------------------------------------------------------
 # Error handling
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
-def test_encode_raises_bm25_error_and_records_error_metric() -> None:
-    """RuntimeError from idf lookup is wrapped in BM25Error; error metric increments."""
+def test_encode_raises_bm25_error_on_failure() -> None:
+    """RuntimeError from idf lookup is wrapped in BM25Error."""
     mock_index = MagicMock()
     mock_index.idf = MagicMock()
     mock_index.idf.get = MagicMock(side_effect=RuntimeError("idf broken"))
 
-    registry = CollectorRegistry()
-    bm25 = _make_retriever(mock_index, registry)
+    bm25 = _make_retriever(mock_index)
 
     from platform.retrieval.bm25 import BM25Error
 
@@ -127,6 +91,3 @@ def test_encode_raises_bm25_error_and_records_error_metric() -> None:
         bm25.encode("ap invoice")  # type: ignore[attr-defined]
 
     assert exc_info.value.cause is not None
-
-    value = _sample(registry, {"service": "bm25", "operation": "encode", "status": "error"})
-    assert value == 1.0

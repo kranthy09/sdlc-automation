@@ -1,7 +1,9 @@
 import { useState } from 'react'
 import { cn, formatConfidence } from '@/lib/utils'
-import type { Classification, AtomJourney } from '@/api/types'
+import type { Classification, AtomJourney, FitmentEvidence } from '@/api/types'
 import { Badge } from '@/components/ui/Badge'
+import { SignalRadar } from './SignalRadar'
+import { ImageIcon } from 'lucide-react'
 
 type TabKey = 'output' | 'classify' | 'match' | 'retrieve' | 'ingest'
 
@@ -20,6 +22,11 @@ const CONFIDENCE_COLOR: Record<string, string> = {
 }
 
 const EFFORT_LABEL: Record<string, string> = { S: 'Small', M: 'Medium', L: 'Large' }
+const EFFORT_COLOR: Record<string, string> = {
+  S: 'bg-fit-muted text-fit-text border-fit',
+  M: 'bg-partial-muted text-partial-text border-partial',
+  L: 'bg-gap-muted text-gap-text border-gap',
+}
 
 const ROUTE_COLOR: Record<string, string> = {
   FAST_TRACK: 'bg-fit-muted text-fit-text border-fit',
@@ -59,11 +66,36 @@ interface FallbackProps {
   gapDescription?: string | null
   devEffort?: 'S' | 'M' | 'L' | null
   gapType?: string | null
+  evidence?: FitmentEvidence
 }
 
-function FallbackPanel({ rationale, d365Capability, d365Navigation, classification, configSteps, configurationSteps, gapDescription, devEffort, gapType }: FallbackProps) {
+function FallbackPanel({ rationale, d365Capability, d365Navigation, classification, configSteps, configurationSteps, gapDescription, devEffort, gapType, evidence }: FallbackProps) {
   return (
     <div className="space-y-3 px-4 py-3">
+      {evidence && (
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-text-muted">Retrieval confidence:</span>
+            <span className={cn('text-xs font-semibold', CONFIDENCE_COLOR[evidence.retrieval_confidence])}>
+              {evidence.retrieval_confidence}
+            </span>
+          </div>
+          <span className="text-xs text-text-muted">Score: <span className="text-text-primary font-medium">{formatConfidence(evidence.top_capability_score)}</span></span>
+        </div>
+      )}
+      {evidence?.prior_fitments.length! > 0 && (
+        <div>
+          <p className="text-xs text-text-muted mb-1.5">Prior fitments</p>
+          <div className="flex flex-wrap gap-2">
+            {evidence.prior_fitments.map((pf, i) => (
+              <div key={i} className="flex items-center gap-1.5 rounded-full border border-bg-border bg-bg-raised px-2.5 py-1">
+                <span className="text-xs text-text-muted">Wave {pf.wave} · {pf.country}</span>
+                <Badge variant={pf.classification as Classification} />
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
       <div>
         <p className="mb-1 text-xs font-medium text-text-muted uppercase tracking-wide">AI Rationale</p>
         <p className="text-sm text-text-secondary leading-relaxed">{rationale}</p>
@@ -100,11 +132,25 @@ function FallbackPanel({ rationale, d365Capability, d365Navigation, classificati
           <p className="text-sm text-text-secondary">{configSteps}</p>
         </div>
       )}
-      {devEffort && (
-        <span className="text-xs text-text-muted">Dev effort: {EFFORT_LABEL[devEffort] ?? devEffort}</span>
-      )}
-      {gapType && (
-        <span className="text-xs text-text-muted ml-3">Gap type: {gapType}</span>
+      {(devEffort || gapType) && (
+        <div className="flex flex-wrap gap-3">
+          {devEffort && (
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-text-muted">Dev effort:</span>
+              <span className={cn('rounded border px-2 py-1 text-xs font-medium', EFFORT_COLOR[devEffort] || 'bg-bg-raised border-bg-border')}>
+                {EFFORT_LABEL[devEffort] ?? devEffort}
+              </span>
+            </div>
+          )}
+          {gapType && (
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-text-muted">Gap type:</span>
+              <span className="rounded border border-gap bg-gap-muted/30 px-2 py-1 text-xs font-medium text-gap-text">
+                {gapType}
+              </span>
+            </div>
+          )}
+        </div>
       )}
     </div>
   )
@@ -114,13 +160,18 @@ function FallbackPanel({ rationale, d365Capability, d365Navigation, classificati
 
 function IngestTab({ journey }: { journey: AtomJourney }) {
   const d = journey.ingest
+  const getScoreColor = (score: number): string => {
+    if (score >= 0.7) return 'text-fit-text'
+    if (score >= 0.4) return 'text-partial-text'
+    return 'text-gap-text'
+  }
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap gap-x-6 gap-y-1 text-sm">
         <span><span className="text-text-muted">Intent:</span> <span className="text-text-primary font-medium">{d.intent}</span></span>
         <span><span className="text-text-muted">Module:</span> <span className="text-text-primary">{d.module}</span></span>
         <span><span className="text-text-muted">Priority:</span> <span className="text-text-primary">{d.priority}</span></span>
-        <span><span className="text-text-muted">Content:</span> <span className="text-text-primary">{d.content_type}</span></span>
+        <span className="flex items-center gap-1"><span className="text-text-muted">Content:</span> <span className="text-text-primary flex items-center gap-1">{d.content_type === 'image_derived' && <ImageIcon className="h-3.5 w-3.5" />}{d.content_type}</span></span>
       </div>
       {d.entity_hints.length > 0 && (
         <div>
@@ -135,11 +186,11 @@ function IngestTab({ journey }: { journey: AtomJourney }) {
       <div className="flex gap-6">
         <div>
           <p className="text-xs text-text-muted">Specificity</p>
-          <p className="text-sm font-semibold text-text-primary">{formatConfidence(d.specificity_score)}</p>
+          <p className={cn('text-sm font-semibold', getScoreColor(d.specificity_score))}>{formatConfidence(d.specificity_score)}</p>
         </div>
         <div>
           <p className="text-xs text-text-muted">Completeness</p>
-          <p className="text-sm font-semibold text-text-primary">{Math.round(d.completeness_score)}%</p>
+          <p className={cn('text-sm font-semibold', getScoreColor(d.completeness_score / 100))}>{Math.round(d.completeness_score)}%</p>
         </div>
       </div>
       {d.source_refs.length > 0 && (
@@ -221,23 +272,33 @@ function MatchTab({ journey }: { journey: AtomJourney }) {
     rerank_score: 'Rerank score',
   }
   return (
-    <div className="space-y-3">
-      <div className="space-y-2">
-        {Object.entries(signals).map(([key, val]) => (
-          <SignalBar key={key} label={signalLabels[key] ?? key} value={val} weight={weights[key]} />
-        ))}
-      </div>
-      <div className="flex items-center gap-6">
+    <div className="space-y-4">
+      <div className="grid grid-cols-2 gap-6">
+        <div className="space-y-2">
+          <p className="text-xs text-text-muted mb-3 font-medium uppercase">Signal Breakdown</p>
+          {Object.entries(signals).map(([key, val]) => (
+            <SignalBar key={key} label={signalLabels[key] ?? key} value={val} weight={weights[key]} />
+          ))}
+          <div className="flex items-center gap-6 pt-2">
+            <div>
+              <p className="text-xs text-text-muted">Composite score</p>
+              <p className="text-sm font-semibold text-text-primary">{formatConfidence(d.composite_score)}</p>
+            </div>
+          </div>
+        </div>
         <div>
-          <p className="text-xs text-text-muted">Composite score</p>
-          <p className="text-sm font-semibold text-text-primary">{formatConfidence(d.composite_score)}</p>
+          <p className="text-xs text-text-muted mb-3 font-medium uppercase">Signal Radar</p>
+          <SignalRadar signals={signals} compositeScore={d.composite_score} />
         </div>
       </div>
       {d.anomaly_flags.length > 0 && (
-        <div className="flex flex-wrap gap-1.5">
-          {d.anomaly_flags.map((f) => (
-            <span key={f} className="rounded-full border border-partial bg-partial-muted/30 px-2 py-0.5 text-xs text-partial-text">{f}</span>
-          ))}
+        <div>
+          <p className="text-xs text-text-muted mb-1.5 font-medium">Anomalies detected</p>
+          <div className="flex flex-wrap gap-1.5">
+            {d.anomaly_flags.map((f) => (
+              <span key={f} className="rounded-full border border-partial bg-partial-muted/30 px-2 py-0.5 text-xs text-partial-text">{f}</span>
+            ))}
+          </div>
         </div>
       )}
     </div>
@@ -248,6 +309,14 @@ function ClassifyTab({ journey }: { journey: AtomJourney }) {
   const d = journey.classify
   return (
     <div className="space-y-3">
+      <div className="flex items-center gap-2">
+        <p className="text-xs text-text-muted">Route</p>
+        {d.route_used && (
+          <span className={cn('rounded border px-2 py-1 text-xs font-medium', ROUTE_COLOR[d.route_used] || 'bg-bg-raised text-text-secondary border-bg-border')}>
+            {d.route_used}
+          </span>
+        )}
+      </div>
       <div>
         <p className="mb-1 text-xs font-medium text-text-muted uppercase tracking-wide">AI Rationale</p>
         <p className="text-sm text-text-secondary leading-relaxed">{d.rationale}</p>
@@ -334,15 +403,19 @@ function OutputTab({ journey }: { journey: AtomJourney }) {
           {(d.gap_type || d.dev_effort) && (
             <div className="space-y-2">
               {d.gap_type && (
-                <div>
-                  <p className="text-xs text-text-muted">Gap type</p>
-                  <p className="text-sm font-medium text-gap-text">{d.gap_type}</p>
+                <div className="flex items-center gap-2">
+                  <p className="text-xs text-text-muted">Gap type:</p>
+                  <span className="rounded border border-gap bg-gap-muted/30 px-2 py-1 text-xs font-medium text-gap-text">
+                    {d.gap_type}
+                  </span>
                 </div>
               )}
               {d.dev_effort && (
-                <div>
-                  <p className="text-xs text-text-muted">Dev effort</p>
-                  <p className="text-sm font-medium text-text-primary">{EFFORT_LABEL[d.dev_effort] ?? d.dev_effort}</p>
+                <div className="flex items-center gap-2">
+                  <p className="text-xs text-text-muted">Dev effort:</p>
+                  <span className={cn('rounded border px-2 py-1 text-xs font-medium', EFFORT_COLOR[d.dev_effort] || 'bg-bg-raised border-bg-border')}>
+                    {EFFORT_LABEL[d.dev_effort] ?? d.dev_effort}
+                  </span>
                 </div>
               )}
             </div>

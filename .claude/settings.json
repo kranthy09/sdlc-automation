@@ -9,7 +9,24 @@
       "Bash(uv python:*)",
       "Read(//home/kranthi/.local/bin/**)",
       "Read(//home/kranthi/.cargo/bin/**)",
-      "Bash(find /home/kranthi/Projects/enterprise_ai/ui/src -type f \\\\\\(-name *.tsx -o -name *.ts \\\\\\))"
+      "Bash(find /home/kranthi/Projects/enterprise_ai/ui/src -type f \\\\\\(-name *.tsx -o -name *.ts \\\\\\))",
+      "Bash(find /home/kranthi/Projects/enterprise_ai/agents -type f -name *.py)",
+      "Bash(wc -l /home/kranthi/Projects/enterprise_ai/knowledge_bases/d365_fo/*.yaml)",
+      "Bash(make dev-ps:*)",
+      "Bash(make dev:*)",
+      "Bash(make test-unit:*)",
+      "Bash(POSTGRES_URL=\"postgresql+asyncpg://platform:dev_password@localhost:5432/ai_platform\" REDIS_URL=\"redis://localhost:6379/0\" QDRANT_URL=\"http://localhost:6333\" uv run python -m pytest tests/integration/test_redis_pub.py tests/integration/test_postgres.py -v --tb=short)",
+      "Bash(POSTGRES_URL=\"postgresql+asyncpg://platform:dev_password@localhost:5432/ai_platform\" uv run python -m pytest tests/integration/test_postgres.py -v --tb=short)",
+      "Bash(make help:*)",
+      "Bash(make type-check-ui:*)",
+      "Bash(make test-ui-docker:*)",
+      "Bash(make test-ui:*)",
+      "Read(//home/kranthi/Projects/enterprise_ai/**)",
+      "Bash(find /home/kranthi/Projects/enterprise_ai/docs -type f -name \"*.md\" -exec wc -l {} +)",
+      "Bash(find /home/kranthi/Projects/enterprise_ai/docs -name \"*.md\" -type f -exec wc -l {} +)",
+      "Bash(/tmp/api_spec_condense.txt:*)",
+      "Read(//tmp/**)",
+      "Read(//docs/**)"
     ]
   }
 }

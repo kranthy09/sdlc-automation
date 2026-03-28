@@ -151,6 +151,24 @@ from sentence_transformers import SentenceTransformer
 
 ---
 
+## Test Scope Must Match What Is Actually Built
+
+**Rule:** Never create placeholder files/directories just to make tests pass. Update tests to reflect the current layer.
+
+**What this means:**
+- Test assertions must only verify structure that actually exists in the codebase
+- Do not create `.gitkeep` or empty directories to satisfy failing scaffold tests
+- When a test checks for future layers (e.g., `knowledge_bases/`, `tests/fixtures/golden/`), remove that assertion and add a comment marking it for the layer that will build it
+
+**Why:** Tests are a contract describing the current state of the system. Manufacturing fake structure to satisfy tests breaks that contract and hides what is genuinely missing.
+
+**How to apply:**
+- Review `tests/unit/test_scaffold.py` — assertions for future layers should be commented with `# Layer 3+: will add ...`
+- When a new layer is built, re-add the corresponding test assertions at that time
+- Only add test assertions for directories/files that exist right now
+
+---
+
 ## Summary
 
 | Rule | Apply When | Benefit |
@@ -161,3 +179,4 @@ from sentence_transformers import SentenceTransformer
 | Integration-first tests | Tests ARE requested | Real validation, less maintenance |
 | Fastembed only | Working with embeddings | 9x smaller Docker, same quality |
 | Details in docs/ | Adding documentation | CLAUDE.md stays lean, info searchable |
+| Test scope matches build | Writing tests | Contracts stay accurate, hidden gaps visible |

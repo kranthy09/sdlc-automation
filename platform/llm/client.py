@@ -194,6 +194,13 @@ class LLMClient:
                     messages=[{"role": "user", "content": prompt}],
                 )
             except _RETRYABLE as exc:
+                # AuthenticationError (401) is never retryable — fail immediately
+                if isinstance(exc, anthropic.AuthenticationError):
+                    log.error("llm_non_retryable_error", model=model, error=str(exc))
+                    raise LLMError(
+                        f"Non-retryable LLM error (model={model!r}): {exc}",
+                        cause=exc,
+                    ) from exc
                 last_exc = exc
                 if attempt < self._max_retries:
                     if isinstance(exc, anthropic.RateLimitError):

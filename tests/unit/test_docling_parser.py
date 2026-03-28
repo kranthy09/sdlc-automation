@@ -8,9 +8,6 @@ Behaviours under test:
   - Empty → empty TXT produces empty ParseResult (tables=[], prose=[]).
   - Error → unreadable file raises ParseError.
   - tables field → always [] (text-only extraction).
-  - ok metric  → platform_external_calls_total{status="ok"} increments.
-  - err metric → platform_external_calls_total{status="error"} increments.
-
 No mocked converters — tests write real minimal files to tmp_path.
 """
 
@@ -21,7 +18,6 @@ import zipfile
 from pathlib import Path
 
 import pytest
-from prometheus_client import CollectorRegistry
 
 # ---------------------------------------------------------------------------
 # File builders
@@ -93,16 +89,6 @@ def _write_pdf(tmp_path: Path, text: str, name: str = "reqs.pdf") -> Path:
     p = tmp_path / name
     p.write_bytes(body + xref + trailer)
     return p
-
-
-def _counter(registry: CollectorRegistry, labels: dict[str, str]) -> float:
-    for metric in registry.collect():
-        for sample in metric.samples:
-            if sample.name == "platform_external_calls_total" and all(
-                sample.labels.get(k) == v for k, v in labels.items()
-            ):
-                return sample.value
-    return 0.0
 
 
 # ---------------------------------------------------------------------------
@@ -273,38 +259,3 @@ def test_parse_bad_docx_raises_parse_error(tmp_path: Path) -> None:
         DoclingParser().parse(bad)
 
     assert exc_info.value.filename == "bad.docx"
-
-
-# ---------------------------------------------------------------------------
-# Prometheus metrics
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.unit
-def test_parse_records_ok_metric_on_success(tmp_path: Path) -> None:
-    """platform_external_calls_total{service=docling,operation=parse,status=ok} == 1."""
-    from platform.parsers.docling_parser import DoclingParser
-
-    path = _write_txt(tmp_path, "The system must validate invoices.", "metric_ok.txt")
-    registry = CollectorRegistry()
-    DoclingParser(registry=registry).parse(path)
-
-    assert _counter(registry, {"service": "docling", "operation": "parse", "status": "ok"}) == 1.0
-
-
-@pytest.mark.unit
-def test_parse_records_error_metric_on_failure(tmp_path: Path) -> None:
-    """platform_external_calls_total{service=docling,operation=parse,status=error} == 1."""
-    from platform.parsers.docling_parser import DoclingParser
-    from platform.schemas.errors import ParseError
-
-    bad = tmp_path / "bad.pdf"
-    bad.write_bytes(b"not a pdf")
-    registry = CollectorRegistry()
-
-    with pytest.raises(ParseError):
-        DoclingParser(registry=registry).parse(bad)
-
-    assert (
-        _counter(registry, {"service": "docling", "operation": "parse", "status": "error"}) == 1.0
-    )

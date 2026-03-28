@@ -16,7 +16,7 @@ on:
 # All layers complete:
 #   Layer 0  DONE — scaffold + CI
 #   Layer 1  DONE — platform schemas
-#   Layer 2  DONE — 13 platform utilities + guardrail utilities
+#   Layer 2  DONE — 12 platform utilities + guardrail utilities
 #   Layer 3  DONE — REQFIT 5-phase LangGraph pipeline
 #   Layer 4  DONE — FastAPI + Celery + WebSocket + React UI
 # ---------------------------------------------------------------------------

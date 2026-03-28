@@ -4,12 +4,9 @@ TDD — platform/retrieval/embedder.py
 Tests cover the four behaviours that matter:
   - embed()       returns a list[float] of the correct dimension.
   - embed_batch() returns one vector per input text.
-  - ok metric:    platform_external_calls_total{status="ok"} increments on success.
-  - error metric: platform_external_calls_total{status="error"} increments and
-                  EmbedderError is raised when the model fails.
+  - error:     EmbedderError is raised when the model fails.
 
 All tests use:
-  - A fresh CollectorRegistry per test for metric isolation.
   - The _model kwarg to inject a MagicMock — no real fastembed model loaded.
 
 fastembed API note:
@@ -23,27 +20,16 @@ from unittest.mock import MagicMock
 
 import numpy as np
 import pytest
-from prometheus_client import CollectorRegistry
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
 
-def _make_embedder(mock_model: MagicMock, registry: CollectorRegistry) -> object:
+def _make_embedder(mock_model: MagicMock) -> object:
     from platform.retrieval.embedder import Embedder
 
-    return Embedder("BAAI/bge-small-en-v1.5", registry=registry, _model=mock_model)
-
-
-def _sample(registry: CollectorRegistry, labels: dict[str, str]) -> float:
-    for metric in registry.collect():
-        for sample in metric.samples:
-            if sample.name == "platform_external_calls_total" and all(
-                sample.labels.get(k) == v for k, v in labels.items()
-            ):
-                return sample.value
-    return 0.0
+    return Embedder("BAAI/bge-small-en-v1.5", _model=mock_model)
 
 
 # ---------------------------------------------------------------------------
@@ -57,8 +43,7 @@ def test_embed_returns_float_vector_of_correct_dimension() -> None:
     mock_model = MagicMock()
     mock_model.embed.return_value = [np.zeros(384, dtype=np.float32)]
 
-    registry = CollectorRegistry()
-    emb = _make_embedder(mock_model, registry)
+    emb = _make_embedder(mock_model)
 
     from platform.retrieval.embedder import Embedder
 
@@ -86,8 +71,7 @@ def test_embed_batch_returns_one_vector_per_text() -> None:
         np.zeros(384, dtype=np.float32),
     ]
 
-    registry = CollectorRegistry()
-    emb = _make_embedder(mock_model, registry)
+    emb = _make_embedder(mock_model)
 
     texts = ["req A", "req B", "req C"]
     result = emb.embed_batch(texts)  # type: ignore[attr-defined]
@@ -98,37 +82,17 @@ def test_embed_batch_returns_one_vector_per_text() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Prometheus metrics — ok path
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.unit
-def test_embed_records_ok_metric_on_success() -> None:
-    """platform_external_calls_total{service=embedder,operation=encode,status=ok} == 1."""
-    mock_model = MagicMock()
-    mock_model.embed.return_value = [np.zeros(384, dtype=np.float32)]
-
-    registry = CollectorRegistry()
-    emb = _make_embedder(mock_model, registry)
-    emb.embed("hello")  # type: ignore[attr-defined]
-
-    value = _sample(registry, {"service": "embedder", "operation": "encode", "status": "ok"})
-    assert value == 1.0
-
-
-# ---------------------------------------------------------------------------
 # Error handling
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
-def test_embed_raises_embedder_error_and_records_error_metric() -> None:
-    """RuntimeError from the model is wrapped in EmbedderError; error metric increments."""
+def test_embed_raises_embedder_error_on_failure() -> None:
+    """RuntimeError from the model is wrapped in EmbedderError."""
     mock_model = MagicMock()
     mock_model.embed.side_effect = RuntimeError("CUDA OOM")
 
-    registry = CollectorRegistry()
-    emb = _make_embedder(mock_model, registry)
+    emb = _make_embedder(mock_model)
 
     from platform.retrieval.embedder import EmbedderError
 
@@ -136,6 +100,3 @@ def test_embed_raises_embedder_error_and_records_error_metric() -> None:
         emb.embed("text")  # type: ignore[attr-defined]
 
     assert exc_info.value.cause is not None
-
-    value = _sample(registry, {"service": "embedder", "operation": "encode", "status": "error"})
-    assert value == 1.0

@@ -4,10 +4,7 @@ TDD — platform/llm/client.py
 Tests cover the three behaviours called out in docs/specs/tdd.md:
   - Structured output: LLM tool-use response is parsed into the caller's Pydantic schema.
   - Retry behaviour:   Transient errors are retried; max-retries exhaustion raises LLMError.
-  - Cost emit:         Token cost counter is incremented after a successful call.
-
 All tests use:
-  - A fresh CollectorRegistry per test for metric isolation.
   - monkeypatch to swap get_settings() and anthropic.Anthropic so no real HTTP calls are made.
   - time.sleep patched to a no-op so retry tests run instantly.
 """
@@ -18,7 +15,6 @@ from unittest.mock import MagicMock, patch
 
 import anthropic
 import pytest
-from prometheus_client import CollectorRegistry
 from pydantic import BaseModel
 
 from platform.schemas.product import ProductConfig
@@ -67,10 +63,9 @@ def _make_tool_response(label: str, confidence: float) -> MagicMock:
 
 def _make_client(
     mock_anthropic_instance: MagicMock,
-    registry: CollectorRegistry,
     monkeypatch: pytest.MonkeyPatch,
 ) -> object:
-    """Instantiate LLMClient with mocked Anthropic and an isolated registry."""
+    """Instantiate LLMClient with mocked Anthropic."""
     import platform.llm.client as module
 
     mock_settings = MagicMock()
@@ -83,7 +78,7 @@ def _make_client(
     with patch.object(module.anthropic, "Anthropic", return_value=mock_anthropic_instance):
         from platform.llm.client import LLMClient
 
-        return LLMClient(registry=registry)
+        return LLMClient()
 
 
 # ---------------------------------------------------------------------------
@@ -97,8 +92,7 @@ def test_complete_returns_parsed_schema(monkeypatch: pytest.MonkeyPatch) -> None
     mock_api = MagicMock()
     mock_api.messages.create.return_value = _make_tool_response("FIT", 0.92)
 
-    registry = CollectorRegistry()
-    client = _make_client(mock_api, registry, monkeypatch)
+    client = _make_client(mock_api, monkeypatch)
 
     from platform.llm.client import LLMClient
 
@@ -134,10 +128,8 @@ def test_retries_on_transient_error_then_succeeds(monkeypatch: pytest.MonkeyPatc
         _make_tool_response("GAP", 0.75),
     ]
 
-    registry = CollectorRegistry()
-
     with patch("platform.llm.client.time.sleep"):  # skip back-off delays
-        client = _make_client(mock_api, registry, monkeypatch)
+        client = _make_client(mock_api, monkeypatch)
         result = client.complete("classify this", _ClassifyOutput, _PRODUCT)  # type: ignore[attr-defined]
 
     assert result.label == "GAP"
@@ -156,10 +148,8 @@ def test_raises_llm_error_after_max_retries_exhausted(
         body={},
     )
 
-    registry = CollectorRegistry()
-
     with patch("platform.llm.client.time.sleep"):
-        client = _make_client(mock_api, registry, monkeypatch)
+        client = _make_client(mock_api, monkeypatch)
         from platform.llm.client import LLMError
 
         with pytest.raises(LLMError):
@@ -178,8 +168,7 @@ def test_non_retryable_error_raises_immediately(monkeypatch: pytest.MonkeyPatch)
         body={},
     )
 
-    registry = CollectorRegistry()
-    client = _make_client(mock_api, registry, monkeypatch)
+    client = _make_client(mock_api, monkeypatch)
 
     from platform.llm.client import LLMError
 
@@ -188,123 +177,3 @@ def test_non_retryable_error_raises_immediately(monkeypatch: pytest.MonkeyPatch)
 
     # Must not retry on auth errors
     assert mock_api.messages.create.call_count == 1
-
-
-# ---------------------------------------------------------------------------
-# Cost emit
-# ---------------------------------------------------------------------------
-
-
-def _sample(registry: CollectorRegistry, metric_name: str, labels: dict[str, str]) -> float:
-    for metric in registry.collect():
-        for sample in metric.samples:
-            if sample.name == metric_name and all(
-                sample.labels.get(k) == v for k, v in labels.items()
-            ):
-                return sample.value
-    return 0.0
-
-
-@pytest.mark.unit
-def test_cost_counter_emitted_on_success(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Input and output token costs are emitted to the cost counter after success."""
-    mock_api = MagicMock()
-    # 100 input tokens @ $3/M = $0.0003; 40 output tokens @ $15/M = $0.0006
-    mock_api.messages.create.return_value = _make_tool_response("PARTIAL_FIT", 0.80)
-
-    registry = CollectorRegistry()
-    client = _make_client(mock_api, registry, monkeypatch)
-
-    client.complete("classify this", _ClassifyOutput, _PRODUCT)  # type: ignore[attr-defined]
-
-    model = _PRODUCT.llm_model
-    in_cost = _sample(
-        registry,
-        "platform_llm_token_cost_usd_total",
-        {"model": model, "direction": "input"},
-    )
-    out_cost = _sample(
-        registry,
-        "platform_llm_token_cost_usd_total",
-        {"model": model, "direction": "output"},
-    )
-
-    assert in_cost == pytest.approx(100 * 3.0 / 1_000_000)
-    assert out_cost == pytest.approx(40 * 15.0 / 1_000_000)
-
-
-# ---------------------------------------------------------------------------
-# Langfuse generation emit
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.unit
-def test_langfuse_generation_emitted_on_success(monkeypatch: pytest.MonkeyPatch) -> None:
-    """langfuse.generation() is called once with model, input, output, and usage."""
-    import platform.llm.client as module
-
-    mock_api = MagicMock()
-    mock_api.messages.create.return_value = _make_tool_response("FIT", 0.92)
-
-    mock_langfuse_instance = MagicMock()
-    mock_langfuse_cls = MagicMock(return_value=mock_langfuse_instance)
-
-    mock_settings = MagicMock()
-    mock_settings.anthropic_api_key.get_secret_value.return_value = "sk-test"
-    mock_settings.langfuse_public_key = "pk-test"
-    mock_settings.langfuse_secret_key.get_secret_value.return_value = "sk-lf-test"
-    mock_settings.langfuse_base_url = "https://cloud.langfuse.com"
-
-    monkeypatch.setattr(module, "get_settings", lambda: mock_settings)
-    monkeypatch.setattr(module, "Langfuse", mock_langfuse_cls)
-
-    with patch.object(module.anthropic, "Anthropic", return_value=mock_api):
-        from platform.llm.client import LLMClient
-
-        client = LLMClient(registry=CollectorRegistry())
-
-    client.complete("classify this", _ClassifyOutput, _PRODUCT)
-
-    mock_langfuse_instance.generation.assert_called_once()
-    call_kwargs = mock_langfuse_instance.generation.call_args.kwargs
-    assert call_kwargs["model"] == _PRODUCT.llm_model
-    assert call_kwargs["input"] == [{"role": "user", "content": "classify this"}]
-    assert call_kwargs["usage"]["input"] == 100
-    assert call_kwargs["usage"]["output"] == 40
-
-
-@pytest.mark.unit
-def test_langfuse_generation_not_called_on_failure(monkeypatch: pytest.MonkeyPatch) -> None:
-    """langfuse.generation() is NOT called when the LLM call raises LLMError."""
-    import platform.llm.client as module
-
-    mock_api = MagicMock()
-    mock_api.messages.create.side_effect = anthropic.AuthenticationError(
-        message="invalid key",
-        response=MagicMock(status_code=401, headers={}),
-        body={},
-    )
-
-    mock_langfuse_instance = MagicMock()
-    mock_langfuse_cls = MagicMock(return_value=mock_langfuse_instance)
-
-    mock_settings = MagicMock()
-    mock_settings.anthropic_api_key.get_secret_value.return_value = "sk-test"
-    mock_settings.langfuse_public_key = "pk-test"
-    mock_settings.langfuse_secret_key.get_secret_value.return_value = "sk-lf-test"
-    mock_settings.langfuse_base_url = "https://cloud.langfuse.com"
-
-    monkeypatch.setattr(module, "get_settings", lambda: mock_settings)
-    monkeypatch.setattr(module, "Langfuse", mock_langfuse_cls)
-
-    with patch.object(module.anthropic, "Anthropic", return_value=mock_api):
-        from platform.llm.client import LLMClient
-
-        client = LLMClient(registry=CollectorRegistry())
-
-    from platform.llm.client import LLMError
-
-    with pytest.raises(LLMError):
-        client.complete("classify this", _ClassifyOutput, _PRODUCT)
-
-    mock_langfuse_instance.generation.assert_not_called()

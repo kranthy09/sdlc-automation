@@ -90,8 +90,6 @@ def _make_dispatch_store(cap_hits: list, doc_hits: list) -> Any:
     """
     from unittest.mock import MagicMock
 
-    from prometheus_client import CollectorRegistry
-
     from platform.retrieval.vector_store import VectorStore
 
     _CAP_COLLECTION = "d365_fo_capabilities"
@@ -113,7 +111,7 @@ def _make_dispatch_store(cap_hits: list, doc_hits: list) -> Any:
         return result
 
     mock_client.query_points.side_effect = _query_points
-    return VectorStore("http://localhost:6333", _client=mock_client, registry=CollectorRegistry())
+    return VectorStore("http://localhost:6333", _client=mock_client)
 
 
 def _build_node(
@@ -153,7 +151,7 @@ def _make_state(atoms: list | None = None, **upload_overrides: Any) -> dict:
 
 
 @pytest.mark.unit
-def test_empty_atoms_returns_empty_contexts() -> None:
+async def test_empty_atoms_returns_empty_contexts() -> None:
     """No validated atoms → retrieval_contexts is empty, no infra calls made."""
     from modules.dynafit.nodes.retrieval import RetrievalNode
 
@@ -163,7 +161,7 @@ def test_empty_atoms_returns_empty_contexts() -> None:
         reranker=_make_reranker(),
         postgres=make_postgres_store(),
     )
-    result = node(_make_state(atoms=[]))
+    result = await node(_make_state(atoms=[]))
     assert result["retrieval_contexts"] == []
 
 
@@ -173,13 +171,13 @@ def test_empty_atoms_returns_empty_contexts() -> None:
 
 
 @pytest.mark.unit
-def test_source_a_hit_produces_assembled_context() -> None:
+async def test_source_a_hit_produces_assembled_context() -> None:
     """Source A returns one capability hit → AssembledContext with one capability."""
     node = _build_node(cap_hits=[_make_cap_hit()])
     atom = make_validated_atom()
     state = _make_state(atoms=[atom])
 
-    result = node(state)
+    result = await node(state)
 
     contexts = result["retrieval_contexts"]
     assert len(contexts) == 1
@@ -192,14 +190,14 @@ def test_source_a_hit_produces_assembled_context() -> None:
 
 
 @pytest.mark.unit
-def test_provenance_hash_is_deterministic() -> None:
+async def test_provenance_hash_is_deterministic() -> None:
     """Same atom + same capability → same provenance_hash on repeated calls."""
     node = _build_node(cap_hits=[_make_cap_hit()])
     atom = make_validated_atom()
     state = _make_state(atoms=[atom])
 
-    r1 = node(state)
-    r2 = node(state)
+    r1 = await node(state)
+    r2 = await node(state)
 
     assert (
         r1["retrieval_contexts"][0].provenance_hash == r2["retrieval_contexts"][0].provenance_hash
@@ -207,13 +205,13 @@ def test_provenance_hash_is_deterministic() -> None:
 
 
 @pytest.mark.unit
-def test_provenance_hash_differs_for_different_atoms() -> None:
+async def test_provenance_hash_differs_for_different_atoms() -> None:
     """Different atom IDs → different provenance hashes."""
     node1 = _build_node(cap_hits=[_make_cap_hit()])
     node2 = _build_node(cap_hits=[_make_cap_hit()])
 
-    r1 = node1(_make_state(atoms=[make_validated_atom(atom_id="REQ-001")]))
-    r2 = node2(_make_state(atoms=[make_validated_atom(atom_id="REQ-002")]))
+    r1 = await node1(_make_state(atoms=[make_validated_atom(atom_id="REQ-001")]))
+    r2 = await node2(_make_state(atoms=[make_validated_atom(atom_id="REQ-002")]))
 
     assert (
         r1["retrieval_contexts"][0].provenance_hash != r2["retrieval_contexts"][0].provenance_hash
@@ -285,12 +283,12 @@ def test_doc_boost_capped_at_one() -> None:
 
 
 @pytest.mark.unit
-def test_no_caps_returns_low_confidence() -> None:
+async def test_no_caps_returns_low_confidence() -> None:
     """When Source A returns no hits, retrieval_confidence = LOW and capabilities = []."""
     node = _build_node(cap_hits=[], doc_hits=[])
     state = _make_state(atoms=[make_validated_atom()])
 
-    result = node(state)
+    result = await node(state)
     ctx = result["retrieval_contexts"][0]
 
     assert ctx.retrieval_confidence == "LOW"
@@ -304,12 +302,12 @@ def test_no_caps_returns_low_confidence() -> None:
 
 
 @pytest.mark.unit
-def test_wave1_no_history_produces_valid_context() -> None:
+async def test_wave1_no_history_produces_valid_context() -> None:
     """Empty Postgres (Wave 1) → prior_fitments=[], pipeline still succeeds."""
     node = _build_node(cap_hits=[_make_cap_hit()], prior_fitments=[])
     state = _make_state(atoms=[make_validated_atom()])
 
-    result = node(state)
+    result = await node(state)
     ctx = result["retrieval_contexts"][0]
 
     assert ctx.prior_fitments == []
@@ -323,13 +321,13 @@ def test_wave1_no_history_produces_valid_context() -> None:
 
 
 @pytest.mark.unit
-def test_prior_fitments_included_in_context() -> None:
+async def test_prior_fitments_included_in_context() -> None:
     """Source C returns priors → prior_fitments populated, pgvector in sources."""
     prior = make_prior_fitment(reviewer_override=True)
     node = _build_node(cap_hits=[_make_cap_hit()], prior_fitments=[prior])
     state = _make_state(atoms=[make_validated_atom()])
 
-    result = node(state)
+    result = await node(state)
     ctx = result["retrieval_contexts"][0]
 
     assert len(ctx.prior_fitments) == 1
@@ -338,7 +336,7 @@ def test_prior_fitments_included_in_context() -> None:
 
 
 @pytest.mark.unit
-def test_history_boost_raises_calibrated_score() -> None:
+async def test_history_boost_raises_calibrated_score() -> None:
     """With prior history, calibrated score = CE × quality_mult × 1.1 (capped at 1.0)."""
     ce_score = 0.80  # reranker returns this
     prior = make_prior_fitment()
@@ -346,7 +344,7 @@ def test_history_boost_raises_calibrated_score() -> None:
                        prior], reranker_score=ce_score)
     state = _make_state(atoms=[make_validated_atom()])
 
-    result = node(state)
+    result = await node(state)
     ctx = result["retrieval_contexts"][0]
 
     assert len(ctx.capabilities) >= 1
@@ -361,7 +359,7 @@ def test_history_boost_raises_calibrated_score() -> None:
 
 
 @pytest.mark.unit
-def test_image_derived_atom_requests_top_k_30() -> None:
+async def test_image_derived_atom_requests_top_k_30() -> None:
     """image_derived atoms should request top_k=30 from Source A (wider net)."""
 
     from modules.dynafit.nodes.retrieval import RetrievalNode
@@ -386,7 +384,7 @@ def test_image_derived_atom_requests_top_k_30() -> None:
         return original_retrieve(a, dv, bm25, store, reranker, postgres, config)
 
     node._retrieve_one = _patched  # type: ignore[method-assign]
-    node(state)
+    await node(state)
 
     assert captured_top_k == [30]
 
@@ -458,7 +456,7 @@ def test_retrieval_quality_low_empty_results() -> None:
 
 
 @pytest.mark.unit
-def test_multiple_atoms_produce_one_context_each() -> None:
+async def test_multiple_atoms_produce_one_context_each() -> None:
     """N atoms → N contexts, one per atom in order."""
     atoms = [
         make_validated_atom(atom_id="REQ-001"),
@@ -468,7 +466,7 @@ def test_multiple_atoms_produce_one_context_each() -> None:
     node = _build_node(cap_hits=[_make_cap_hit()])
     state = _make_state(atoms=atoms)
 
-    result = node(state)
+    result = await node(state)
     contexts = result["retrieval_contexts"]
 
     assert len(contexts) == 3
@@ -482,12 +480,12 @@ def test_multiple_atoms_produce_one_context_each() -> None:
 
 
 @pytest.mark.unit
-def test_ms_learn_refs_included_from_source_b() -> None:
+async def test_ms_learn_refs_included_from_source_b() -> None:
     """Source B doc hits → ms_learn_refs populated in context."""
     node = _build_node(cap_hits=[_make_cap_hit()], doc_hits=[_make_doc_hit()])
     state = _make_state(atoms=[make_validated_atom()])
 
-    result = node(state)
+    result = await node(state)
     ctx = result["retrieval_contexts"][0]
 
     assert len(ctx.ms_learn_refs) == 1
@@ -501,20 +499,20 @@ def test_ms_learn_refs_included_from_source_b() -> None:
 
 
 @pytest.mark.unit
-def test_retrieval_node_function_accepts_state_dict() -> None:
+async def test_retrieval_node_function_accepts_state_dict() -> None:
     """Module-level retrieval_node() runs without errors on a minimal state."""
-    from unittest.mock import MagicMock
+    from unittest.mock import AsyncMock
 
     from modules.dynafit.nodes import retrieval as retrieval_mod
 
     # Reset module-level singleton so we control the injected instance
     retrieval_mod._node = None  # noqa: SLF001
 
-    mock_node = MagicMock(return_value={"retrieval_contexts": []})
+    mock_node = AsyncMock(return_value={"retrieval_contexts": []})
     retrieval_mod._node = mock_node  # type: ignore[assignment]  # noqa: SLF001
 
     state = _make_state(atoms=[])
-    result = retrieval_mod.retrieval_node(state)
+    result = await retrieval_mod.retrieval_node(state)
 
     mock_node.assert_called_once_with(state)
     assert result == {"retrieval_contexts": []}

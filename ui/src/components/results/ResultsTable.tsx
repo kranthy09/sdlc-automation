@@ -28,76 +28,81 @@ export function ResultsTable({ batchId, results, total, query, loading, onSort, 
   const totalPages = Math.ceil(total / limit)
 
   return (
-    <div className="rounded-xl border border-bg-border bg-bg-surface overflow-hidden">
-      {/* Column headers */}
-      <div className="flex items-center gap-3 border-b border-bg-border bg-bg-raised px-4 py-2">
+    <div className="rounded-xl border border-bg-border bg-bg-surface overflow-hidden" role="region" aria-label="Results table">
+      {/* Horizontal scroll wrapper for mobile */}
+      <div className="overflow-x-auto">
+        {/* Column headers */}
+        <div className="flex items-center gap-3 border-b border-bg-border bg-bg-raised px-4 py-2 min-w-max md:min-w-0" role="row">
         {/* chevron spacer */}
-        <div className="w-3.5 shrink-0" />
+        <div className="w-3.5 shrink-0" aria-hidden="true" />
         {COLS.map((col) => (
           <button
             key={col.key}
             onClick={() => onSort(col.key)}
+            aria-label={`Sort by ${col.label}${query.sort === col.key ? ` (${query.order})` : ''}`}
             className={cn(
               'flex shrink-0 items-center gap-1 text-xs font-medium text-text-muted hover:text-text-primary transition-colors',
               col.width,
             )}
+            role="columnheader"
           >
             {col.label}
             {query.sort === col.key &&
               (query.order === 'desc' ? (
-                <ChevronDown className="h-3 w-3" />
+                <ChevronDown className="h-3 w-3" aria-hidden="true" />
               ) : (
-                <ChevronUp className="h-3 w-3" />
+                <ChevronUp className="h-3 w-3" aria-hidden="true" />
               ))}
           </button>
         ))}
       </div>
 
-      {/* Body */}
-      {loading ? (
-        <div className="space-y-0">
-          {Array.from({ length: 8 }).map((_, i) => (
-            <div key={i} className="border-b border-bg-border/50 px-4 py-3">
-              <Skeleton className="h-4 w-full" />
-            </div>
-          ))}
-        </div>
-      ) : results.length === 0 ? (
-        <div className="flex h-32 items-center justify-center">
-          <p className="text-sm text-text-muted">No results match the current filters.</p>
-        </div>
-      ) : (
-        <div className="max-h-[600px] overflow-y-auto">
-          {results.map((r) => (
-            <ResultRow key={r.atom_id} result={r} batchId={batchId} />
-          ))}
-        </div>
-      )}
-
-      {/* Pagination */}
-      {totalPages > 1 && (
-        <div className="flex items-center justify-between border-t border-bg-border px-4 py-2.5">
-          <p className="text-xs text-text-muted">
-            {(page - 1) * limit + 1}–{Math.min(page * limit, total)} of {total}
-          </p>
-          <div className="flex gap-2">
-            <button
-              disabled={page <= 1}
-              onClick={() => onPage(page - 1)}
-              className="rounded px-2 py-1 text-xs text-text-secondary hover:text-text-primary disabled:opacity-40 transition-colors"
-            >
-              Previous
-            </button>
-            <button
-              disabled={page >= totalPages}
-              onClick={() => onPage(page + 1)}
-              className="rounded px-2 py-1 text-xs text-text-secondary hover:text-text-primary disabled:opacity-40 transition-colors"
-            >
-              Next
-            </button>
+        {/* Body */}
+        {loading ? (
+          <div className="space-y-0">
+            {Array.from({ length: 8 }).map((_, i) => (
+              <div key={i} className="border-b border-bg-border/50 px-4 py-3">
+                <Skeleton className="h-4 w-full" />
+              </div>
+            ))}
           </div>
-        </div>
-      )}
+        ) : results.length === 0 ? (
+          <div className="flex h-32 items-center justify-center">
+            <p className="text-sm text-text-muted">No results match the current filters.</p>
+          </div>
+        ) : (
+          <div className="max-h-[600px] overflow-y-auto">
+            {results.map((r) => (
+              <ResultRow key={r.atom_id} result={r} batchId={batchId} />
+            ))}
+          </div>
+        )}
+
+        {/* Pagination */}
+        {totalPages > 1 && (
+          <div className="flex items-center justify-between border-t border-bg-border px-4 py-2.5 min-w-max md:min-w-0">
+            <p className="text-xs text-text-muted">
+              {(page - 1) * limit + 1}–{Math.min(page * limit, total)} of {total}
+            </p>
+            <div className="flex gap-2">
+              <button
+                disabled={page <= 1}
+                onClick={() => onPage(page - 1)}
+                className="rounded px-2 py-1 text-xs text-text-secondary hover:text-text-primary disabled:opacity-40 transition-colors"
+              >
+                Previous
+              </button>
+              <button
+                disabled={page >= totalPages}
+                onClick={() => onPage(page + 1)}
+                className="rounded px-2 py-1 text-xs text-text-secondary hover:text-text-primary disabled:opacity-40 transition-colors"
+              >
+                Next
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   )
 }

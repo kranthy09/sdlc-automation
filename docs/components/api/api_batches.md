@@ -1,7 +1,5 @@
 # API — Batch Endpoints
 
-**What:** FastAPI routes for batch operations (create, poll, review, export).
-
 **File:** `api/routes/batches.py`
 
 **Depends on:** `modules/dynafit/graph.py` (REQFIT graph)
@@ -10,14 +8,9 @@
 
 ## Endpoints
 
-### 1. Create Batch
+### POST /api/v1/batches (Create Batch)
 
-```
-POST /api/v1/batches
-Content-Type: multipart/form-data
-
-file: <binary file>
-```
+**Request:** `multipart/form-data` with file binary
 
 **Response (201):**
 ```json
@@ -29,70 +22,28 @@ file: <binary file>
 }
 ```
 
-**Implementation:**
-```python
-@router.post("/api/v1/batches", response_model=BatchResponse)
-async def create_batch(file: UploadFile):
-    """
-    1. Receive file
-    2. Create RawUpload
-    3. Queue graph execution in Celery
-    4. Return batch_id
-    """
-    batch_id = str(uuid4())
+**Flow:** Receive file → Create RawUpload → Queue Celery task → Return batch_id
 
-    upload = RawUpload(
-        filename=file.filename,
-        file_bytes=await file.read(),
-        upload_id=batch_id
-    )
+---
 
-    # Queue long-running task
-    task = execute_graph.delay(batch_id, upload)
-
-    return BatchResponse(
-        batch_id=batch_id,
-        status="running",
-        phase=1,
-        created_at=datetime.utcnow()
-    )
-```
-
-### 2. Get Batch Status
-
-```
-GET /api/v1/batches/{batch_id}
-```
+### GET /api/v1/batches/{batch_id} (Get Status)
 
 **Response (200):**
 ```json
 {
   "batch_id": "batch_abc123",
-  "status": "running" | "awaiting_review" | "completed" | "failed",
-  "phase": 1-5 | null,
-  "phase_name": "Ingestion" | "RAG" | ... | null,
+  "status": "running|awaiting_review|completed|failed",
+  "phase": 1-5,
+  "phase_name": "Ingestion|RAG|Matching|Classification|Validation",
   "result_count": 42,
   "created_at": "2024-03-28T10:00:00Z",
   "completed_at": null
 }
 ```
 
-**Implementation:**
-```python
-@router.get("/api/v1/batches/{batch_id}", response_model=BatchResponse)
-async def get_batch(batch_id: str):
-    """Get current batch status."""
-    batch = await db.get_batch(batch_id)
-    if not batch:
-        raise HTTPException(404, "Batch not found")
-    return BatchResponse.model_validate(batch)
-```
+---
 
-### 3. Get Batch Results
-
-```
-GET /api/v1/batches/{batch_id}/results
-```
+### GET /api/v1/batches/{batch_id}/results (Get Results)
 
 **Response (200):**
 ```json
@@ -102,12 +53,11 @@ GET /api/v1/batches/{batch_id}/results
     {
       "atom_id": "REQ-001",
       "text": "Sales order workflow",
-      "classification": "FIT",
+      "classification": "FIT|GAP|PARTIAL_FIT",
       "confidence": 0.95,
       "rationale": "...",
       "matched_features": ["Order Management"]
-    },
-    ...
+    }
   ],
   "fit_count": 30,
   "gap_count": 10,
@@ -115,22 +65,9 @@ GET /api/v1/batches/{batch_id}/results
 }
 ```
 
-**Implementation:**
-```python
-@router.get("/api/v1/batches/{batch_id}/results", response_model=BatchResultsResponse)
-async def get_batch_results(batch_id: str):
-    """Get classification results."""
-    batch = await db.get_batch_results(batch_id)
-    if not batch:
-        raise HTTPException(404)
-    return BatchResultsResponse.model_validate(batch)
-```
+---
 
-### 4. Get Flagged Items (HITL)
-
-```
-GET /api/v1/batches/{batch_id}/review
-```
+### GET /api/v1/batches/{batch_id}/review (Get Flagged Items — HITL)
 
 **Response (200):**
 ```json
@@ -142,36 +79,25 @@ GET /api/v1/batches/{batch_id}/review
       "text": "...",
       "current_classification": "GAP",
       "confidence": 0.92,
-      "flag_reason": "high_confidence_gap"
+      "flag_reason": "high_confidence_gap|low_score_fit|malformed_output"
     }
   ],
   "total_flagged": 2
 }
 ```
 
-**Implementation:**
-```python
-@router.get("/api/v1/batches/{batch_id}/review")
-async def get_flagged_items(batch_id: str):
-    """Get items waiting for human review."""
-    batch = await db.get_batch(batch_id)
-    if batch.status != "awaiting_review":
-        raise HTTPException(400, "Batch not awaiting review")
-    return {
-        "batch_id": batch_id,
-        "flagged": batch.flagged_for_review,
-        "total_flagged": len(batch.flagged_for_review)
-    }
-```
+**Status:** Only available when batch.status == "awaiting_review"
 
-### 5. Submit Human Review (HITL)
+---
 
-```
-POST /api/v1/batches/{batch_id}/review/{atom_id}
-Content-Type: application/json
+### POST /api/v1/batches/{batch_id}/review/{atom_id} (Submit Override — HITL)
 
+**Request:**
+```json
 {
-  "classification": "FIT" | "GAP" | "REVIEW_REQUIRED"
+  "classification": "FIT|GAP|REVIEW_REQUIRED",
+  "reviewer": "user@company.com",
+  "override_classification": "FIT" (optional)
 }
 ```
 
@@ -184,72 +110,20 @@ Content-Type: application/json
 }
 ```
 
-**Implementation:**
-```python
-@router.post("/api/v1/batches/{batch_id}/review/{atom_id}")
-async def submit_review(batch_id: str, atom_id: str, body: ReviewOverride):
-    """Store human override and resume graph."""
-    # 1. Validate
-    batch = await db.get_batch(batch_id)
-    if batch.status != "awaiting_review":
-        raise HTTPException(400, "Not awaiting review")
+**Flow:** Validate status → Store override in DB → Check if all items reviewed → Resume graph if complete
 
-    # 2. Store override
-    await db.store_override(batch_id, atom_id, body.classification)
+---
 
-    # 3. Check if all flagged items reviewed
-    remaining = await db.get_remaining_flagged(batch_id)
-    if not remaining:
-        # 4. Resume graph
-        await graph.ainvoke_resume(
-            batch_id,
-            config={"configurable": {"thread_id": batch_id}}
-        )
+### GET /api/v1/batches/{batch_id}/export (Export Results as CSV)
 
-    return {"atom_id": atom_id, "override_accepted": True}
+**Response (200):** CSV file with columns:
+```
+atom_id, text, req_id, module, priority, classification, confidence, rationale
 ```
 
-### 6. Export Results (CSV)
+**Status:** Only available when batch.status == "completed"
 
-```
-GET /api/v1/batches/{batch_id}/export
-```
-
-**Response (200 with CSV):**
-```
-atom_id,text,req_id,module,priority,classification,confidence,rationale
-REQ-001,Sales order workflow,SO-001,Sales,Must,FIT,0.95,...
-...
-```
-
-**Implementation:**
-```python
-@router.get("/api/v1/batches/{batch_id}/export")
-async def export_batch(batch_id: str):
-    """Export results as CSV."""
-    batch = await db.get_batch_results(batch_id)
-    if batch.status != "completed":
-        raise HTTPException(400, "Batch not completed")
-
-    csv_data = csv_export(batch.results)
-    return Response(
-        content=csv_data,
-        media_type="text/csv",
-        headers={"Content-Disposition": f"attachment; filename=batch_{batch_id}.csv"}
-    )
-```
-
-## Error Responses
-
-All endpoints return standard error format:
-
-```json
-{
-  "detail": "Batch not found",
-  "status": 404,
-  "timestamp": "2024-03-28T10:00:00Z"
-}
-```
+---
 
 ## WebSocket (Real-time Updates)
 
@@ -259,48 +133,37 @@ const socket = io("http://localhost:8000");
 socket.emit("subscribe_batch", { batch_id: "batch_abc123" });
 ```
 
-**Receive events:**
-```javascript
-socket.on("phase_started", (data) => {
-    console.log(`Phase ${data.phase} started`);
-});
+**Events emitted:**
+- `phase_started`: {phase: 1, phase_name: "Ingestion"}
+- `phase_completed`: {phase: 2, result_count: 42}
+- `review_required`: {flagged_count: 2}
+- `batch_completed`: {fit_count: 30, gap_count: 10, report_path: "..."}
 
-socket.on("phase_completed", (data) => {
-    console.log(`Phase ${data.phase} done. ${data.result_count} atoms processed`);
-});
+**Implementation:** Graph nodes publish to Redis; Redis handler broadcasts to WebSocket room `batch_{batch_id}`.
 
-socket.on("review_required", (data) => {
-    console.log(`${data.flagged_count} items need review`);
-    // Show review UI
-});
+---
 
-socket.on("batch_completed", (data) => {
-    console.log(`Done! ${data.fit_count} FIT, ${data.gap_count} GAP`);
-});
+## Error Responses
+
+All endpoints return standard format (4xx, 5xx):
+```json
+{
+  "detail": "Batch not found",
+  "status": 404,
+  "timestamp": "2024-03-28T10:00:00Z"
+}
 ```
 
-**Implementation (async event loop):**
-```python
-@sio.event
-async def subscribe_batch(sid, data):
-    batch_id = data["batch_id"]
-    sio.enter_room(sid, f"batch_{batch_id}")
+**Common errors:**
+- 404: Batch not found
+- 400: Batch status invalid for operation (e.g., GET /review when not awaiting_review)
+- 409: Review already submitted for atom_id
+- 500: Graph execution error (see phase logs)
 
-# In graph nodes, publish via Redis:
-await redis.publish(
-    f"batch_{batch_id}:events",
-    json.dumps({"event": "phase_completed", "phase": 2})
-)
-
-# Redis sub handler publishes to WebSocket room:
-@redis.sub.listener()
-async def on_event(msg):
-    event = json.loads(msg["data"])
-    await sio.emit("phase_completed", event, room=f"batch_{event['batch_id']}")
-```
+---
 
 ## See Also
 
+- [graph.md](../modules/graph.md) — Graph execution + checkpoints
+- [phase5_validation.md](../modules/phase5_validation.md) — HITL flow + flagging logic
 - [PATTERNS.md](../../guides/PATTERNS.md) — API patterns
-- [graph.md](../modules/graph.md) — Graph execution
-- [phase5_validation.md](../modules/phase5_validation.md) — HITL flow

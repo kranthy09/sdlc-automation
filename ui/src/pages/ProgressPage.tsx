@@ -4,6 +4,8 @@ import { PageHeader } from '@/components/layout/PageHeader'
 import { PhaseTimeline } from '@/components/progress/PhaseTimeline'
 import { PhaseStatsCard } from '@/components/progress/PhaseStatsCard'
 import { PhaseGatePanel } from '@/components/progress/PhaseGatePanel'
+import { PhaseLatencyChart } from '@/components/progress/PhaseLatencyChart'
+import { GuardrailStatusCard } from '@/components/progress/GuardrailStatusCard'
 import { LiveClassTable } from '@/components/progress/LiveClassTable'
 import { ReviewBanner } from '@/components/progress/ReviewBanner'
 import { Button } from '@/components/ui/Button'
@@ -155,12 +157,27 @@ export default function ProgressPage() {
           />
         )}
 
+        {/* Guardrail status (Phase 1) */}
+        {phases[0]?.status === 'complete' && (
+          <GuardrailStatusCard phase1={phases[0]} />
+        )}
+
         {/* Phase stat cards */}
-        <div className="grid grid-cols-5 gap-3">
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
           {phases.map((p) => (
             <PhaseStatsCard key={p.phase} phase={p} />
           ))}
         </div>
+
+        {/* Phase latency chart */}
+        {phases.some((p) => p.status === 'complete') && (
+          <div>
+            <p className="mb-3 text-xs font-medium text-text-muted uppercase tracking-wide">Phase Performance</p>
+            <div className="rounded-xl border border-bg-border bg-bg-surface/50 p-4">
+              <PhaseLatencyChart phases={phases} />
+            </div>
+          </div>
+        )}
 
         {/* Review required banner */}
         {reviewRequired && (
