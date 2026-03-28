@@ -1,0 +1,148 @@
+%% Enterprise AI — Tool & Service Interactions
+%% What: Every external tool/service the pipeline touches and when
+%% Where: Mapped to the phase that uses each tool
+%% Why: Shows blast radius of outages — which tool failure affects which phase
+
+graph TB
+    %% ══════════════════════════════════════
+    %% TOOLS & SERVICES
+    %% ══════════════════════════════════════
+
+    subgraph TOOLS["External Tools & Services"]
+        direction TB
+
+        subgraph LLM_TOOLS["LLM (Anthropic Claude)"]
+            CLAUDE_SONNET["Claude Sonnet 4<br/>platform/llm/client.py"]:::tool_llm
+            CLAUDE_VISION["Claude Vision<br/>(image classification)"]:::tool_llm
+        end
+
+        subgraph EMBED_TOOLS["Embedding & Ranking"]
+            FASTEMBED["fastembed<br/>(bge-small-en-v1.5)<br/>ONNX Runtime, 384-dim<br/>LOCAL — no network"]:::tool_local
+            CROSS_ENCODER["ms-marco-MiniLM<br/>Cross-encoder reranker<br/>LOCAL — no network"]:::tool_local
+        end
+
+        subgraph SEARCH_TOOLS["Search & Retrieval"]
+            QDRANT["Qdrant Vector DB<br/>Dense + Hybrid + RRF<br/>2 collections: caps + docs"]:::tool_infra
+            BM25_ENGINE["BM25 Sparse Search<br/>IDF-weighted tokens<br/>LOCAL computation"]:::tool_local
+        end
+
+        subgraph STORAGE_TOOLS["Storage"]
+            POSTGRES["PostgreSQL<br/>• Async SQLAlchemy<br/>• pgvector extension<br/>• LangGraph checkpoints"]:::tool_infra
+            REDIS["Redis<br/>• Pub/Sub (progress)<br/>• Hset (durable state)"]:::tool_infra
+            FILESYSTEM["File System<br/>/data/uploads/"]:::tool_local
+        end
+
+        subgraph PARSE_TOOLS["Parsing"]
+            DOCLING["Docling<br/>PDF/DOCX table + prose"]:::tool_local
+            TESSERACT["Tesseract OCR<br/>(table images)"]:::tool_local
+            PRESIDIO["Presidio NER<br/>(PII detection)"]:::tool_local
+        end
+
+        subgraph COMPUTE_TOOLS["Compute"]
+            NUMPY["NumPy<br/>(cosine similarity,<br/>weighted composites)"]:::tool_local
+            RAPIDFUZZ["rapidfuzz<br/>(token_set_ratio<br/>fuzzy matching)"]:::tool_local
+            JINJA["Jinja2<br/>(prompt templates,<br/>CSV templates)"]:::tool_local
+        end
+
+        subgraph ASYNC_TOOLS["Async Infrastructure"]
+            CELERY["Celery + Redis Broker<br/>(task dispatch,<br/>retry, dead-letter)"]:::tool_infra
+            FASTAPI["FastAPI + Uvicorn<br/>(REST + WebSocket)"]:::tool_infra
+        end
+    end
+
+    %% ══════════════════════════════════════
+    %% PHASE → TOOL MAPPING
+    %% ══════════════════════════════════════
+
+    subgraph PHASE_MAP["Phase → Tool Mapping"]
+        direction LR
+
+        subgraph P1_TOOLS["Phase 1: Ingestion"]
+            P1["Parse + Atomize<br/>+ Validate"]:::phase
+        end
+
+        subgraph P2_TOOLS["Phase 2: Retrieval"]
+            P2["3-Source RAG<br/>+ Rerank"]:::phase
+        end
+
+        subgraph P3_TOOLS["Phase 3: Matching"]
+            P3["Composite Score<br/>+ Route Assign"]:::phase
+        end
+
+        subgraph P4_TOOLS["Phase 4: Classification"]
+            P4["LLM Classify<br/>(1–3 calls/atom)"]:::phase
+        end
+
+        subgraph P5_TOOLS["Phase 5: Validation"]
+            P5["Sanity + HITL<br/>+ Write-back"]:::phase
+        end
+    end
+
+    %% ── Phase 1 connections ──
+    P1 -->|"parse docs"| DOCLING
+    P1 -->|"OCR tables"| TESSERACT
+    P1 -->|"image classify"| CLAUDE_VISION
+    P1 -->|"PII redact"| PRESIDIO
+    P1 -->|"atomize (LLM)"| CLAUDE_SONNET
+    P1 -->|"dedup cosine"| FASTEMBED
+    P1 -->|"read upload"| FILESYSTEM
+
+    %% ── Phase 2 connections ──
+    P2 -->|"embed queries"| FASTEMBED
+    P2 -->|"dense + hybrid"| QDRANT
+    P2 -->|"sparse search"| BM25_ENGINE
+    P2 -->|"prior fitments"| POSTGRES
+    P2 -->|"rerank top-K"| CROSS_ENCODER
+
+    %% ── Phase 3 connections ──
+    P3 -->|"embed pairs"| FASTEMBED
+    P3 -->|"cosine + composite"| NUMPY
+    P3 -->|"fuzzy match"| RAPIDFUZZ
+
+    %% ── Phase 4 connections ──
+    P4 -->|"render prompts"| JINJA
+    P4 -->|"classify (1–3 calls)"| CLAUDE_SONNET
+    P4 -->|"PII scan response"| PRESIDIO
+
+    %% ── Phase 5 connections ──
+    P5 -->|"write fitments"| POSTGRES
+    P5 -->|"write pgvector"| POSTGRES
+    P5 -->|"write CSVs"| FILESYSTEM
+    P5 -->|"render CSV template"| JINJA
+
+    %% ── Cross-cutting ──
+    P1 -->|"checkpoint"| POSTGRES
+    P2 -->|"checkpoint"| POSTGRES
+    P3 -->|"checkpoint"| POSTGRES
+    P4 -->|"checkpoint"| POSTGRES
+    P5 -->|"checkpoint"| POSTGRES
+
+    P1 -->|"progress events"| REDIS
+    P2 -->|"progress events"| REDIS
+    P3 -->|"progress events"| REDIS
+    P4 -->|"classification events"| REDIS
+    P5 -->|"complete/review events"| REDIS
+
+    %% ══════════════════════════════════════
+    %% BLAST RADIUS TABLE
+    %% ══════════════════════════════════════
+
+    subgraph BLAST["Outage Blast Radius"]
+        direction TB
+        B_CLAUDE["Claude API down<br/>→ Phase 1 atomization fails<br/>→ Phase 4 classification fails<br/>→ Items become REVIEW_REQUIRED<br/>IMPACT: HIGH"]:::blast_high
+        B_QDRANT["Qdrant down<br/>→ Phase 2 Source A empty<br/>→ Degraded retrieval (Sources B+C)<br/>→ Lower composite scores<br/>IMPACT: MEDIUM"]:::blast_med
+        B_POSTGRES["PostgreSQL down<br/>→ No checkpointing<br/>→ No write-back<br/>→ No crash recovery<br/>IMPACT: CRITICAL"]:::blast_crit
+        B_REDIS["Redis down<br/>→ No progress events<br/>→ WebSocket dark<br/>→ Pipeline still runs<br/>IMPACT: LOW (pipeline ok)"]:::blast_low
+        B_PRESIDIO["Presidio down<br/>→ Regex fallback activates<br/>→ Reduced PII coverage<br/>IMPACT: LOW"]:::blast_low
+        B_FASTEMBED["fastembed fails<br/>→ No embeddings<br/>→ Phase 2+3 fail<br/>IMPACT: HIGH"]:::blast_high
+    end
+
+    %% ── Styles ──
+    classDef tool_llm fill:#CE93D8,stroke:#6A1B9A,stroke-width:2px,color:#000
+    classDef tool_local fill:#C8E6C9,stroke:#2E7D32,stroke-width:2px,color:#000
+    classDef tool_infra fill:#BBDEFB,stroke:#1565C0,stroke-width:2px,color:#000
+    classDef phase fill:#FFE0B2,stroke:#E65100,stroke-width:2px,color:#000
+    classDef blast_crit fill:#EF5350,stroke:#B71C1C,stroke-width:3px,color:#FFF
+    classDef blast_high fill:#FF8A65,stroke:#BF360C,stroke-width:2px,color:#000
+    classDef blast_med fill:#FFB74D,stroke:#E65100,stroke-width:2px,color:#000
+    classDef blast_low fill:#FFF176,stroke:#F9A825,stroke-width:1px,color:#000

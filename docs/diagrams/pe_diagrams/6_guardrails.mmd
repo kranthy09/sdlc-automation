@@ -1,0 +1,72 @@
+---
+title: "Guardrails System — Where each guard fires"
+---
+flowchart TB
+    %% ── Input ──
+    INPUT["Uploaded Document"]:::input
+
+    %% ── Phase 1 Guards ──
+    subgraph G_P1["Phase 1 — Pre-LLM Guards"]
+        direction TB
+        G1["G1-lite\nFile Validator\n\nMagic bytes, size ≤ 50MB,\nSHA-256 hash"]:::guard
+        G3["G3-lite\nInjection Scanner\n\n10 regex patterns\n< 0.15 PASS\n0.15–0.5 FLAG\n≥ 0.5 BLOCK"]:::guard
+        G2["G2\nPII Redactor\n\nPresidio + spaCy NER\nEmail, phone, SSN,\nIP, credit card\n→ pii_redaction_map"]:::guard
+        G1 --> G3 --> G2
+    end
+
+    %% ── LLM Call ──
+    LLM1["LLM Call\n(Atomize + Classify)"]:::llm
+
+    %% ── Phase 4 Guards ──
+    subgraph G_P4["Phase 4 — LLM Guards"]
+        direction TB
+        G8["G8\nPrompt Firewall\n\nJinja2 autoescape\nXML-delimited user slots\nNo f-strings ever"]:::guard
+        G9["G9\nOutput Schema Enforcer\n\nPydantic v2 strict\ntool_use response\nRetry ×3 → REVIEW"]:::guard
+        G11["G11\nResponse PII Scanner\n\nScan rationale +\nconfig_steps for\nleaked PII"]:::guard
+        G8 --> G9 --> G11
+    end
+
+    %% ── Phase 4 LLM ──
+    LLM4["LLM Call\n(Classification)"]:::llm
+
+    %% ── Phase 5 Guards ──
+    subgraph G_P5["Phase 5 — Validation Guards"]
+        direction TB
+        G10["G10-lite\nSanity Gate\n\nHigh-conf GAP?\nLow-score FIT?\nSchema retry exhausted?\n→ FLAG, never flip"]:::guard
+        HITL["HITL\nHuman Review\n\nLangGraph interrupt()\nPG checkpoint\nAnalyst overrides"]:::hitl
+        G10 --> HITL
+    end
+
+    %% ── Audit ──
+    AUDIT["Audit Trail\n(structlog at every\nphase boundary)\n\nbatch_id, phase,\noutput_hash,\nguardrails_triggered,\nlatency_ms"]:::audit
+
+    %% ── Output ──
+    OUTPUT["Clean Output\n(PII restored)"]:::output
+
+    %% ── Flow ──
+    INPUT --> G_P1
+    G_P1 -->|"redacted atoms"| LLM1
+    LLM1 -->|"atoms[]"| G_P4
+
+    G8 -.->|"wraps"| LLM4
+    LLM4 -->|"raw response"| G9
+    G9 -->|"validated"| G11
+
+    G_P4 -->|"classifications[]"| G_P5
+    G_P5 -->|"validated results"| OUTPUT
+
+    G_P1 -.-> AUDIT
+    G_P4 -.-> AUDIT
+    G_P5 -.-> AUDIT
+
+    %% ── Styles ──
+    classDef input fill:#3498DB,stroke:#2980B9,color:#fff,stroke-width:2px
+    classDef guard fill:#E74C3C,stroke:#C0392B,color:#fff,stroke-width:2px
+    classDef llm fill:#9B59B6,stroke:#7D3C98,color:#fff,stroke-width:2px
+    classDef hitl fill:#E67E22,stroke:#D35400,color:#fff,stroke-width:2px
+    classDef audit fill:#95A5A6,stroke:#7F8C8D,color:#fff,stroke-width:2px
+    classDef output fill:#2ECC71,stroke:#27AE60,color:#fff,stroke-width:2px
+
+    style G_P1 fill:#FDEDEC,stroke:#E74C3C,stroke-width:2px
+    style G_P4 fill:#F5EEF8,stroke:#9B59B6,stroke-width:2px
+    style G_P5 fill:#FEF9E7,stroke:#E67E22,stroke-width:2px

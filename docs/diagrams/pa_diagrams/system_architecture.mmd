@@ -1,0 +1,121 @@
+%% Enterprise AI — System Architecture Overview
+%% What: Service topology and dependency layers
+%% Where: All infrastructure components and their connections
+%% Why: Shows how requests flow through the stack and which services own what
+
+graph TB
+    subgraph CLIENT["Client Layer"]
+        BROWSER["React SPA<br/>(Vite + TanStack Query + Zustand)"]
+    end
+
+    subgraph API_LAYER["Layer 4 — API (Thin Dispatchers)"]
+        FASTAPI["FastAPI<br/>/api/v1/*"]
+        WS_HANDLER["WebSocket Handler<br/>/ws/progress/{batch_id}"]
+        CELERY_WORKER["Celery Worker<br/>run_dynafit_pipeline<br/>(max_retries=2)"]
+    end
+
+    subgraph MODULE_LAYER["Layer 3 — Modules (Business Logic)"]
+        GRAPH["LangGraph Graph<br/>build_dynafit_graph()"]
+        subgraph PHASES["REQFIT 5-Phase Pipeline"]
+            P1["Phase 1<br/>Ingestion"]
+            P2["Phase 2<br/>Retrieval"]
+            P3["Phase 3<br/>Matching"]
+            P4["Phase 4<br/>Classification"]
+            P5["Phase 5<br/>Validation + HITL"]
+        end
+        PRODUCT_CFG["ProductConfig<br/>(D365 F&O)"]
+        EVENTS["Event Publisher<br/>(Phase lifecycle)"]
+        PROMPTS["Prompt Templates<br/>(Jinja2 + G8 firewall)"]
+    end
+
+    subgraph PLATFORM_LAYER["Layer 2 — Platform (Reusable Infrastructure)"]
+        LLM_CLIENT["LLM Client<br/>(Claude Sonnet 4)<br/>retry=3, structured output"]
+        EMBEDDER["Embedder<br/>(fastembed / bge-small-en-v1.5)<br/>384-dim ONNX"]
+        RERANKER["Reranker<br/>(ms-marco-MiniLM)<br/>cross-encoder"]
+        VECTOR_STORE["Vector Store<br/>(Qdrant wrapper)<br/>dense + hybrid + RRF"]
+        BM25["BM25 Sparse<br/>(IDF-weighted tokens)"]
+        PG_STORE["PostgreSQL Store<br/>(async SQLAlchemy + pgvector)"]
+        REDIS_PUB["Redis Pub/Sub<br/>(progress events + durable state)"]
+        GUARDRAILS["Guardrails<br/>G1 G2 G3 G8 G9 G10 G11"]
+        LOGGER["Observability<br/>(structlog + Prometheus)"]
+        PARSERS["Parsers<br/>(Docling + format detection)"]
+    end
+
+    subgraph INFRA["Infrastructure"]
+        POSTGRES[("PostgreSQL<br/>• uploads table<br/>• batches table<br/>• fitments table<br/>• pgvector embeddings<br/>• LangGraph checkpoints")]
+        REDIS[("Redis<br/>• progress:{batch_id} pub/sub<br/>• batch:{batch_id} hset")]
+        QDRANT[("Qdrant<br/>• d365_fo_capabilities<br/>• d365_fo_docs")]
+        ANTHROPIC["Anthropic API<br/>(Claude)"]
+        DISK["File System<br/>/data/uploads/"]
+    end
+
+    subgraph KB["Knowledge Bases (Data Only)"]
+        D365_KB["d365_fo/<br/>• capabilities.jsonl<br/>• country_rules/<br/>• fdd_templates/"]
+    end
+
+    %% Client → API
+    BROWSER -->|"POST /upload<br/>POST /run<br/>GET /results"| FASTAPI
+    BROWSER <-->|"WS: events stream"| WS_HANDLER
+
+    %% API internal
+    FASTAPI -->|"dispatch task"| CELERY_WORKER
+    WS_HANDLER -->|"subscribe"| REDIS_PUB
+
+    %% Celery → Graph
+    CELERY_WORKER -->|"graph.invoke(state)"| GRAPH
+    GRAPH --> P1 --> P2 --> P3 --> P4 --> P5
+
+    %% Module dependencies
+    GRAPH -.->|"reads"| PRODUCT_CFG
+    P1 -.-> EVENTS
+    P2 -.-> EVENTS
+    P3 -.-> EVENTS
+    P4 -.-> EVENTS
+    P5 -.-> EVENTS
+    P4 -.-> PROMPTS
+
+    %% Platform usage
+    P1 -->|"parse docs"| PARSERS
+    P1 -->|"G1 G2 G3"| GUARDRAILS
+    P1 -->|"atomize"| LLM_CLIENT
+    P2 -->|"embed queries"| EMBEDDER
+    P2 -->|"dense + hybrid"| VECTOR_STORE
+    P2 -->|"sparse search"| BM25
+    P2 -->|"rerank top-K"| RERANKER
+    P2 -->|"prior fitments"| PG_STORE
+    P3 -->|"embed pairs"| EMBEDDER
+    P4 -->|"classify"| LLM_CLIENT
+    P4 -->|"G8 G9 G11"| GUARDRAILS
+    P5 -->|"G10-lite"| GUARDRAILS
+    P5 -->|"write CSV + fitments"| PG_STORE
+    EVENTS -->|"publish"| REDIS_PUB
+
+    %% Platform → Infra
+    LLM_CLIENT -->|"API calls"| ANTHROPIC
+    VECTOR_STORE --> QDRANT
+    BM25 --> QDRANT
+    PG_STORE --> POSTGRES
+    REDIS_PUB --> REDIS
+    PARSERS -->|"read uploads"| DISK
+    EMBEDDER -.->|"local ONNX"| EMBEDDER
+
+    %% KB seeding
+    D365_KB -.->|"seed"| QDRANT
+
+    %% Checkpointing
+    GRAPH -->|"AsyncPostgresSaver<br/>checkpoint per node"| POSTGRES
+
+    %% Styles
+    classDef client fill:#E8F4FD,stroke:#2196F3,stroke-width:2px,color:#000
+    classDef api fill:#FFF3E0,stroke:#FF9800,stroke-width:2px,color:#000
+    classDef module fill:#E8F5E9,stroke:#4CAF50,stroke-width:2px,color:#000
+    classDef platform fill:#F3E5F5,stroke:#9C27B0,stroke-width:2px,color:#000
+    classDef infra fill:#FCE4EC,stroke:#E91E63,stroke-width:2px,color:#000
+    classDef kb fill:#FFFDE7,stroke:#FFC107,stroke-width:2px,color:#000
+
+    class BROWSER client
+    class FASTAPI,WS_HANDLER,CELERY_WORKER api
+    class GRAPH,P1,P2,P3,P4,P5,PRODUCT_CFG,EVENTS,PROMPTS module
+    class LLM_CLIENT,EMBEDDER,RERANKER,VECTOR_STORE,BM25,PG_STORE,REDIS_PUB,GUARDRAILS,LOGGER,PARSERS platform
+    class POSTGRES,REDIS,QDRANT,ANTHROPIC,DISK infra
+    class D365_KB kb

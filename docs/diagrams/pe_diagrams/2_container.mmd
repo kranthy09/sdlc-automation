@@ -1,0 +1,53 @@
+---
+title: "Enterprise AI Platform — Container Diagram (C4 Level 2)"
+---
+graph TB
+    %% ── Actors ──
+    USER([ERP Consultant / Admin]):::actor
+
+    %% ── System Boundary ──
+    subgraph BOUNDARY["Enterprise AI Platform"]
+        direction TB
+
+        %% ── Frontend ──
+        UI["React UI\n(Vite + TanStack Query)\n:5173\n\nUpload, Progress,\nResults, Review,\nDashboard"]:::frontend
+
+        %% ── Backend ──
+        API["FastAPI\n(REST + WebSocket)\n:8000\n\nRoutes, validation,\ntask dispatch"]:::backend
+
+        WORKER["Celery Worker\n(LangGraph executor)\n\n5-phase REQFIT pipeline\nLLM calls, RAG,\nclassification"]:::backend
+
+        %% ── Data Stores ──
+        PG[("PostgreSQL 16\n+ pgvector\n:5432\n\nuploads, batches,\nresults, fitments,\nreview_items,\nLangGraph checkpoints")]:::datastore
+
+        REDIS[("Redis 7\n:6379\n\nPub/Sub progress,\nCelery broker,\nbatch state cache")]:::datastore
+
+        QDRANT[("Qdrant\n:6333\n\nd365_fo_capabilities\n(hybrid: dense+BM25)\nd365_fo_docs\n(dense only)")]:::datastore
+    end
+
+    %% ── External ──
+    CLAUDE["Anthropic Claude API\nSonnet 4 / Haiku 4.5"]:::external
+
+    %% ── Connections ──
+    USER -->|"HTTPS"| UI
+    UI -->|"REST API\ncalls"| API
+    UI <-.->|"WebSocket\nprogress events"| API
+
+    API -->|"Dispatch\nCelery task"| REDIS
+    API -->|"Read/write\nbatch metadata"| PG
+    API <-.->|"Subscribe\nprogress channel"| REDIS
+
+    WORKER -->|"Consume\ntasks"| REDIS
+    WORKER -->|"Publish\nprogress events"| REDIS
+    WORKER -->|"Read/write\nresults + checkpoints"| PG
+    WORKER -->|"Hybrid search\n(RAG Phase 2)"| QDRANT
+    WORKER -->|"LLM inference\n(Phases 1,4)"| CLAUDE
+
+    %% ── Styles ──
+    classDef actor fill:#08427B,stroke:#052E56,color:#fff,stroke-width:2px
+    classDef frontend fill:#438DD5,stroke:#2E6295,color:#fff,stroke-width:2px
+    classDef backend fill:#1168BD,stroke:#0B4884,color:#fff,stroke-width:2px
+    classDef datastore fill:#2D882D,stroke:#1E5C1E,color:#fff,stroke-width:2px
+    classDef external fill:#999,stroke:#6B6B6B,color:#fff,stroke-width:2px
+
+    style BOUNDARY fill:none,stroke:#1168BD,stroke-width:3px,stroke-dasharray:8

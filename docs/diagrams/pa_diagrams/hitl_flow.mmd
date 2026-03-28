@@ -1,0 +1,166 @@
+%% Enterprise AI — Human-in-the-Loop (HITL) Flow
+%% What: Complete lifecycle of flagged items from detection through human decision to pipeline resumption
+%% Where: Phase 5 interrupt → API review endpoints → graph resume
+%% Why: HITL is mandatory — no batch completes until every flagged item is resolved
+
+graph TD
+    %% ══════════════════════════════════════
+    %% FLAGGING TRIGGERS (why items get flagged)
+    %% ══════════════════════════════════════
+    subgraph TRIGGERS["Flagging Triggers — Why Items Enter HITL"]
+        direction TB
+
+        T1["G10-lite: high_confidence_gap<br/>(confidence > 0.85 && verdict=GAP)<br/>Suspicious: high confidence on a gap"]:::trigger
+        T2["G10-lite: low_score_fit<br/>(composite < 0.60 && verdict=FIT)<br/>Suspicious: weak evidence for FIT"]:::trigger
+        T3["G10-lite: retry_exhausted<br/>(verdict=REVIEW_REQUIRED)<br/>LLM couldn't decide"]:::trigger
+        T4["Confidence filter<br/>(confidence < 0.60 on non-GAP)<br/>Too uncertain for auto-accept"]:::trigger
+        T5["Phase 3 anomaly flag<br/>(cosine > 0.85 && entity < 0.20)<br/>Embedding similarity without semantic match"]:::trigger
+        T6["G11 PII leak detected<br/>(PII found in LLM response)<br/>Needs human verification"]:::trigger
+        T7["DEEP_REASON disagreement<br/>(3 LLM calls can't agree)<br/>Ambiguous requirement"]:::trigger
+    end
+
+    %% ══════════════════════════════════════
+    %% INTERRUPT MECHANISM
+    %% ══════════════════════════════════════
+    subgraph INTERRUPT_MECH["LangGraph Interrupt Mechanism"]
+        direction TB
+
+        COLLECT["Collect all flagged atom_ids<br/>(from triggers above)"]:::process
+        CHECK{"Any flagged<br/>items?"}:::decision
+
+        CHECK -->|"No flags"| SKIP["Skip interrupt<br/>→ proceed to Pass 5B<br/>(merge + CSV + write-back)"]:::success
+
+        CHECK -->|"Yes: N items flagged"| PUBLISH_REVIEW["Publish ReviewRequiredEvent<br/>{batch_id, flagged_count,<br/>flagged_atom_ids}"]:::event
+
+        PUBLISH_REVIEW --> INTERRUPT_CALL["langgraph.types.interrupt()<br/>Graph execution freezes"]:::interrupt
+
+        INTERRUPT_CALL --> CHECKPOINT["AsyncPostgresSaver<br/>checkpoints full state<br/>(thread_id = batch_id)"]:::checkpoint
+
+        CHECKPOINT --> CELERY_RETURN["Celery task returns<br/>status='interrupted'"]:::process
+
+        CELERY_RETURN --> BATCH_STATUS["PostgreSQL:<br/>UPDATE batches<br/>SET status='INTERRUPTED'"]:::store
+
+        COLLECT --> CHECK
+    end
+
+    TRIGGERS --> COLLECT
+
+    %% ══════════════════════════════════════
+    %% API REVIEW ENDPOINTS
+    %% ══════════════════════════════════════
+    subgraph API_REVIEW["API Review Endpoints"]
+        direction TB
+
+        GET_QUEUE["GET /api/v1/d365_fo/dynafit/{batch_id}/review"]:::api
+        GET_QUEUE --> QUEUE_RESPONSE["Response: flagged_items[]"]:::response
+
+        subgraph ITEM_DETAIL["Each Flagged Item Contains"]
+            direction LR
+            D1["atom_id<br/>requirement_text"]:::detail
+            D2["ai_classification<br/>ai_confidence<br/>ai_rationale"]:::detail
+            D3["top_capabilities[]<br/>(composite scores)"]:::detail
+            D4["prior_fitments[]<br/>(historical decisions)"]:::detail
+            D5["anomaly_flags[]<br/>flag_reasons[]"]:::detail
+        end
+
+        QUEUE_RESPONSE --> ITEM_DETAIL
+    end
+
+    %% ══════════════════════════════════════
+    %% HUMAN DECISION LOOP
+    %% ══════════════════════════════════════
+    subgraph HUMAN_LOOP["Human Decision Loop"]
+        direction TB
+
+        ANALYST["Analyst reviews<br/>flagged item in UI"]:::human
+
+        DECISION{"Decision"}:::decision
+
+        APPROVE["APPROVE<br/>(accept AI verdict as-is)"]:::approve
+        OVERRIDE["OVERRIDE<br/>(provide human verdict)"]:::override
+
+        OVERRIDE --> OVERRIDE_DETAIL["Human provides:<br/>• override_classification<br/> (FIT | PARTIAL_FIT | GAP)<br/>• override_rationale<br/>• override_config_steps"]:::detail
+
+        POST_REVIEW["POST /api/v1/.../review/{atom_id}<br/>{decision, override_classification}"]:::api
+        STORE_DECISION["PostgreSQL:<br/>INSERT review_items<br/>(atom_id, decision, override)"]:::store
+        REMAINING["Response:<br/>{final_classification,<br/>remaining_reviews: N}"]:::response
+
+        ANALYST --> DECISION
+        DECISION -->|"Accept AI"| APPROVE --> POST_REVIEW
+        DECISION -->|"Disagree"| OVERRIDE --> POST_REVIEW
+        POST_REVIEW --> STORE_DECISION --> REMAINING
+
+        REMAINING -->|"remaining > 0"| ANALYST
+        REMAINING -->|"remaining = 0"| ALL_DONE["All items reviewed"]:::success
+    end
+
+    API_REVIEW --> HUMAN_LOOP
+
+    %% ══════════════════════════════════════
+    %% PIPELINE RESUME
+    %% ══════════════════════════════════════
+    subgraph RESUME["Pipeline Resume — Pass 5B"]
+        direction TB
+
+        COMPLETE_CALL["POST /api/v1/.../review/complete"]:::api
+        CELERY_RESUME["Celery dispatches resume task"]:::process
+
+        LOAD_STATE["Load checkpoint from PostgreSQL<br/>(thread_id = batch_id)"]:::checkpoint
+        INJECT_OVERRIDES["graph.invoke(<br/>  Command(resume=overrides_dict),<br/>  config={thread_id: batch_id}<br/>)"]:::interrupt
+
+        subgraph MERGE_STEP["Merge Overrides"]
+            direction TB
+            READ_OVERRIDES["Read overrides dict<br/>(keyed by atom_id)"]:::process
+            APPLY_APPROVE["APPROVE → keep original<br/>remove from flagged_for_review"]:::approve
+            APPLY_OVERRIDE["OVERRIDE → replace<br/>classification + rationale"]:::override
+        end
+
+        BUILD_BATCH["Build ValidatedFitmentBatch<br/>verify: fit + partial + gap + review = total"]:::process
+
+        subgraph FINAL_OUTPUTS["Final Outputs"]
+            direction LR
+            CSV_FIT["FDD_FOR_FITS.csv<br/>(PII restored via<br/>redaction_map inverse)"]:::output
+            CSV_GAP["FDD_FOR_GAPS.csv<br/>(PII restored)"]:::output
+            PG_FITMENTS["PostgreSQL fitments<br/>+ pgvector embeddings<br/>(feeds future Source C)"]:::store
+        end
+
+        COMPLETE_EVENT["CompleteEvent<br/>{fit_count, partial_fit_count,<br/>gap_count, review_count=0,<br/>report_url}"]:::event
+
+        COMPLETE_CALL --> CELERY_RESUME --> LOAD_STATE --> INJECT_OVERRIDES
+        INJECT_OVERRIDES --> MERGE_STEP
+        MERGE_STEP --> BUILD_BATCH --> FINAL_OUTPUTS --> COMPLETE_EVENT
+    end
+
+    ALL_DONE --> COMPLETE_CALL
+
+    %% ══════════════════════════════════════
+    %% FEEDBACK LOOP
+    %% ══════════════════════════════════════
+    subgraph FEEDBACK["Learning Feedback Loop"]
+        direction LR
+        HUMAN_OVERRIDES["Human override decisions"]:::human
+        PG_VECTOR["Stored as pgvector<br/>embeddings in fitments"]:::store
+        FUTURE_RETRIEVAL["Future Phase 2 Source C<br/>finds these as prior_fitments"]:::process
+        TRUST_BOOST["Reviewer overrides<br/>sorted to top<br/>(higher trust signal)"]:::approve
+
+        HUMAN_OVERRIDES --> PG_VECTOR --> FUTURE_RETRIEVAL --> TRUST_BOOST
+    end
+
+    COMPLETE_EVENT --> FEEDBACK
+
+    %% ── Styles ──
+    classDef trigger fill:#FFCDD2,stroke:#C62828,stroke-width:2px,color:#000
+    classDef process fill:#E3F2FD,stroke:#1565C0,stroke-width:2px,color:#000
+    classDef decision fill:#FFE0B2,stroke:#E65100,stroke-width:2px,color:#000
+    classDef event fill:#FFF9C4,stroke:#F57F17,stroke-width:2px,color:#000
+    classDef interrupt fill:#CE93D8,stroke:#6A1B9A,stroke-width:3px,color:#000
+    classDef checkpoint fill:#C8E6C9,stroke:#2E7D32,stroke-width:2px,color:#000
+    classDef store fill:#E8EAF6,stroke:#283593,stroke-width:2px,color:#000
+    classDef api fill:#B3E5FC,stroke:#0277BD,stroke-width:2px,color:#000
+    classDef response fill:#DCEDC8,stroke:#33691E,stroke-width:1px,color:#000
+    classDef detail fill:#F5F5F5,stroke:#9E9E9E,stroke-width:1px,color:#000
+    classDef human fill:#FFE082,stroke:#FF8F00,stroke-width:3px,color:#000
+    classDef approve fill:#A5D6A7,stroke:#2E7D32,stroke-width:2px,color:#000
+    classDef override fill:#EF9A9A,stroke:#C62828,stroke-width:2px,color:#000
+    classDef success fill:#81C784,stroke:#1B5E20,stroke-width:2px,color:#000
+    classDef output fill:#B2DFDB,stroke:#00695C,stroke-width:2px,color:#000

@@ -1,0 +1,150 @@
+%% Enterprise AI — End-to-End Data Flow
+%% What: Data transformations at each pipeline stage
+%% Where: Shows the shape of data entering and leaving every node
+%% Why: Makes it clear what each phase produces and what the next phase consumes
+
+graph TD
+    %% ── Upload ──
+    UPLOAD["fa:fa-upload User Upload<br/>(PDF / DOCX / TXT)"]:::input
+    UPLOAD -->|"multipart POST /upload"| FORMAT_DETECT
+
+    FORMAT_DETECT["Format Detection<br/>(magic bytes + ZIP inspection)"]:::transform
+    FORMAT_DETECT -->|"RawUpload{upload_id, filename,<br/>format, sha256, bytes}"| PHASE1
+
+    %% ── Phase 1: Ingestion ──
+    subgraph PHASE1["Phase 1 — Ingestion"]
+        direction TB
+        G1["G1-lite<br/>File Validator<br/>(size + format)"]:::guard
+        PARSE["Docling Parser<br/>tables + prose + images"]:::transform
+        G3["G3-lite<br/>Injection Scanner<br/>(10 regex patterns)"]:::guard
+        G2["G2<br/>PII Redactor<br/>(presidio + regex)"]:::guard
+        ATOMIZE["Atomizer<br/>(LLM: split multi-req rows<br/>+ intent classification)"]:::llm
+        MODULE_TAG["Module Tagger<br/>(18 D365 modules)"]:::transform
+        DEDUP["Deduplicator<br/>(cosine > 0.92 merge)"]:::transform
+        QUALITY["Quality Gates<br/>(specificity ≥ 0.30<br/>length 10–2000)"]:::guard
+
+        G1 --> PARSE --> G3 --> G2 --> ATOMIZE --> MODULE_TAG --> DEDUP --> QUALITY
+    end
+
+    PHASE1 -->|"validated_atoms: ValidatedAtom[]<br/>flagged_atoms: FlaggedAtom[]<br/>pii_redaction_map: dict"| GATE1
+
+    GATE1{"Gate 1→2<br/>atoms > 0?"}:::gate
+    GATE1 -->|"Reject<br/>(0 valid atoms)"| FAIL_EARLY["ErrorEvent<br/>(batch fails)"]:::error
+    GATE1 -->|"Continue"| PHASE2
+
+    %% ── Phase 2: Retrieval ──
+    subgraph PHASE2["Phase 2 — Knowledge Retrieval (RAG)"]
+        direction TB
+        QUERY_BUILD["Query Builder<br/>(dense embed + BM25 tokens<br/>+ module filter)"]:::transform
+
+        subgraph PARALLEL_SOURCES["Parallel 3-Source Retrieval (5s timeout each)"]
+            direction LR
+            SRC_A["Source A<br/>Qdrant Capabilities<br/>(dense + hybrid, RRF)"]:::store
+            SRC_B["Source B<br/>MS Learn Docs<br/>(BM25 sparse)"]:::store
+            SRC_C["Source C<br/>pgvector History<br/>(prior fitments,<br/>reviewer overrides on top)"]:::store
+        end
+
+        RRF_MERGE["RRF Fusion<br/>+ doc boost (+0.05)"]:::transform
+        RERANK["Cross-Encoder Rerank<br/>(ms-marco-MiniLM<br/>sigmoid → 0–1)"]:::transform
+        ADAPTIVE_K["Adaptive Top-K<br/>(largest gap in ranks 3–7<br/>clamped ≤ 10)"]:::transform
+
+        QUERY_BUILD --> PARALLEL_SOURCES
+        PARALLEL_SOURCES --> RRF_MERGE --> RERANK --> ADAPTIVE_K
+    end
+
+    PHASE2 -->|"retrieval_contexts:<br/>AssembledContext[] per atom<br/>(ranked caps + docs + priors<br/>+ SHA-256 provenance)"| GATE2
+
+    GATE2{"Gate 2→3<br/>contexts present?"}:::gate
+    GATE2 -->|"Continue"| PHASE3
+
+    %% ── Phase 3: Matching ──
+    subgraph PHASE3["Phase 3 — Semantic Matching (Pure Compute)"]
+        direction TB
+        EMBED_PAIRS["Embed atom ↔ capability<br/>(L2-normalised)"]:::transform
+
+        subgraph SIGNALS["5 Weighted Signals"]
+            direction LR
+            S1["embedding_cosine<br/>w=0.25"]:::signal
+            S2["entity_overlap<br/>w=0.20"]:::signal
+            S3["token_ratio<br/>w=0.15<br/>(rapidfuzz)"]:::signal
+            S4["historical_alignment<br/>w=0.25<br/>(1.0 if prior FIT)"]:::signal
+            S5["rerank_score<br/>w=0.15"]:::signal
+        end
+
+        COMPOSITE["Weighted Composite<br/>Σ(weight × signal)<br/>+ history boost (+0.10)"]:::transform
+        ANOMALY["Anomaly Detector<br/>(cosine > 0.85 &&<br/>entity_overlap < 0.20)"]:::guard
+        ROUTE_ASSIGN["Route Assignment"]:::gate
+
+        EMBED_PAIRS --> SIGNALS --> COMPOSITE --> ANOMALY --> ROUTE_ASSIGN
+    end
+
+    PHASE3 -->|"match_results: MatchResult[]<br/>(composite scores + route labels<br/>+ anomaly flags)"| GATE3
+
+    GATE3{"Gate 3→4"}:::gate
+    GATE3 --> ROUTE_SPLIT
+
+    %% ── Phase 4: Classification ──
+    subgraph ROUTE_SPLIT["Route Split"]
+        direction LR
+        FAST["FAST_TRACK<br/>composite > 0.85<br/>+ has_history<br/>(1 LLM call, T=0.0)"]:::llm
+        DEEP["DEEP_REASON<br/>composite ≥ 0.60<br/>(3 LLM calls, T=0.3<br/>majority vote)"]:::llm
+        GAP_C["GAP_CONFIRM<br/>composite < 0.60<br/>(1 LLM call, T=0.0)"]:::llm
+    end
+
+    subgraph PHASE4["Phase 4 — LLM Classification"]
+        direction TB
+        G8["G8 Prompt Firewall<br/>(Jinja2 autoescape<br/>+ StrictUndefined)"]:::guard
+        LLM_CALL["Claude Sonnet 4<br/>tool-use structured output<br/>(G9 schema enforcer)"]:::llm
+        G11["G11 Response PII Scan<br/>(check rationale for leaked PII)"]:::guard
+        SANITY_POST["Post-LLM Sanity<br/>FIT + composite < 0.50 → PARTIAL<br/>GAP + composite > 0.85 → REVIEW"]:::guard
+
+        G8 --> LLM_CALL --> G11 --> SANITY_POST
+    end
+
+    ROUTE_SPLIT --> PHASE4
+
+    PHASE4 -->|"classifications:<br/>ClassificationResult[]<br/>{verdict, confidence,<br/>rationale, config_steps,<br/>gap_description, dev_effort}"| GATE4
+
+    GATE4{"Gate 4→5"}:::gate
+    GATE4 --> PHASE5
+
+    %% ── Phase 5: Validation ──
+    subgraph PHASE5["Phase 5 — Validation + HITL + Report"]
+        direction TB
+        G10["G10-lite Sanity Gate<br/>• high_confidence_gap<br/>• low_score_fit<br/>• retry_exhausted"]:::guard
+        CONF_FILTER["Confidence Filter<br/>(< 0.60 on non-GAP → HITL)"]:::guard
+        ANOMALY_CHECK["Anomaly Flag Check<br/>(Phase 3 flags → HITL)"]:::guard
+
+        HITL_DECISION{"Flagged<br/>items?"}:::gate
+        HITL["Human Review<br/>(interrupt → checkpoint<br/>→ API /review endpoints)"]:::hitl
+        MERGE["Merge Overrides<br/>(APPROVE | OVERRIDE)"]:::transform
+        BUILD["Build ValidatedFitmentBatch<br/>(verify counts sum)"]:::transform
+
+        subgraph OUTPUTS["Final Outputs"]
+            direction LR
+            CSV_FIT["FDD_FOR_FITS.csv<br/>(PII restored)"]:::output
+            CSV_GAP["FDD_FOR_GAPS.csv<br/>(PII restored)"]:::output
+            PG_WRITE["PostgreSQL Write-back<br/>(fitments + pgvector<br/>for future Source C)"]:::store
+        end
+
+        G10 --> CONF_FILTER --> ANOMALY_CHECK --> HITL_DECISION
+        HITL_DECISION -->|"Yes"| HITL --> MERGE
+        HITL_DECISION -->|"No flags"| MERGE
+        MERGE --> BUILD --> OUTPUTS
+    end
+
+    PHASE5 -->|"validated_batch:<br/>ValidatedFitmentBatch<br/>{fit_count, partial_fit_count,<br/>gap_count, review_count,<br/>report_url}"| COMPLETE
+
+    COMPLETE["CompleteEvent<br/>(published to Redis<br/>→ WebSocket → UI)"]:::output
+
+    %% ── Styles ──
+    classDef input fill:#BBDEFB,stroke:#1565C0,stroke-width:2px,color:#000
+    classDef transform fill:#C8E6C9,stroke:#2E7D32,stroke-width:2px,color:#000
+    classDef guard fill:#FFCDD2,stroke:#C62828,stroke-width:2px,color:#000
+    classDef gate fill:#FFE0B2,stroke:#E65100,stroke-width:2px,color:#000
+    classDef llm fill:#CE93D8,stroke:#6A1B9A,stroke-width:2px,color:#000
+    classDef store fill:#B3E5FC,stroke:#0277BD,stroke-width:2px,color:#000
+    classDef hitl fill:#FFF9C4,stroke:#F57F17,stroke-width:3px,color:#000
+    classDef output fill:#DCEDC8,stroke:#33691E,stroke-width:2px,color:#000
+    classDef error fill:#EF9A9A,stroke:#B71C1C,stroke-width:2px,color:#000
+    classDef signal fill:#E1BEE7,stroke:#7B1FA2,stroke-width:1px,color:#000

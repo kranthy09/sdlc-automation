@@ -1,0 +1,61 @@
+graph LR
+    %% Nodes (circles)
+    START((Start)):::node
+    INGEST((Phase 1\nIngest)):::node
+    RETRIEVE((Phase 2\nRetrieve)):::node
+    MATCH((Phase 3\nMatch)):::node
+    CLASSIFY((Phase 4\nClassify)):::node
+    VALIDATE((Phase 5\nValidate)):::node
+    END_NODE((END)):::node
+
+    %% Internal classification route nodes
+    FAST((Fast Track\n1 LLM call)):::node
+    DEEP((Deep Reason\n3 LLM calls\nmajority vote)):::node
+    GAP_C((Gap Confirm\n1 LLM call)):::node
+
+    %% HITL nodes
+    HITL((Human\nReview)):::node
+    MERGE((Merge &\nBuild CSV)):::node
+
+    %% Conditional edges (diamonds)
+    GATE1{Gate\nPhase 1→2}:::gate
+    GATE2{Gate\nPhase 2→3}:::gate
+    GATE3{Gate\nPhase 3→4}:::gate
+    ROUTE{Route\nAssignment}:::gate
+    GATE4{Gate\nPhase 4→5}:::gate
+    FLAGGED{Flagged\nItems?}:::gate
+
+    %% Flow
+    START --> INGEST
+    INGEST -->|atoms, validated_atoms\nflagged_atoms| GATE1
+    GATE1 -->|Continue| RETRIEVE
+    GATE1 -->|Reject| END_NODE
+
+    RETRIEVE -->|retrieval_contexts| GATE2
+    GATE2 -->|Continue| MATCH
+    GATE2 -->|Reject| END_NODE
+
+    MATCH -->|match_results\n+ route labels| GATE3
+    GATE3 -->|Continue| ROUTE
+
+    ROUTE -->|"composite > 0.85\n& has_history"| FAST
+    ROUTE -->|"composite ≥ 0.60"| DEEP
+    ROUTE -->|"composite < 0.60"| GAP_C
+
+    FAST --> CLASSIFY
+    DEEP --> CLASSIFY
+    GAP_C --> CLASSIFY
+
+    CLASSIFY -->|classifications| GATE4
+    GATE4 -->|Continue| VALIDATE
+
+    VALIDATE --> FLAGGED
+    FLAGGED -->|"Yes\n(G10, low confidence,\nGAP, anomaly, PII)"| HITL
+    FLAGGED -->|No flags| MERGE
+
+    HITL -->|analyst overrides| MERGE
+    MERGE -->|"write CSV +\npostgres + events"| END_NODE
+
+    %% Styles
+    classDef node fill:#ADD8E6,stroke:#4682B4,stroke-width:2px,color:#000
+    classDef gate fill:#FFB6C1,stroke:#FF69B4,stroke-width:2px,color:#000

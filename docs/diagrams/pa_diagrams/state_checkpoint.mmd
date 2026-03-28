@@ -1,0 +1,149 @@
+%% Enterprise AI — State Management & Checkpointing
+%% What: How state is created, accumulated, persisted, and resumed
+%% Where: LangGraph state, PostgreSQL checkpoints, Redis transient state
+%% Why: Shows crash recovery, HITL pause/resume, and data durability guarantees
+
+graph TB
+    %% ══════════════════════════════════════
+    %% LANGGRAPH STATE LIFECYCLE
+    %% ══════════════════════════════════════
+    subgraph STATE_LIFECYCLE["LangGraph State Lifecycle"]
+        direction LR
+
+        INIT["Initial State<br/>{upload, batch_id,<br/>errors: []}"]:::state
+
+        P1_OUT["+ atoms<br/>+ validated_atoms<br/>+ flagged_atoms<br/>+ pii_redaction_map"]:::delta
+        P2_OUT["+ retrieval_contexts"]:::delta
+        P3_OUT["+ match_results"]:::delta
+        P4_OUT["+ classifications"]:::delta
+        P5_OUT["+ validated_batch"]:::delta
+
+        INIT -->|"Phase 1 returns<br/>partial dict"| P1_OUT
+        P1_OUT -->|"Phase 2 returns<br/>partial dict"| P2_OUT
+        P2_OUT -->|"Phase 3 returns<br/>partial dict"| P3_OUT
+        P3_OUT -->|"Phase 4 returns<br/>partial dict"| P4_OUT
+        P4_OUT -->|"Phase 5 returns<br/>partial dict"| P5_OUT
+    end
+
+    %% ══════════════════════════════════════
+    %% IMMUTABILITY CONTRACT
+    %% ══════════════════════════════════════
+    subgraph IMMUTABILITY["Immutability Contract"]
+        direction TB
+        RULE1["Each node reads state as-is"]:::rule
+        RULE2["Returns partial dict of NEW keys only"]:::rule
+        RULE3["LangGraph merges via reducer"]:::rule
+        RULE4["errors: Annotated[list, operator.add]<br/>(append-only accumulator)"]:::rule
+    end
+
+    %% ══════════════════════════════════════
+    %% POSTGRESQL CHECKPOINTING
+    %% ══════════════════════════════════════
+    subgraph PG_CHECKPOINT["PostgreSQL Checkpointing (AsyncPostgresSaver)"]
+        direction TB
+
+        CP_TRIGGER["Checkpoint trigger:<br/>after every node completes"]:::checkpoint
+
+        subgraph CP_STORAGE["Checkpoint Storage"]
+            direction LR
+            CP_THREAD["thread_id = batch_id"]:::checkpoint
+            CP_SNAP["Full state snapshot<br/>(serialized DynafitState)"]:::checkpoint
+            CP_META["Metadata:<br/>node_name, timestamp,<br/>step_count"]:::checkpoint
+        end
+
+        CP_TRIGGER --> CP_STORAGE
+
+        subgraph CRASH_RECOVERY["Crash Recovery"]
+            direction TB
+            CRASH["Worker crash<br/>or OOM"]:::failure
+            DETECT["Celery retry<br/>picks up task"]:::recovery
+            LOAD_CP["Load latest checkpoint<br/>for thread_id"]:::checkpoint
+            RESUME_NODE["Resume from<br/>next node in graph"]:::recovery
+            CRASH --> DETECT --> LOAD_CP --> RESUME_NODE
+        end
+
+        subgraph HITL_PAUSE["HITL Pause / Resume"]
+            direction TB
+            INTERRUPT["interrupt() called<br/>in Phase 5"]:::hitl
+            FREEZE["Graph frozen<br/>state checkpointed"]:::checkpoint
+            WAIT["Batch status=INTERRUPTED<br/>awaiting human review"]:::hitl
+            HUMAN["Human submits<br/>review decisions via API"]:::hitl
+            CMD_RESUME["Command(resume=overrides)<br/>graph.invoke() resumes"]:::recovery
+            RESTORE["Checkpoint restored<br/>+ overrides merged"]:::checkpoint
+
+            INTERRUPT --> FREEZE --> WAIT --> HUMAN --> CMD_RESUME --> RESTORE
+        end
+    end
+
+    %% ══════════════════════════════════════
+    %% REDIS TRANSIENT STATE
+    %% ══════════════════════════════════════
+    subgraph REDIS_STATE["Redis State (Transient + Durable)"]
+        direction TB
+
+        subgraph PUBSUB["Pub/Sub Channel: progress:{batch_id}"]
+            direction TB
+            PS_NOTE["Ephemeral, best-effort delivery<br/>Missed messages = lost"]:::redis_ephemeral
+            PS_EVENTS["PhaseStartEvent<br/>StepProgressEvent<br/>ClassificationEvent<br/>PhaseCompleteEvent<br/>ReviewRequiredEvent<br/>CompleteEvent<br/>ErrorEvent"]:::redis_ephemeral
+        end
+
+        subgraph HSET["Hash: batch:{batch_id}"]
+            direction TB
+            HS_NOTE["Durable, survives pub/sub loss<br/>Used for WebSocket catch-up"]:::redis_durable
+            HS_FIELDS["phases.{N}.started: timestamp<br/>phases.{N}.complete: timestamp<br/>phases.{N}.atoms_produced: int<br/>status: queued|running|interrupted|complete|failed"]:::redis_durable
+        end
+
+        subgraph WS_REPLAY["WebSocket Reconnect"]
+            direction TB
+            CONNECT["Client connects"]:::normal
+            REPLAY["HGETALL batch:{batch_id}<br/>→ replay all phases"]:::redis_durable
+            SUBSCRIBE["SUBSCRIBE progress:{batch_id}<br/>→ stream live events"]:::redis_ephemeral
+            CONNECT --> REPLAY --> SUBSCRIBE
+        end
+    end
+
+    %% ══════════════════════════════════════
+    %% POSTGRESQL PERSISTENT STATE
+    %% ══════════════════════════════════════
+    subgraph PG_TABLES["PostgreSQL Persistent State"]
+        direction TB
+
+        subgraph TABLES["Tables"]
+            direction LR
+            T_UPLOADS["uploads<br/>• upload_id<br/>• filename<br/>• sha256<br/>• format<br/>• path"]:::pg_table
+            T_BATCHES["batches<br/>• batch_id<br/>• upload_id<br/>• status<br/>• config<br/>• created_at"]:::pg_table
+            T_FITMENTS["fitments<br/>• atom_id<br/>• classification<br/>• confidence<br/>• module<br/>• country<br/>• wave<br/>• embedding (pgvector)"]:::pg_table
+            T_REVIEWS["review_items<br/>• atom_id<br/>• batch_id<br/>• decision<br/>• override_class<br/>• reviewer"]:::pg_table
+            T_CHECKPOINTS["langgraph_checkpoints<br/>• thread_id<br/>• state_blob<br/>• node_name<br/>• step<br/>• timestamp"]:::pg_table
+        end
+
+        subgraph FEEDBACK_LOOP["Source C Feedback Loop"]
+            direction TB
+            WRITE_BACK["Phase 5 write-back<br/>(non-REVIEW_REQUIRED results)"]:::checkpoint
+            EMBED_FIT["Create pgvector embedding<br/>for each finalized fitment"]:::checkpoint
+            FUTURE_P2["Phase 2 Source C queries<br/>future batches find<br/>these as prior fitments"]:::recovery
+            REVIEWER_BOOST["Reviewer overrides<br/>sorted to top<br/>(higher trust)"]:::recovery
+
+            WRITE_BACK --> EMBED_FIT --> FUTURE_P2 --> REVIEWER_BOOST
+        end
+    end
+
+    %% ══════════════════════════════════════
+    %% STATE FLOW CONNECTIONS
+    %% ══════════════════════════════════════
+    STATE_LIFECYCLE -->|"checkpoint after<br/>each node"| PG_CHECKPOINT
+    STATE_LIFECYCLE -->|"progress events<br/>at phase boundaries"| REDIS_STATE
+    PG_CHECKPOINT -->|"final results<br/>written to tables"| PG_TABLES
+
+    %% ── Styles ──
+    classDef state fill:#E3F2FD,stroke:#1565C0,stroke-width:2px,color:#000
+    classDef delta fill:#BBDEFB,stroke:#1976D2,stroke-width:1px,color:#000
+    classDef rule fill:#F3E5F5,stroke:#7B1FA2,stroke-width:1px,color:#000
+    classDef checkpoint fill:#C8E6C9,stroke:#2E7D32,stroke-width:2px,color:#000
+    classDef failure fill:#FFCDD2,stroke:#C62828,stroke-width:2px,color:#000
+    classDef recovery fill:#DCEDC8,stroke:#33691E,stroke-width:2px,color:#000
+    classDef hitl fill:#CE93D8,stroke:#6A1B9A,stroke-width:2px,color:#000
+    classDef redis_ephemeral fill:#FFF9C4,stroke:#F57F17,stroke-width:1px,color:#000
+    classDef redis_durable fill:#FFE0B2,stroke:#E65100,stroke-width:2px,color:#000
+    classDef pg_table fill:#E8EAF6,stroke:#283593,stroke-width:2px,color:#000
+    classDef normal fill:#FAFAFA,stroke:#616161,stroke-width:1px,color:#000

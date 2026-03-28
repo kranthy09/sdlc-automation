@@ -1,0 +1,102 @@
+%% Enterprise AI — Guardrails & Security Control Map
+%% What: All 9 active guardrails positioned at their enforcement points
+%% Where: Inline within pipeline phases (not bolted on)
+%% Why: Maps OWASP LLM Top 10 coverage — shows what's protected and where gaps remain
+
+graph LR
+    %% ══════════════════════════════════════
+    %% PIPELINE PHASES (horizontal flow)
+    %% ══════════════════════════════════════
+
+    INPUT["User Upload<br/>(untrusted input)"]:::input
+
+    subgraph P1["Phase 1 — Ingestion"]
+        direction TB
+        G1["G1-lite<br/>File Validator"]:::guard_active
+        G1_DETAIL["• Magic bytes check<br/>• File size limit<br/>• SHA-256 fingerprint<br/>OWASP: LLM03 supply chain"]:::guard_detail
+
+        G3["G3-lite<br/>Injection Scanner"]:::guard_active
+        G3_DETAIL["• 10 regex patterns:<br/>  instruction override,<br/>  role switch, act_as,<br/>  system tags, ignore prev<br/>• Flags atom, doesn't block batch<br/>OWASP: LLM01 prompt injection"]:::guard_detail
+
+        G2["G2<br/>PII Redactor"]:::guard_active
+        G2_DETAIL["• Presidio NER engine<br/>• Regex fallback (email, phone, SSN)<br/>• Thread-safe singleton<br/>• Creates redaction_map<br/>  (placeholder → original)<br/>• PII restored only in Phase 5 CSV<br/>OWASP: LLM02 sensitive data"]:::guard_detail
+
+        G1 --- G1_DETAIL
+        G3 --- G3_DETAIL
+        G2 --- G2_DETAIL
+    end
+
+    subgraph P2P3["Phases 2–3"]
+        direction TB
+        AUDIT_23["Audit Logging<br/>(all phases)"]:::guard_active
+        AUDIT_DETAIL["• structlog JSON + correlation ID<br/>• Phase start/complete with hash<br/>• Never logs PII content<br/>• Prometheus metrics per call"]:::guard_detail
+        AUDIT_23 --- AUDIT_DETAIL
+    end
+
+    subgraph P4["Phase 4 — Classification"]
+        direction TB
+        G8["G8<br/>Prompt Firewall"]:::guard_active
+        G8_DETAIL["• Jinja2 autoescape=True<br/>• StrictUndefined (no missing vars)<br/>• Whitelist check in loader.py<br/>• User content in XML slots only<br/>• Template header: NEVER MODIFY<br/>  WITHOUT SECURITY REVIEW<br/>OWASP: LLM01, LLM06, LLM07"]:::guard_detail
+
+        G9["G9<br/>Output Schema Enforcer"]:::guard_active
+        G9_DETAIL["• Claude tool-use structured output<br/>• Pydantic validation on response<br/>• Constrained verdict enum:<br/>  FIT | PARTIAL_FIT | GAP<br/>• Retry on validation failure (max 3)<br/>• Fallback: REVIEW_REQUIRED<br/>OWASP: LLM06 excessive agency"]:::guard_detail
+
+        G11["G11<br/>Response PII Scanner"]:::guard_active
+        G11_DETAIL["• Scans LLM output fields:<br/>  rationale, config_steps,<br/>  gap_description<br/>• Reuses G2 presidio engine<br/>• If PII found: add G11 caveat<br/>  → Phase 5 routes to HITL<br/>OWASP: LLM02 data disclosure"]:::guard_detail
+
+        G8 --- G8_DETAIL
+        G9 --- G9_DETAIL
+        G11 --- G11_DETAIL
+    end
+
+    subgraph P5["Phase 5 — Validation"]
+        direction TB
+        G10["G10-lite<br/>Sanity Gate"]:::guard_active
+        G10_DETAIL["• high_confidence_gap<br/>  (confidence > 0.85 && GAP)<br/>• low_score_fit<br/>  (composite < 0.60 && FIT)<br/>• retry_exhausted<br/>  (REVIEW_REQUIRED)<br/>OWASP: LLM04 data poisoning"]:::guard_detail
+
+        HITL["HITL<br/>Human Review"]:::guard_active
+        HITL_DETAIL["• LangGraph interrupt()<br/>• Mandatory for all flags<br/>• Batch cannot complete<br/>  until all items resolved<br/>• Decisions feed Source C<br/>  (learning feedback loop)"]:::guard_detail
+
+        G10 --- G10_DETAIL
+        HITL --- HITL_DETAIL
+    end
+
+    OUTPUT["Validated Output<br/>(CSVs + PostgreSQL)"]:::output
+
+    %% ── Flow ──
+    INPUT --> P1 --> P2P3 --> P4 --> P5 --> OUTPUT
+
+    %% ══════════════════════════════════════
+    %% DEFERRED GUARDRAILS
+    %% ══════════════════════════════════════
+    subgraph DEFERRED["Deferred (Post-MVP)"]
+        direction TB
+        G4["G4 — Rate limiter<br/>(per-tenant LLM budget)"]:::guard_deferred
+        G5["G5 — KB integrity<br/>(hash verification on seed data)"]:::guard_deferred
+        G6["G6 — Drift monitor<br/>(classification distribution shift)"]:::guard_deferred
+        G7["G7 — Cost tracker<br/>(per-batch LLM cost ceiling)"]:::guard_deferred
+        G12["G12 — Eval harness<br/>(golden-set regression)"]:::guard_deferred
+        G13["G13 — Encryption at rest<br/>(PII field encryption)"]:::guard_deferred
+    end
+
+    %% ══════════════════════════════════════
+    %% OWASP LLM TOP 10 COVERAGE MATRIX
+    %% ══════════════════════════════════════
+    subgraph OWASP["OWASP LLM Top 10 Coverage"]
+        direction TB
+        O1["LLM01 Prompt Injection<br/>✅ G3 + G8"]:::covered
+        O2["LLM02 Sensitive Data<br/>✅ G2 + G11 + ⏳ G13"]:::partial
+        O3["LLM03 Supply Chain<br/>✅ G1 + ⏳ G5"]:::partial
+        O4["LLM04 Data Poisoning<br/>✅ G10 + ⏳ G5"]:::partial
+        O6["LLM06 Excessive Agency<br/>✅ G8 + G9"]:::covered
+        O7["LLM07 Prompt Leakage<br/>✅ G8 + G11"]:::covered
+    end
+
+    %% ── Styles ──
+    classDef input fill:#FFCDD2,stroke:#C62828,stroke-width:2px,color:#000
+    classDef output fill:#C8E6C9,stroke:#2E7D32,stroke-width:2px,color:#000
+    classDef guard_active fill:#81D4FA,stroke:#0277BD,stroke-width:3px,color:#000
+    classDef guard_detail fill:#E1F5FE,stroke:#0288D1,stroke-width:1px,color:#000,font-size:11px
+    classDef guard_deferred fill:#E0E0E0,stroke:#9E9E9E,stroke-width:1px,stroke-dasharray:5 5,color:#616161
+    classDef covered fill:#A5D6A7,stroke:#2E7D32,stroke-width:2px,color:#000
+    classDef partial fill:#FFF59D,stroke:#F9A825,stroke-width:2px,color:#000

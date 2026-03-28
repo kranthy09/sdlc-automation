@@ -1,0 +1,161 @@
+---
+title: "REQFIT Pipeline — 5-Phase LangGraph Sequence"
+---
+sequenceDiagram
+    autonumber
+    participant UI as React UI
+    participant API as FastAPI :8000
+    participant Q as Redis (Queue)
+    participant W as Celery Worker
+    participant PG as PostgreSQL
+    participant QD as Qdrant
+    participant LLM as Claude API
+
+    Note over UI,LLM: ━━━ Upload & Dispatch ━━━
+
+    UI->>API: POST /upload (file)
+    API->>PG: INSERT uploads (metadata, hash)
+    API-->>UI: 201 {upload_id}
+
+    UI->>API: POST /run {upload_id, config}
+    API->>PG: INSERT batches (status=pending)
+    API->>Q: Celery task dispatch
+    API-->>UI: 202 {batch_id, ws_url}
+
+    UI->>API: WS /ws/progress/{batch_id}
+    API->>Q: SUBSCRIBE progress:{batch_id}
+
+    Note over UI,LLM: ━━━ Phase 1 — Ingestion ━━━
+
+    W->>Q: PhaseStartEvent(phase=1)
+    Q-->>API: forward
+    API-->>UI: phase_start
+
+    W->>W: G1-lite: validate file (magic bytes, size, hash)
+    W->>W: Docling: parse PDF/DOCX → tables + prose
+    W->>W: Header mapping (synonym YAML)
+    W->>W: G3-lite: injection scan (10 regex)
+    W->>W: G2: PII redaction (Presidio + spaCy)
+    W->>LLM: Atomize + classify intent + tag module
+    LLM-->>W: atoms[]
+    W->>W: Deduplicate (cosine > 0.92 merge)
+    W->>W: Quality gates (ambiguity, completeness, schema)
+
+    W->>Q: PhaseCompleteEvent(validated_atoms, flagged_atoms)
+    Q-->>API: forward
+    API-->>UI: phase_complete
+
+    rect rgb(255, 230, 230)
+        Note over W,Q: Gate 1→2: reject if zero validated atoms
+    end
+
+    Note over UI,LLM: ━━━ Phase 2 — Knowledge Retrieval (RAG) ━━━
+
+    W->>Q: PhaseStartEvent(phase=2)
+
+    par Source A: Capabilities
+        W->>QD: Hybrid search (dense + BM25 + RRF)
+        QD-->>W: top-20 capabilities
+    and Source B: MS Learn
+        W->>QD: Dense search (docs collection)
+        QD-->>W: top-10 doc chunks
+    and Source C: Historical Fitments
+        W->>PG: pgvector query (module filter)
+        PG-->>W: 0–5 prior fitments
+    end
+
+    W->>W: RRF fusion (A=primary, B=boost, C=structured)
+    W->>W: Cross-encoder rerank (ms-marco-MiniLM)
+    W->>W: Adaptive-K cutoff + confidence calibration
+
+    W->>Q: PhaseCompleteEvent(retrieval_contexts[])
+
+    rect rgb(255, 230, 230)
+        Note over W,Q: Gate 2→3: reject if retrieval failure
+    end
+
+    Note over UI,LLM: ━━━ Phase 3 — Semantic Matching ━━━
+
+    W->>Q: PhaseStartEvent(phase=3)
+
+    W->>W: Compute 5 signals per (atom, capability)
+    Note right of W: cosine(0.25) + entity(0.20)<br/>+ token(0.15) + history(0.25)<br/>+ rerank(0.15)
+    W->>W: Anomaly detection (cosine↑ but entity↓)
+    W->>W: Route assignment per atom
+
+    W->>Q: PhaseCompleteEvent(match_results[] + routes)
+
+    rect rgb(255, 230, 230)
+        Note over W,Q: Gate 3→4: continue with routes
+    end
+
+    Note over UI,LLM: ━━━ Phase 4 — Classification (LLM Reasoning) ━━━
+
+    W->>Q: PhaseStartEvent(phase=4)
+
+    alt FAST_TRACK (score > 0.85 + history)
+        W->>LLM: 1 call (top-1 cap + priors)
+        LLM-->>W: ClassificationResult
+    else DEEP_REASON (0.60 ≤ score ≤ 0.85)
+        par 3 independent calls
+            W->>LLM: Call 1 (compatibility consultant)
+            W->>LLM: Call 2 (strict engineer)
+            W->>LLM: Call 3 (gap analyst)
+        end
+        LLM-->>W: 3 results → majority vote
+    else GAP_CONFIRM (score < 0.60)
+        W->>LLM: 1 call (confirm gap + effort)
+        LLM-->>W: ClassificationResult(GAP)
+    end
+
+    W->>W: G8: Prompt firewall (Jinja2 autoescape)
+    W->>W: G9: Output schema enforcer (Pydantic v2)
+    W->>W: G11: Response PII scanner
+
+    loop Per atom classified
+        W->>Q: ClassificationEvent(atom_id, result)
+        Q-->>API: forward
+        API-->>UI: classification (live streaming)
+    end
+
+    W->>Q: PhaseCompleteEvent(classifications[])
+
+    rect rgb(255, 230, 230)
+        Note over W,Q: Gate 4→5: continue to validation
+    end
+
+    Note over UI,LLM: ━━━ Phase 5 — Validation + HITL ━━━
+
+    W->>Q: PhaseStartEvent(phase=5)
+    W->>W: G10-lite: sanity gate (contradiction flags)
+
+    alt Flagged items exist
+        W->>PG: Checkpoint state (LangGraph interrupt)
+        W->>Q: ReviewRequiredEvent(flagged_count, reasons)
+        Q-->>API: forward
+        API-->>UI: review_required
+
+        Note over UI,API: ── Human Review Loop ──
+        UI->>API: GET /review (queue)
+        API-->>UI: flagged items + evidence
+
+        loop Per flagged item
+            UI->>API: POST /review/{atom_id} (decision)
+            API->>PG: INSERT review_items
+        end
+
+        API->>Q: Resume Celery task
+        W->>PG: Load checkpoint, merge overrides
+    end
+
+    W->>W: Restore PII (pii_redaction_map)
+    W->>PG: INSERT batch_results (all atoms)
+    W->>PG: INSERT fitments (Source C for future waves)
+    W->>W: Generate Excel report
+
+    W->>Q: CompleteEvent(summary, report_url)
+    Q-->>API: forward
+    API-->>UI: complete
+
+    UI->>API: GET /report
+    API-->>UI: Excel download

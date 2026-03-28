@@ -1,0 +1,161 @@
+%% Enterprise AI — Failure, Retry & Fallback Paths
+%% What: Every failure mode and its resolution strategy
+%% Where: Failures at each layer and the recovery paths
+%% Why: Failures are first-class flows — the system degrades gracefully, never silently
+
+graph TD
+    %% ── Entry Point ──
+    REQUEST["Incoming Request"]:::normal
+
+    %% ══════════════════════════════════════
+    %% LAYER 4: API + CELERY FAILURES
+    %% ══════════════════════════════════════
+    subgraph L4["Layer 4 — API + Worker Failures"]
+        direction TB
+
+        CELERY_CRASH{"Celery worker<br/>crash / OOM"}:::failure
+        CELERY_CRASH -->|"auto-retry<br/>max_retries=2<br/>delay=30s exp backoff"| CELERY_RETRY["Retry Task<br/>(new worker picks up)"]:::retry
+        CELERY_RETRY -->|"still fails after 2 retries"| CELERY_DEAD["ErrorEvent published<br/>batch status=FAILED<br/>UI shows error"]:::terminal
+
+        WS_DISCONNECT{"WebSocket<br/>disconnects"}:::failure
+        WS_DISCONNECT -->|"progress already<br/>persisted to Redis hset"| WS_RECONNECT["Client reconnects<br/>→ HGETALL replay<br/>→ full catch-up"]:::recovery
+
+        CHECKPOINT_RESUME{"Worker dies<br/>mid-pipeline"}:::failure
+        CHECKPOINT_RESUME -->|"AsyncPostgresSaver<br/>has last checkpoint"| RESUME_NODE["Resume from<br/>last completed node<br/>(exact state restored)"]:::recovery
+    end
+
+    %% ══════════════════════════════════════
+    %% PHASE 1: INGESTION FAILURES
+    %% ══════════════════════════════════════
+    subgraph P1F["Phase 1 — Ingestion Failures"]
+        direction TB
+
+        BAD_FORMAT{"G1-lite:<br/>Invalid format<br/>(bad magic bytes)"}:::failure
+        BAD_FORMAT -->|"reject immediately<br/>phases never start"| REJECT_UPLOAD["400 Bad Request<br/>(upload rejected)"]:::terminal
+
+        FILE_TOO_LARGE{"G1-lite:<br/>File > size limit"}:::failure
+        FILE_TOO_LARGE -->|"reject early"| REJECT_UPLOAD
+
+        PARSE_FAIL{"Docling parser<br/>exception"}:::failure
+        PARSE_FAIL -->|"fallback"| UNSTRUCTURED_FB["Unstructured fallback<br/>(images still extracted)"]:::recovery
+
+        INJECTION{"G3-lite:<br/>Prompt injection<br/>detected"}:::failure
+        INJECTION -->|"atom flagged with<br/>reason=injection_detected"| FLAGGED_ATOM["FlaggedAtom<br/>(excluded from pipeline<br/>reported in results)"]:::degraded
+
+        PII_ENGINE_DOWN{"G2: Presidio<br/>unavailable"}:::failure
+        PII_ENGINE_DOWN -->|"fallback"| REGEX_PII["Regex PII patterns<br/>(email, phone, SSN)<br/>thread-safe fallback"]:::recovery
+
+        LOW_QUALITY{"Quality gate:<br/>specificity < 0.30<br/>or length out of range"}:::failure
+        LOW_QUALITY -->|"atom flagged<br/>reason=low_specificity"| FLAGGED_ATOM
+
+        ZERO_ATOMS{"0 validated atoms<br/>after all gates"}:::failure
+        ZERO_ATOMS -->|"Gate 1→2 rejects"| BATCH_FAIL["ErrorEvent<br/>batch fails early<br/>(nothing to process)"]:::terminal
+    end
+
+    %% ══════════════════════════════════════
+    %% PHASE 2: RETRIEVAL FAILURES
+    %% ══════════════════════════════════════
+    subgraph P2F["Phase 2 — Retrieval Failures"]
+        direction TB
+
+        QDRANT_TIMEOUT{"Qdrant Source A<br/>timeout (> 5s)"}:::failure
+        QDRANT_TIMEOUT -->|"asyncio.wait_for<br/>returns empty list"| DEGRADED_CONTEXT["Continue with<br/>remaining sources<br/>retrieval_confidence=LOW"]:::degraded
+
+        DOCS_TIMEOUT{"MS Learn Source B<br/>timeout (> 5s)"}:::failure
+        DOCS_TIMEOUT -->|"returns empty list"| DEGRADED_CONTEXT
+
+        PG_HISTORY_FAIL{"pgvector Source C<br/>connection error"}:::failure
+        PG_HISTORY_FAIL -->|"returns empty list<br/>no historical alignment"| DEGRADED_CONTEXT
+
+        ALL_SOURCES_FAIL{"All 3 sources<br/>return empty"}:::failure
+        ALL_SOURCES_FAIL -->|"0 capabilities<br/>for atom"| AUTO_GAP["Phase 4 auto-GAP<br/>(0 LLM calls used)"]:::degraded
+
+        RERANK_FAIL{"Cross-encoder<br/>fails"}:::failure
+        RERANK_FAIL -->|"skip reranking<br/>use RRF scores only"| SKIP_RERANK["Continue with<br/>RRF-only ranking"]:::degraded
+    end
+
+    %% ══════════════════════════════════════
+    %% PHASE 3: MATCHING FAILURES (minimal — pure compute)
+    %% ══════════════════════════════════════
+    subgraph P3F["Phase 3 — Matching Failures"]
+        direction TB
+
+        ANOMALY_DETECT{"Anomaly detected<br/>cosine > 0.85 &&<br/>entity_overlap < 0.20"}:::failure
+        ANOMALY_DETECT -->|"flag: high_cosine_no_entity<br/>carried to Phase 5"| ANOMALY_FLAG["Anomaly flag<br/>→ forced HITL review"]:::degraded
+    end
+
+    %% ══════════════════════════════════════
+    %% PHASE 4: CLASSIFICATION FAILURES
+    %% ══════════════════════════════════════
+    subgraph P4F["Phase 4 — LLM Classification Failures"]
+        direction TB
+
+        RATE_LIMIT{"Claude API<br/>RateLimitError"}:::failure
+        RATE_LIMIT -->|"LLMClient auto-retry<br/>max=3, exp backoff"| LLM_RETRY["Retry LLM call"]:::retry
+        LLM_RETRY -->|"3 retries exhausted"| REVIEW_REQ["classification =<br/>REVIEW_REQUIRED<br/>→ human must decide"]:::degraded
+
+        API_ERROR{"Claude API<br/>InternalServerError<br/>/ ConnectionError<br/>/ TimeoutError"}:::failure
+        API_ERROR -->|"same retry logic"| LLM_RETRY
+
+        MALFORMED_OUTPUT{"LLM output fails<br/>Pydantic validation<br/>(G9 schema)"}:::failure
+        MALFORMED_OUTPUT -->|"inject error<br/>+ retry (max 3)"| LLM_RETRY
+
+        MAJORITY_FAIL{"DEEP_REASON:<br/>< 2 of 3 calls<br/>succeed"}:::failure
+        MAJORITY_FAIL -->|"can't form majority"| REVIEW_REQ
+
+        MAJORITY_DISAGREE{"DEEP_REASON:<br/>3 calls disagree<br/>on verdict"}:::failure
+        MAJORITY_DISAGREE -->|"no consensus"| REVIEW_REQ
+
+        IMPLAUSIBLE_FIT{"Post-LLM sanity:<br/>FIT + composite < 0.50"}:::failure
+        IMPLAUSIBLE_FIT -->|"demote"| DEMOTE_PARTIAL["Demoted to<br/>PARTIAL_FIT"]:::degraded
+
+        IMPLAUSIBLE_GAP{"Post-LLM sanity:<br/>GAP + composite > 0.85"}:::failure
+        IMPLAUSIBLE_GAP -->|"contradiction"| REVIEW_REQ
+
+        PII_LEAKED{"G11: PII found<br/>in LLM response"}:::failure
+        PII_LEAKED -->|"add G11 caveat<br/>→ Phase 5 routes to HITL"| PII_HITL["Forced HITL review<br/>(PII leak)"]:::degraded
+
+        PROMPT_OVERRUN{"Prompt > 200K chars"}:::failure
+        PROMPT_OVERRUN -->|"WARN log<br/>continue anyway"| CONTINUE["Continue<br/>(best effort)"]:::degraded
+        PROMPT_MEGA{"Prompt > 8.3M chars"}:::failure
+        PROMPT_MEGA -->|"hard fail"| REVIEW_REQ
+    end
+
+    %% ══════════════════════════════════════
+    %% PHASE 5: VALIDATION FAILURES
+    %% ══════════════════════════════════════
+    subgraph P5F["Phase 5 — Validation Failures"]
+        direction TB
+
+        G10_TRIP{"G10-lite triggers:<br/>high_confidence_gap<br/>low_score_fit<br/>retry_exhausted"}:::failure
+        G10_TRIP -->|"atom flagged"| HITL_QUEUE["HITL Review Queue<br/>(interrupt → checkpoint<br/>→ wait for human)"]:::hitl
+
+        LOW_CONF{"Confidence < 0.60<br/>on non-GAP verdict"}:::failure
+        LOW_CONF -->|"forced HITL"| HITL_QUEUE
+
+        ANOMALY_FWD{"Phase 3 anomaly<br/>flags present"}:::failure
+        ANOMALY_FWD -->|"forced HITL"| HITL_QUEUE
+
+        PG_WRITE_FAIL{"PostgreSQL<br/>write-back fails"}:::failure
+        PG_WRITE_FAIL -->|"WARNING logged<br/>pipeline continues<br/>CSVs still written"| WRITE_WARN["Non-fatal:<br/>fitment not persisted<br/>for future Source C"]:::degraded
+
+        CSV_FAIL{"CSV generation<br/>fails"}:::failure
+        CSV_FAIL -->|"batch marked FAILED<br/>ErrorEvent emitted"| CSV_ERROR["ErrorEvent<br/>(report unavailable)"]:::terminal
+    end
+
+    %% ── Connections from entry ──
+    REQUEST --> L4
+    REQUEST --> P1F
+    REQUEST --> P2F
+    REQUEST --> P3F
+    REQUEST --> P4F
+    REQUEST --> P5F
+
+    %% ── Styles ──
+    classDef normal fill:#E3F2FD,stroke:#1565C0,stroke-width:2px,color:#000
+    classDef failure fill:#FFCDD2,stroke:#C62828,stroke-width:2px,color:#000
+    classDef retry fill:#FFF9C4,stroke:#F57F17,stroke-width:2px,color:#000
+    classDef recovery fill:#C8E6C9,stroke:#2E7D32,stroke-width:2px,color:#000
+    classDef degraded fill:#FFE0B2,stroke:#E65100,stroke-width:2px,color:#000
+    classDef terminal fill:#EF9A9A,stroke:#B71C1C,stroke-width:3px,color:#000
+    classDef hitl fill:#CE93D8,stroke:#6A1B9A,stroke-width:2px,color:#000

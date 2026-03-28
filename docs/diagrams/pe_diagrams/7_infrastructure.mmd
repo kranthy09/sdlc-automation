@@ -1,0 +1,67 @@
+---
+title: "Infrastructure — Docker Compose Stack"
+---
+graph TB
+    %% ── External ──
+    BROWSER["Browser\n:5173"]:::external
+    CLAUDE_API["Anthropic\nClaude API"]:::external
+
+    %% ── Docker Network ──
+    subgraph DOCKER["Docker Compose (dev)"]
+        direction TB
+
+        %% ── Compute ──
+        subgraph COMPUTE["Compute Services"]
+            direction LR
+            UI_SVC["ui\n(Vite dev server)\n:5173\n\nReact + TanStack"]:::compute
+            API_SVC["api\n(Uvicorn + FastAPI)\n:8000\n\n--reload on\napi/ platform/ modules/"]:::compute
+            WORKER_SVC["worker\n(Celery)\n\nSame image as api\nLangGraph executor"]:::compute
+        end
+
+        %% ── Data ──
+        subgraph DATASTORES["Data Services"]
+            direction LR
+            PG_SVC[("postgres\npgvector/pgvector:pg16\n:5432\n\nvol: pg_data\ninit: init-db.sql")]:::data
+            REDIS_SVC[("redis\nredis:7-alpine\n:6379\n\nvol: redis_data")]:::data
+            QDRANT_SVC[("qdrant\nqdrant/qdrant:latest\n:6333\n\nvol: qdrant_data")]:::data
+        end
+
+        %% ── Volumes ──
+        subgraph VOLS["Shared Volumes"]
+            direction LR
+            UPLOADS["/uploads"]:::vol
+            REPORTS["/reports"]:::vol
+        end
+    end
+
+    %% ── Startup Order ──
+    PG_SVC -.->|"depends_on\nhealthy"| API_SVC
+    REDIS_SVC -.->|"depends_on\nhealthy"| API_SVC
+    QDRANT_SVC -.->|"depends_on\nhealthy"| API_SVC
+    API_SVC -.->|"depends_on\nhealthy"| WORKER_SVC
+
+    %% ── Connections ──
+    BROWSER -->|"HTTP/WS"| UI_SVC
+    UI_SVC -->|"proxy"| API_SVC
+    API_SVC -->|"task dispatch"| REDIS_SVC
+    API_SVC -->|"read/write"| PG_SVC
+    WORKER_SVC -->|"consume tasks"| REDIS_SVC
+    WORKER_SVC -->|"publish events"| REDIS_SVC
+    WORKER_SVC -->|"read/write"| PG_SVC
+    WORKER_SVC -->|"vector search"| QDRANT_SVC
+    WORKER_SVC -->|"LLM calls"| CLAUDE_API
+    API_SVC <-->|"files"| UPLOADS
+    WORKER_SVC <-->|"files"| UPLOADS
+    WORKER_SVC -->|"reports"| REPORTS
+    API_SVC -->|"serve"| REPORTS
+
+    %% ── Styles ──
+    classDef external fill:#95A5A6,stroke:#7F8C8D,color:#fff,stroke-width:2px
+    classDef compute fill:#3498DB,stroke:#2980B9,color:#fff,stroke-width:2px
+    classDef data fill:#2ECC71,stroke:#27AE60,color:#fff,stroke-width:2px
+    classDef vol fill:#F39C12,stroke:#E67E22,color:#fff,stroke-width:2px
+
+    style DOCKER fill:none,stroke:#2C3E50,stroke-width:3px,stroke-dasharray:8
+    style COMPUTE fill:#EBF5FB,stroke:#3498DB,stroke-width:2px
+    style DATASTORES fill:#E8F8F5,stroke:#2ECC71,stroke-width:2px
+    style VOLS fill:#FDEBD0,stroke:#F39C12,stroke-width:2px

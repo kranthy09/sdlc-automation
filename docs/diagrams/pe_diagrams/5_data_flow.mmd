@@ -1,0 +1,95 @@
+---
+title: "Data Flow Diagram — What flows where"
+---
+flowchart LR
+    %% ── Sources ──
+    FILE["📄 Uploaded File\n(PDF / DOCX / TXT)"]:::input
+    KB_CAP["📚 capabilities.jsonl\n(300+ D365 features)"]:::kb
+    KB_DOC["📚 docs_lite.yaml\n(MS Learn chunks)"]:::kb
+    KB_RULES["📚 country_rules/\nglobal.yaml"]:::kb
+    HUMAN["👤 Analyst\n(HITL decisions)"]:::input
+
+    %% ── Phase 1 ──
+    subgraph P1["Phase 1 — Ingestion"]
+        direction TB
+        P1_PARSE["Parse\n(Docling)"]
+        P1_SCAN["Scan\n(G1,G3,G2)"]
+        P1_ATOM["Atomize\n(LLM)"]
+        P1_DEDUP["Deduplicate\n(cosine)"]
+        P1_PARSE --> P1_SCAN --> P1_ATOM --> P1_DEDUP
+    end
+
+    %% ── Phase 2 ──
+    subgraph P2["Phase 2 — Retrieval"]
+        direction TB
+        P2_EMBED["Embed atoms\n(bge-small)"]
+        P2_SEARCH["Hybrid search\n3 sources"]
+        P2_RERANK["Rerank\n(cross-encoder)"]
+        P2_EMBED --> P2_SEARCH --> P2_RERANK
+    end
+
+    %% ── Phase 3 ──
+    subgraph P3["Phase 3 — Matching"]
+        direction TB
+        P3_SCORE["5-signal\ncomposite score"]
+        P3_ROUTE["Route\nassignment"]
+        P3_SCORE --> P3_ROUTE
+    end
+
+    %% ── Phase 4 ──
+    subgraph P4["Phase 4 — Classification"]
+        direction TB
+        P4_LLM["LLM reasoning\n(1 or 3 calls)"]
+        P4_GUARD["Guardrails\n(G8,G9,G11)"]
+        P4_LLM --> P4_GUARD
+    end
+
+    %% ── Phase 5 ──
+    subgraph P5["Phase 5 — Validation"]
+        direction TB
+        P5_SANITY["Sanity gate\n(G10-lite)"]
+        P5_HITL["HITL review\n(if flagged)"]
+        P5_WRITE["Write results\n+ fitments"]
+        P5_SANITY --> P5_HITL --> P5_WRITE
+    end
+
+    %% ── Outputs ──
+    REPORT["📊 Excel Report\n(Fitment Matrix)"]:::output
+    PG_OUT[("PostgreSQL\nbatch_results\n+ fitments")]:::store
+    EVENTS["📡 WebSocket\nProgress Events"]:::output
+
+    %% ── Flow ──
+    FILE --> P1
+    P1 -->|"validated_atoms[]\nflagged_atoms[]\npii_map"| P2
+
+    KB_CAP -.->|"seeded into Qdrant"| P2_SEARCH
+    KB_DOC -.->|"seeded into Qdrant"| P2_SEARCH
+    KB_RULES -.->|"read at runtime"| P1_ATOM
+
+    P2 -->|"retrieval_contexts[]\n(capabilities + docs + priors)"| P3
+    P3 -->|"match_results[]\n(scores + routes)"| P4
+    P4 -->|"classifications[]\n(FIT/PARTIAL/GAP)"| P5
+
+    HUMAN -->|"override decisions"| P5_HITL
+
+    P5 --> REPORT
+    P5 --> PG_OUT
+    PG_OUT -.->|"Source C\n(future waves)"| P2_SEARCH
+
+    P1 -.-> EVENTS
+    P2 -.-> EVENTS
+    P3 -.-> EVENTS
+    P4 -.-> EVENTS
+    P5 -.-> EVENTS
+
+    %% ── Styles ──
+    classDef input fill:#3498DB,stroke:#2980B9,color:#fff,stroke-width:2px
+    classDef kb fill:#F39C12,stroke:#E67E22,color:#fff,stroke-width:2px
+    classDef output fill:#2ECC71,stroke:#27AE60,color:#fff,stroke-width:2px
+    classDef store fill:#8E44AD,stroke:#6C3483,color:#fff,stroke-width:2px
+
+    style P1 fill:#EBF5FB,stroke:#3498DB,stroke-width:2px
+    style P2 fill:#FEF9E7,stroke:#F39C12,stroke-width:2px
+    style P3 fill:#F5EEF8,stroke:#8E44AD,stroke-width:2px
+    style P4 fill:#FDEDEC,stroke:#E74C3C,stroke-width:2px
+    style P5 fill:#E8F8F5,stroke:#1ABC9C,stroke-width:2px

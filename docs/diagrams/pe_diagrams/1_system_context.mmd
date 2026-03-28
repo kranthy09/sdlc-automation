@@ -1,0 +1,35 @@
+---
+title: "Enterprise AI Platform — System Context (C4 Level 1)"
+---
+graph TB
+    %% ── Actors ──
+    CONSULTANT([🧑‍💼 ERP Consultant\nUploads requirements\nReviews flagged items]):::actor
+    ADMIN([🧑‍💻 Platform Admin\nManages batches\nMonitors pipeline]):::actor
+
+    %% ── System Boundary ──
+    subgraph SYSTEM["Enterprise AI Platform"]
+        direction TB
+        PLATFORM["REQFIT Engine\n(DynaFit Module 1)\n\n5-phase requirement\nfitment analysis\nfor D365 F&O"]:::system
+    end
+
+    %% ── External Systems ──
+    ANTHROPIC["Anthropic Claude API\n(Sonnet 4 + Haiku 4.5)\nClassification & Atomization"]:::external
+    D365KB["D365 F&O\nKnowledge Base\n(Capabilities + MS Learn)"]:::external
+    EXCEL["Excel / CSV Report\n(Fitment Matrix Output)"]:::external
+
+    %% ── Relationships ──
+    CONSULTANT -->|"Upload requirements\n(PDF/DOCX/TXT)"| PLATFORM
+    CONSULTANT -->|"Review flagged items\n(HITL decisions)"| PLATFORM
+    PLATFORM -->|"Download report"| CONSULTANT
+    ADMIN -->|"Monitor batches\n& pipeline health"| PLATFORM
+
+    PLATFORM <-->|"LLM inference\n(classification, atomization)"| ANTHROPIC
+    PLATFORM <-->|"Semantic search\n(hybrid RAG)"| D365KB
+    PLATFORM -->|"Generate\nfitment report"| EXCEL
+
+    %% ── Styles ──
+    classDef actor fill:#08427B,stroke:#052E56,color:#fff,stroke-width:2px
+    classDef system fill:#1168BD,stroke:#0B4884,color:#fff,stroke-width:2px
+    classDef external fill:#999,stroke:#6B6B6B,color:#fff,stroke-width:2px
+
+    style SYSTEM fill:none,stroke:#1168BD,stroke-width:3px,stroke-dasharray:8

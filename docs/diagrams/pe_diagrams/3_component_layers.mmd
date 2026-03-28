@@ -1,0 +1,136 @@
+---
+title: "Enterprise AI Platform — Component Diagram (C4 Level 3) — Dependency Layers"
+---
+graph TB
+    %% ════════════════════════════════════════════
+    %% LAYER 4: API
+    %% ════════════════════════════════════════════
+    subgraph L4["Layer 4 — api/"]
+        direction LR
+        ROUTES["routes/dynafit.py\n\nPOST /upload\nPOST /run\nGET /results\nGET|POST /review\nGET /report\nGET /batches"]:::api
+        WS["websocket.py\n\nWS /ws/progress/\nRedis Pub/Sub\nsubscriber"]:::api
+        WORKERS["workers.py\n\nCelery task\ndispatch +\nresume"]:::api
+    end
+
+    %% ════════════════════════════════════════════
+    %% LAYER 3: MODULES
+    %% ════════════════════════════════════════════
+    subgraph L3["Layer 3 — modules/dynafit/"]
+        direction LR
+        GRAPH["graph.py\n\nbuild_dynafit_graph()\nLangGraph state machine\n5 phase nodes +\nconditional edges"]:::module
+        GUARDRAILS_M["guardrails.py\n\nG10-lite sanity gate\nHITL checkpoint\nrouting logic"]:::module
+        PRODCFG["product_config.py\n\nProductConfig\nthresholds, weights,\nmodule list, templates"]:::module
+        SYNONYMS["header_synonyms.yaml\n\nColumn name\nmapping rules"]:::module
+    end
+
+    %% ════════════════════════════════════════════
+    %% LAYER 1: PLATFORM
+    %% ════════════════════════════════════════════
+    subgraph L1["Layer 1 — platform/"]
+        direction TB
+
+        subgraph P_LLM["llm/"]
+            LLM_CLIENT["client.py\n\nAnthropicClient\nretry, tool_use,\nstreaming"]:::platform
+        end
+
+        subgraph P_RETRIEVAL["retrieval/"]
+            EMBEDDER["embedder.py\nbge-small-en"]:::platform
+            VECTOR["vector_store.py\nQdrant client"]:::platform
+            RERANKER["reranker.py\nms-marco cross-encoder"]:::platform
+            BM25["bm25.py\nSparse vectors"]:::platform
+        end
+
+        subgraph P_PARSERS["parsers/"]
+            DOCLING["docling_parser.py\nPDF/DOCX extract"]:::platform
+            FORMAT["format_detector.py\nMagic bytes"]:::platform
+        end
+
+        subgraph P_GUARD["guardrails/"]
+            FILE_VAL["file_validator.py\nG1-lite"]:::platform
+            INJECT["injection_scanner.py\nG3-lite"]:::platform
+            PII["pii_redactor.py\nG2 Presidio"]:::platform
+            RESP_PII["response_pii_scanner.py\nG11"]:::platform
+        end
+
+        subgraph P_STORAGE["storage/"]
+            POSTGRES["postgres.py\nAsync psycopg"]:::platform
+            REDIS_PUB["redis_pub.py\nPub/Sub + hash"]:::platform
+        end
+
+        subgraph P_OBS["observability/"]
+            LOGGER["logger.py\nstructlog"]:::platform
+        end
+
+        subgraph P_SCHEMAS["schemas/"]
+            S_REQ["requirement.py"]:::platform
+            S_FIT["fitment.py"]:::platform
+            S_EVT["events.py"]:::platform
+            S_GUARD["guardrails.py"]:::platform
+            S_RET["retrieval.py"]:::platform
+            S_PROD["product.py"]:::platform
+        end
+
+        subgraph P_CONFIG["config/"]
+            SETTINGS["settings.py\nPydantic Settings"]:::platform
+        end
+    end
+
+    %% ════════════════════════════════════════════
+    %% DATA LAYER
+    %% ════════════════════════════════════════════
+    subgraph DATA["Data — knowledge_bases/d365_fo/"]
+        direction LR
+        CAPS["capabilities.jsonl\n300+ D365 features"]:::data
+        DOCS["docs_lite.yaml\nMS Learn chunks"]:::data
+        COUNTRY["country_rules/\nglobal.yaml"]:::data
+        TEMPLATES["fdd_templates/\nfit_template.j2"]:::data
+    end
+
+    %% ════════════════════════════════════════════
+    %% DEPENDENCY ARROWS  (api → modules → platform)
+    %% ════════════════════════════════════════════
+    ROUTES --> GRAPH
+    ROUTES --> WORKERS
+    WS --> REDIS_PUB
+    WORKERS --> GRAPH
+
+    GRAPH --> LLM_CLIENT
+    GRAPH --> EMBEDDER
+    GRAPH --> VECTOR
+    GRAPH --> RERANKER
+    GRAPH --> BM25
+    GRAPH --> DOCLING
+    GRAPH --> FORMAT
+    GRAPH --> FILE_VAL
+    GRAPH --> INJECT
+    GRAPH --> PII
+    GRAPH --> RESP_PII
+    GRAPH --> POSTGRES
+    GRAPH --> REDIS_PUB
+    GRAPH --> LOGGER
+    GUARDRAILS_M --> S_GUARD
+    PRODCFG --> S_PROD
+
+    VECTOR -.->|"seed-kb"| CAPS
+    VECTOR -.->|"seed-corpus"| DOCS
+    GRAPH -.->|"read"| COUNTRY
+    GRAPH -.->|"render"| TEMPLATES
+
+    %% ── Styles ──
+    classDef api fill:#E74C3C,stroke:#C0392B,color:#fff,stroke-width:2px
+    classDef module fill:#3498DB,stroke:#2980B9,color:#fff,stroke-width:2px
+    classDef platform fill:#2ECC71,stroke:#27AE60,color:#fff,stroke-width:2px
+    classDef data fill:#F39C12,stroke:#E67E22,color:#fff,stroke-width:2px
+
+    style L4 fill:#FADBD8,stroke:#E74C3C,stroke-width:2px
+    style L3 fill:#D6EAF8,stroke:#3498DB,stroke-width:2px
+    style L1 fill:#D5F5E3,stroke:#2ECC71,stroke-width:2px
+    style DATA fill:#FDEBD0,stroke:#F39C12,stroke-width:2px
+    style P_LLM fill:none,stroke:#27AE60,stroke-dasharray:4
+    style P_RETRIEVAL fill:none,stroke:#27AE60,stroke-dasharray:4
+    style P_PARSERS fill:none,stroke:#27AE60,stroke-dasharray:4
+    style P_GUARD fill:none,stroke:#27AE60,stroke-dasharray:4
+    style P_STORAGE fill:none,stroke:#27AE60,stroke-dasharray:4
+    style P_OBS fill:none,stroke:#27AE60,stroke-dasharray:4
+    style P_SCHEMAS fill:none,stroke:#27AE60,stroke-dasharray:4
+    style P_CONFIG fill:none,stroke:#27AE60,stroke-dasharray:4

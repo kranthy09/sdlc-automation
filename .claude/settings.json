@@ -8,7 +8,8 @@
       "Bash(make ci:*)",
       "Bash(uv python:*)",
       "Read(//home/kranthi/.local/bin/**)",
-      "Read(//home/kranthi/.cargo/bin/**)"
+      "Read(//home/kranthi/.cargo/bin/**)",
+      "Bash(find /home/kranthi/Projects/enterprise_ai/ui/src -type f \\\\\\(-name *.tsx -o -name *.ts \\\\\\))"
     ]
   }
 }

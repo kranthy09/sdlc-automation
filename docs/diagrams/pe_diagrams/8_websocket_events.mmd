@@ -1,0 +1,62 @@
+---
+title: "WebSocket Event Flow — Real-time Progress"
+---
+stateDiagram-v2
+    direction LR
+
+    [*] --> Connected: WS /ws/progress/{batch_id}
+
+    state "Phase 1 — Ingestion" as P1 {
+        [*] --> P1_Start: phase_start
+        P1_Start --> P1_Step: step_progress
+        P1_Step --> P1_Step: step_progress (repeated)
+        P1_Step --> P1_Done: phase_complete
+    }
+
+    state "Gate 1→2" as G1 {
+        [*] --> G1_Check: phase_gate
+        G1_Check --> G1_Pass: atoms > 0
+        G1_Check --> G1_Fail: atoms = 0
+    }
+
+    state "Phase 2 — Retrieval" as P2 {
+        [*] --> P2_Start: phase_start
+        P2_Start --> P2_Step: step_progress
+        P2_Step --> P2_Done: phase_complete
+    }
+
+    state "Phase 3 — Matching" as P3 {
+        [*] --> P3_Start: phase_start
+        P3_Start --> P3_Step: step_progress
+        P3_Step --> P3_Done: phase_complete
+    }
+
+    state "Phase 4 — Classification" as P4 {
+        [*] --> P4_Start: phase_start
+        P4_Start --> P4_Class: classification (per atom, live)
+        P4_Class --> P4_Class: classification (streamed)
+        P4_Class --> P4_Done: phase_complete
+    }
+
+    state "Phase 5 — Validation" as P5 {
+        [*] --> P5_Start: phase_start
+        P5_Start --> P5_Check: sanity gate
+        P5_Check --> P5_Review: review_required (flagged)
+        P5_Check --> P5_Final: no flags
+        P5_Review --> P5_Final: all items reviewed
+        P5_Final --> P5_Done: complete
+    }
+
+    Connected --> P1
+    P1 --> G1
+    G1 --> P2: Pass
+    G1 --> Error: Reject
+    P2 --> P3
+    P3 --> P4
+    P4 --> P5
+    P5 --> [*]: complete event
+
+    state Error {
+        [*] --> ErrorState: error event
+    }
+    Error --> [*]

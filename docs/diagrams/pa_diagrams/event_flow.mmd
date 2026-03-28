@@ -1,0 +1,156 @@
+%% Enterprise AI — Event & Message Flow
+%% What: All async communication paths (Redis pub/sub, WebSocket, Celery)
+%% Where: Between API, workers, graph, and client
+%% Why: Shows how progress is tracked, replayed, and persisted across disconnects
+
+sequenceDiagram
+    autonumber
+    participant UI as React SPA
+    participant API as FastAPI
+    participant CEL as Celery Worker
+    participant GRAPH as LangGraph Pipeline
+    participant REDIS as Redis
+    participant PG as PostgreSQL
+    participant WS as WebSocket Handler
+    participant CLAUDE as Claude API
+
+    Note over UI,CLAUDE: ═══ Upload & Dispatch ═══
+
+    UI->>+API: POST /upload (multipart file)
+    API->>API: G1-lite: magic bytes + size check
+    API->>PG: INSERT uploads (upload_id, filename, sha256)
+    API-->>-UI: {upload_id, format, filename}
+
+    UI->>+API: POST /run {upload_id, config_overrides}
+    API->>PG: INSERT batches (batch_id, status=QUEUED)
+    API->>CEL: celery.send_task(run_dynafit_pipeline)
+    API-->>-UI: {batch_id, ws_url, status: "queued"}
+
+    UI->>+WS: WS connect /ws/progress/{batch_id}
+    WS->>REDIS: HGETALL batch:{batch_id}
+    WS-->>UI: replay persisted phase states (catch-up)
+    WS->>REDIS: SUBSCRIBE progress:{batch_id}
+
+    Note over UI,CLAUDE: ═══ Phase 1: Ingestion ═══
+
+    CEL->>+GRAPH: graph.invoke(initial_state)
+    GRAPH->>REDIS: PUB PhaseStartEvent{phase=1, name="ingestion"}
+    REDIS->>WS: forward event
+    WS-->>UI: {"type": "phase_start", "phase": 1}
+    REDIS->>REDIS: HSET batch:{batch_id} phases.1.started
+
+    GRAPH->>GRAPH: Parse → G3 → G2 → Atomize
+    GRAPH->>CLAUDE: atomization LLM call
+    CLAUDE-->>GRAPH: atoms[]
+
+    loop For each progress chunk
+        GRAPH->>REDIS: PUB StepProgressEvent{step, completed, total}
+        REDIS->>WS: forward
+        WS-->>UI: {"type": "step_progress", "pct": 45}
+    end
+
+    GRAPH->>PG: Checkpoint (full state after Phase 1)
+    GRAPH->>REDIS: PUB PhaseCompleteEvent{atoms_produced, atoms_validated, atoms_flagged}
+    REDIS->>REDIS: HSET batch:{batch_id} phases.1.complete
+
+    Note over UI,CLAUDE: ═══ Phase 2–3: Retrieval + Matching ═══
+
+    GRAPH->>REDIS: PUB PhaseStartEvent{phase=2, name="retrieval"}
+    Note right of GRAPH: Parallel 3-source retrieval<br/>(Qdrant + Docs + pgvector)<br/>asyncio.Semaphore(12)
+
+    loop Per atom batch
+        GRAPH->>REDIS: PUB StepProgressEvent
+        REDIS->>WS: forward
+        WS-->>UI: progress update
+    end
+
+    GRAPH->>PG: Checkpoint (state after Phase 2)
+    GRAPH->>REDIS: PUB PhaseCompleteEvent{phase=2}
+
+    GRAPH->>REDIS: PUB PhaseStartEvent{phase=3, name="matching"}
+    Note right of GRAPH: Pure compute: numpy + rapidfuzz<br/>No LLM calls, no infra calls
+    GRAPH->>PG: Checkpoint (state after Phase 3)
+    GRAPH->>REDIS: PUB PhaseCompleteEvent{phase=3}
+
+    Note over UI,CLAUDE: ═══ Phase 4: Classification ═══
+
+    GRAPH->>REDIS: PUB PhaseStartEvent{phase=4, name="classification"}
+
+    par Parallel LLM calls (ThreadPool, max_workers=10)
+        GRAPH->>CLAUDE: FAST_TRACK (1 call, T=0.0)
+        CLAUDE-->>GRAPH: tool-use response
+    and
+        GRAPH->>CLAUDE: DEEP_REASON call 1 (T=0.3)
+        GRAPH->>CLAUDE: DEEP_REASON call 2 (T=0.3)
+        GRAPH->>CLAUDE: DEEP_REASON call 3 (T=0.3)
+        CLAUDE-->>GRAPH: majority vote
+    and
+        GRAPH->>CLAUDE: GAP_CONFIRM (1 call, T=0.0)
+        CLAUDE-->>GRAPH: tool-use response
+    end
+
+    loop Per classified atom
+        GRAPH->>REDIS: PUB ClassificationEvent{atom_id, verdict, confidence}
+        REDIS->>WS: forward
+        WS-->>UI: live classification result
+    end
+
+    GRAPH->>PG: Checkpoint (state after Phase 4)
+    GRAPH->>REDIS: PUB PhaseCompleteEvent{phase=4}
+
+    Note over UI,CLAUDE: ═══ Phase 5A: Sanity Gate + HITL Decision ═══
+
+    GRAPH->>REDIS: PUB PhaseStartEvent{phase=5, name="validation"}
+    GRAPH->>GRAPH: G10-lite sanity checks + confidence filter + anomaly flags
+
+    alt Flagged items exist
+        GRAPH->>REDIS: PUB ReviewRequiredEvent{flagged_count, flagged_atom_ids}
+        REDIS->>WS: forward
+        WS-->>UI: {"type": "review_required", "count": 7}
+        GRAPH->>PG: Checkpoint (interrupt state — graph frozen)
+        GRAPH-->>CEL: status="interrupted"
+        CEL->>REDIS: PUB PhaseCompleteEvent{phase=5, status="awaiting_review"}
+
+        Note over UI,CLAUDE: ═══ Human Review Loop ═══
+
+        UI->>+API: GET /review (fetch flagged queue)
+        API->>PG: SELECT flagged atoms + evidence
+        API-->>-UI: flagged_items[] with ai_classification, rationale, evidence
+
+        loop For each flagged atom
+            UI->>+API: POST /review/{atom_id} {decision: APPROVE|OVERRIDE}
+            API->>PG: INSERT review_items
+            API-->>-UI: {final_classification, remaining: N}
+        end
+
+        UI->>+API: POST /review/complete
+        API->>CEL: celery.send_task(resume, overrides_dict)
+        API-->>-UI: {status: "resuming"}
+
+        Note over UI,CLAUDE: ═══ Phase 5B: Merge + Report (Resumed) ═══
+
+        CEL->>+GRAPH: graph.invoke(Command(resume=overrides))
+        Note right of GRAPH: Resumes from exact checkpoint
+    else No flagged items
+        Note right of GRAPH: Skip interrupt, proceed directly
+    end
+
+    GRAPH->>GRAPH: Merge overrides → Build batch → Write CSVs
+    GRAPH->>PG: Write fitments + pgvector embeddings (for future Source C)
+
+    GRAPH->>REDIS: PUB CompleteEvent{fit_count, gap_count, report_url}
+    REDIS->>REDIS: HSET batch:{batch_id} status=complete
+    REDIS->>WS: forward terminal event
+    WS-->>UI: {"type": "complete", "report_url": "..."}
+    WS->>WS: close WebSocket
+
+    GRAPH-->>-CEL: final state
+    CEL->>PG: UPDATE batches SET status=COMPLETE
+
+    Note over UI,CLAUDE: ═══ Reconnect Scenario ═══
+
+    UI->>+WS: WS reconnect /ws/progress/{batch_id}
+    WS->>REDIS: HGETALL batch:{batch_id}
+    WS-->>UI: replay all persisted phases (full catch-up)
+    WS->>REDIS: SUBSCRIBE progress:{batch_id}
+    Note right of WS: Client sees complete history<br/>even after disconnect
