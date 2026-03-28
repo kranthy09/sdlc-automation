@@ -134,10 +134,13 @@ No manual logging needed.
 
 ## Libraries
 
-- **fastembed** — Embeddings (uses ONNX, no PyTorch)
+**IMPORTANT: Use fastembed only. Never add sentence-transformers.**
+
+- **fastembed** ✅ — Embeddings + cross-encoder reranking (ONNX, ~50 MB)
 - **qdrant-client** — Vector store
 - **rank-bm25** — BM25 ranking
-- **sentence-transformers** — Cross-encoder reranking
+
+**Why:** sentence-transformers depends on PyTorch (~500 MB), 9x larger Docker, slower builds. fastembed uses ONNX with identical output quality. See [DECISIONS.md](../../DECISIONS.md#embedding-library-fastembed-only).
 
 See `platform/retrieval/__init__.py`.
 

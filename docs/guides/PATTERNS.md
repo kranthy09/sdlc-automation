@@ -2,6 +2,8 @@
 
 Use these patterns when adding new features or nodes.
 
+**Before you start:** Read [DEVELOPMENT_RULES.md](../DEVELOPMENT_RULES.md) — confirm scope, one component per session.
+
 ---
 
 ## Building a Phase Node

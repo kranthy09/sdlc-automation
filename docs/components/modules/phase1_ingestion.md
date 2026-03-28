@@ -62,7 +62,9 @@ class RequirementAtom(BaseModel):
 | DOCX | Docling | Same as PDF |
 | TXT | Docling | Plain text split by paragraphs |
 
-Unsupported formats → `UnsupportedFormatError` (quarantined).
+**Not supported:** Excel (.xlsx), standalone ZIP archives → `UnsupportedFormatError` (quarantined)
+
+**Why:** All real-world requirement docs are PDF/DOCX/TXT. Docling handles them natively. Excel parsing adds complexity with no additional coverage. See [DECISIONS.md](../../DECISIONS.md#supported-document-formats).
 
 ## Implementation Pattern
 

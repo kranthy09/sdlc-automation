@@ -9,6 +9,8 @@
 | I need to...                        | Read                                          |
 |-------------------------------------|-----------------------------------------------|
 | Start coding                        | [SETUP.md](guides/SETUP.md)                   |
+| Understand build discipline         | [DEVELOPMENT_RULES.md](DEVELOPMENT_RULES.md) |
+| Learn why we chose X over Y         | [DECISIONS.md](DECISIONS.md)                  |
 | Understand a component              | [Components](#components) below               |
 | Learn patterns for building code    | [PATTERNS.md](guides/PATTERNS.md)             |
 | Look up a term                      | [GLOSSARY.md](reference/GLOSSARY.md)          |
@@ -61,9 +63,12 @@
 
 Why certain choices were made. Read when understanding architecture.
 
-- **Supported formats:** PDF, DOCX, TXT only. No Excel/ZIP. [See memory](../.claude/projects/-home-kranthi-Projects-enterprise-ai/memory/project_supported_formats.md)
-- **Embedding library:** fastembed (ONNX), not sentence-transformers. [See memory](../.claude/projects/-home-kranthi-Projects-enterprise-ai/memory/project_fastembed_rule.md)
-- **Guardrails in MVP:** 7 of 14 guardrails. [See memory](../.claude/projects/-home-kranthi-Projects-enterprise-ai/memory/project_guardrails_plan.md)
+All decisions documented in [DECISIONS.md](DECISIONS.md):
+- **Supported formats:** PDF, DOCX, TXT only. No Excel/ZIP.
+- **Embedding library:** fastembed (ONNX), not sentence-transformers.
+- **MVP Guardrails:** 7 of 14 guardrails in MVP, 7 deferred to post-MVP.
+- **HITL:** Human-in-the-loop at Phase 5 is mandatory.
+- **Phases:** 5 sequential phases with checkpoints.
 
 ---
 
