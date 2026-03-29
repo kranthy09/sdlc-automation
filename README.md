@@ -1,22 +1,29 @@
-# AI Platform
+# Enterprise AI Platform
 
-An AI agent platform for automating ERP implementation workflows.
-Built as a layered monorepo — platform infrastructure first, product modules on top.
+AI agent platform for automating ERP implementation workflows. **Module 1: REQFIT** — Requirement Fitment Engine for Microsoft D365 F&O — is complete across all 4 layers.
 
-## **Module 1: REQFIT** — Requirement Fitment Engine for Microsoft D365 F&O.
+## What is REQFIT?
 
-## Architecture
+5-phase pipeline that converts D365 requirements into validated fitment recommendations with human review:
+1. **Ingestion** — Parse requirements from PDF/DOCX/TXT
+2. **RAG** — Retrieve matching D365 capabilities from MS Learn
+3. **Matching** — Identify fitness gaps and alternatives
+4. **Classification** — Categorize requirements (standard, customization, third-party)
+5. **Validation** — Human-in-the-loop review, guardrails enforcement
+
+See [system_architecture.mmd](docs/diagrams/pa_diagrams/system_architecture.mmd) | [langraph_pipeline.mmd](docs/diagrams/pa_diagrams/langraph_pipeline.mmd) | [hitl_flow.mmd](docs/diagrams/pa_diagrams/hitl_flow.mmd)
+
+## Layered Architecture
 
 ```
-api/                    Layer 4 — FastAPI + Celery + WebSocket (thin dispatchers only)
-modules/dynafit/        Layer 3 — REQFIT business module (D365 fitment)
-agents/                 Layer 2 — Reusable LangGraph nodes (ingestion, RAG, classifier, validator)
-platform/               Layer 1 — Shared infrastructure (LLM, retrieval, parsers, storage, observability)
-knowledge_bases/        Product data — YAML + JSONL only, no Python
+api/                Layer 4 → FastAPI + Celery + WebSocket
+modules/dynafit/    Layer 3 → REQFIT phases (Phase 1–5)
+agents/             Layer 2 → Reusable LangGraph nodes
+platform/           Layer 1 → LLM, retrieval, parsers, storage, observability
+knowledge_bases/    Product data (YAML + JSONL only, no Python)
 ```
 
-**Dependency rule:** `api → modules → agents → platform`. Never sideways, never downward.
-Import boundaries are enforced by CI on every PR — violations block merges.
+**Dependency rule:** `api → modules → agents → platform`. Never sideways. CI enforces on every PR.
 
 ---
 
@@ -78,93 +85,38 @@ source ~/.bashrc
 
 ---
 
-## Developer Setup
+## Quick Start
 
 ```bash
-# 1. Clone
-git clone <repo-url>
-cd enterprise_ai
-
-# 2. Create virtual environment and install all dependencies
-uv venv --python 3.12
-uv sync --all-extras
-
-# 3. Activate the project venv
+# Setup (one time)
+git clone <repo-url> && cd enterprise_ai
+uv venv --python 3.12 && uv sync --all-extras
 source .venv/bin/activate
-
-# 4. Copy env and set your API key
-cp .env.example .env
-# Edit .env — set ANTHROPIC_API_KEY at minimum
-
-# 5. Install pre-commit hooks and spacy model
+cp .env.example .env  # Set ANTHROPIC_API_KEY
 make setup
+
+# Daily workflow
+make dev              # Start Qdrant, Postgres, Redis, Prometheus
+make test-unit        # Fast tests, no Docker
+make lint && make validate-contracts
+make run              # FastAPI :8000
+make ui               # Vite :3000
 ```
 
----
+See [SETUP.md](docs/guides/SETUP.md) for detailed setup instructions.
 
-## Daily Developer Flow
+## Essential Make Commands
 
 ```bash
-# Enter project (each new terminal session)
-cd ~/Projects/enterprise_ai
-source .venv/bin/activate
-
-# Start infrastructure (Qdrant, Postgres, Redis, Prometheus, Grafana)
-make dev
-
-# Run fast unit tests — no Docker required
-make test-unit
-
-# Run all tests — requires make dev
-make test
-
-# Full CI gate before committing (lint + contracts + test)
-make ci
-
-# Format code
-make format
-
-# Stop infrastructure
-make dev-down
+make dev              # Start infrastructure
+make test             # All tests with coverage
+make lint             # ruff + mypy --strict
+make validate-contracts  # Import boundaries, manifest validation
+make ci               # Full gate: lint + contracts + test
+make seed-kb PRODUCT=d365_fo  # Load KB into Qdrant
 ```
 
----
-
-## All Make Commands
-
-```bash
-# Setup
-make setup                        # uv sync + pre-commit install + spacy model
-
-# Testing
-make test                         # all tests with coverage
-make test-unit                    # fast, no Docker
-make test-integration             # requires Docker services
-make test-module M=dynafit        # single module in isolation
-make test-golden                  # golden fixture replay, no live LLM
-
-# Quality
-make lint                         # ruff + mypy --strict
-make format                       # ruff auto-fix + format
-make validate-contracts           # import boundary + manifest validation
-
-# Infrastructure
-make dev                          # docker compose up (all services)
-make dev-down                     # docker compose down
-make dev-logs                     # tail all service logs
-make dev-ps                       # service status
-
-# Knowledge base
-make seed-kb PRODUCT=d365_fo      # embed capabilities into Qdrant
-make seed-corpus PRODUCT=d365_fo  # crawl MS Learn docs into Qdrant (~45 min first run)
-
-# Run
-make run                          # FastAPI dev server on :8000
-make ui                           # Vite dev server on :3000
-
-# CI gate
-make ci                           # lint + validate-contracts + test
-```
+Full reference: run `make help` or see [Makefile](Makefile).
 
 ---
 
@@ -222,23 +174,24 @@ All three must pass on every PR. Live LLM calls are never in CI — all LLM test
 
 ## Key Constraints
 
-- `platform/` has zero knowledge of any product — no model names, no thresholds, no KB namespaces hardcoded
-- Every layer boundary uses Pydantic v2 typed schemas — no free-text parsing
-- All LLM prompt templates are Jinja2 files — no f-strings or string concatenation
-- Retry logic lives exclusively in `platform/llm/client.py` — never duplicated in nodes
-- Metrics and structured logging are added when writing a component, never as an afterthought
-- New module onboarding requires zero Python changes to `platform/`, `agents/`, or `api/`
+- **Platform isolation:** `platform/` has zero knowledge of any product — no model names, thresholds, or KB namespaces hardcoded
+- **Schema boundaries:** Every layer uses Pydantic v2 typed schemas at borders — no free-text parsing
+- **Prompt templates:** All LLM prompts are Jinja2 files — no f-strings or concatenation
+- **Retry logic:** Centralized in `platform/llm/client.py` — never duplicated
+- **Observability:** Metrics and structured logging added on first write, never retrofitted
+- **Module isolation:** New products require zero changes to `platform/`, `agents/`, or `api/`
 
 ---
 
-## Docs
+## Documentation
 
-| File                       | Purpose                                                     |
-| -------------------------- | ----------------------------------------------------------- |
-| `CLAUDE.md`                | Project pointer — build order, dependency rule, doc index   |
-| `docs/specs/rules.md`      | Architecture, import boundaries, code standards, lessons    |
-| `docs/specs/dynafit.md`    | REQFIT 5-phase algorithms, prompts, thresholds, library map |
-| `docs/specs/api.md`        | API endpoints, WebSocket protocol, DB schema, React UI      |
-| `docs/specs/guardrails.md` | MVP guardrails (7 active) + post-MVP roadmap (7 deferred)   |
-| `docs/specs/tdd.md`        | Testing philosophy, golden fixtures, build order            |
-| `docs/architecturalflows/` | SVG architecture diagrams                                   |
+| Guide | Purpose |
+|-------|---------|
+| [INDEX.md](docs/INDEX.md) | Navigation — start here for any component |
+| [DEVELOPMENT_RULES.md](docs/DEVELOPMENT_RULES.md) | Build discipline: one component per session, no unrequested features |
+| [DECISIONS.md](docs/DECISIONS.md) | Why we chose X over Y (PDF only, embedding library, MVP guardrails, etc.) |
+| [docs/specs/rules.md](docs/specs/rules.md) | Import boundaries, code standards, CI gates |
+| [docs/specs/dynafit_phases.md](docs/specs/dynafit_phases.md) | REQFIT 5 phases: algorithms, prompts, thresholds |
+| [docs/specs/guardrails.md](docs/specs/guardrails.md) | MVP guardrails (7 active) + post-MVP roadmap |
+| [docs/guides/PATTERNS.md](docs/guides/PATTERNS.md) | Code patterns: nodes, retries, observability, testing |
+| [docs/reference/GLOSSARY.md](docs/reference/GLOSSARY.md) | Terminology: fitment, capability, guardrail, etc. |
