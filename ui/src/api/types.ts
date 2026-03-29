@@ -115,6 +115,7 @@ export interface ReviewItemEvidence {
   capabilities: Capability[]
   prior_fitments: Array<{ wave: number; country: string; classification: Classification }>
   anomaly_flags: string[]
+  ms_learn_refs: Array<{ title: string; score: number }>
 }
 
 export interface ReviewItem {
@@ -148,6 +149,7 @@ export interface AutoApprovedItem {
   gap_description: string | null
   gap_type: string | null
   dev_effort: 'S' | 'M' | 'L' | null
+  evidence?: ReviewItemEvidence
 }
 
 export interface ReviewResponse {

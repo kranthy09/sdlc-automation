@@ -78,6 +78,25 @@ function AutoApprovedRow({ item }: { item: AutoApprovedItem }) {
                 </div>
               )}
 
+              {/* MS Learn References */}
+              {item.evidence && (item.evidence.ms_learn_refs?.length ?? 0) > 0 && (
+                <div>
+                  <p className="text-xs font-medium uppercase tracking-wide text-text-muted mb-2">
+                    MS Learn references
+                  </p>
+                  <div className="space-y-1.5">
+                    {item.evidence.ms_learn_refs.map((ref, i) => (
+                      <div key={i} className="flex items-center justify-between">
+                        <p className="text-sm text-text-primary">{ref.title}</p>
+                        <span className="text-sm font-semibold text-text-secondary">
+                          {formatConfidence(ref.score)}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {/* PARTIAL_FIT: Configuration steps — always render the block so missing data is explicit */}
               {item.classification === 'PARTIAL_FIT' && (
                 <div className="rounded-lg border border-partial/20 bg-partial-muted/10 p-3">

@@ -414,6 +414,17 @@ def build_hitl_data(
                         )
                     ],
                     "anomaly_flags": anomaly_flags,
+                    "ms_learn_refs": [
+                        {
+                            "title": ref.title,
+                            "score": ref.score,
+                        }
+                        for ref in (
+                            ctx.ms_learn_refs[:3]
+                            if ctx
+                            else []
+                        )
+                    ],
                 },
             }
         )
@@ -435,6 +446,7 @@ def build_hitl_data(
             continue
 
         mr = match_by_atom.get(c.atom_id)
+        ctx = context_by_atom.get(c.atom_id)
         d365_navigation = (
             mr.ranked_capabilities[0].navigation
             if mr and mr.ranked_capabilities
@@ -460,6 +472,46 @@ def build_hitl_data(
                 "gap_description": c.gap_description,
                 "gap_type": c.gap_type,
                 "dev_effort": c.dev_effort,
+                "evidence": {
+                    "capabilities": [
+                        {
+                            "name": cap.feature,
+                            "score": cap.composite_score,
+                            "navigation": cap.navigation,
+                        }
+                        for cap in (
+                            mr.ranked_capabilities[:3]
+                            if mr
+                            else []
+                        )
+                    ],
+                    "prior_fitments": [
+                        {
+                            "wave": pf.wave,
+                            "country": pf.country,
+                            "classification": (
+                                pf.classification
+                            ),
+                        }
+                        for pf in (
+                            ctx.prior_fitments
+                            if ctx
+                            else []
+                        )
+                    ],
+                    "anomaly_flags": [],
+                    "ms_learn_refs": [
+                        {
+                            "title": ref.title,
+                            "score": ref.score,
+                        }
+                        for ref in (
+                            ctx.ms_learn_refs[:3]
+                            if ctx
+                            else []
+                        )
+                    ],
+                },
             }
         )
 

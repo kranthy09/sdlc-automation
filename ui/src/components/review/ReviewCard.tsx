@@ -222,6 +222,25 @@ export function ReviewCard({ item, submitting, selected, onToggleSelect, onDecid
               </div>
             )}
 
+            {/* MS Learn References */}
+            {(item.evidence?.ms_learn_refs?.length ?? 0) > 0 && (
+              <div>
+                <p className="mb-2 text-xs font-medium uppercase tracking-wide text-text-muted">
+                  MS Learn references
+                </p>
+                <div className="space-y-1.5">
+                  {item.evidence.ms_learn_refs.map((ref, i) => (
+                    <div key={i} className="flex items-center justify-between">
+                      <p className="text-sm text-text-primary">{ref.title}</p>
+                      <span className="text-sm font-semibold text-text-secondary">
+                        {formatConfidence(ref.score)}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {/* Anomaly flags */}
             {(item.evidence?.anomaly_flags?.length ?? 0) > 0 && (
               <div>
