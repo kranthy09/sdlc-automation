@@ -46,19 +46,33 @@ export function PhaseLatencyChart({ phases }: PhaseLatencyChartProps) {
           layout="vertical"
           margin={{ top: 20, right: 30, left: 120, bottom: 20 }}
         >
-          <CartesianGrid strokeDasharray="3 3" stroke="var(--color-bg-border)" />
-          <XAxis type="number" stroke="var(--color-text-muted)" style={{ fontSize: '12px' }} />
-          <YAxis dataKey="name" type="category" stroke="var(--color-text-muted)" style={{ fontSize: '12px' }} />
+          <CartesianGrid strokeDasharray="3 3" stroke="#334155" vertical={false} />
+          <XAxis
+            type="number"
+            tick={{ fill: '#e2e8f0', fontSize: 12 }}
+            axisLine={false}
+            tickLine={false}
+          />
+          <YAxis
+            dataKey="name"
+            type="category"
+            tick={{ fill: '#e2e8f0', fontSize: 12 }}
+            axisLine={false}
+            tickLine={false}
+          />
           <Tooltip
             contentStyle={{
-              backgroundColor: 'var(--color-bg-surface)',
-              border: '1px solid var(--color-bg-border)',
+              backgroundColor: '#0f172a',
+              border: '1px solid #334155',
               borderRadius: '8px',
+              fontSize: 12,
             }}
-            labelStyle={{ color: 'var(--color-text-primary)' }}
+            labelStyle={{ color: '#e2e8f0', fontWeight: 'bold' }}
+            itemStyle={{ color: '#e2e8f0' }}
+            cursor={{ fill: '#1e293b' }}
             formatter={(value: number) => formatTime(value)}
           />
-          <Bar dataKey="latency" fill="var(--color-accent)" name="Duration (seconds)" />
+          <Bar dataKey="latency" fill="#3b82f6" name="Duration (seconds)" radius={[0, 3, 3, 0]} />
         </BarChart>
       </ResponsiveContainer>
     </div>

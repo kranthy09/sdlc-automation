@@ -345,19 +345,23 @@ class IngestionNode:
         # Dispatched concurrently — presidio AnalyzerEngine singleton is thread-safe.
         from concurrent.futures import ThreadPoolExecutor  # noqa: PLC0415
 
-        def _redact_one(args: tuple[int, str, str]) -> tuple[str, str, dict[str, str]]:
+        def _redact_one(args: tuple[int, str, str]) -> tuple[str, str, dict[str, str], list[Any]]:
             idx, text, source_ref = args
             result = redact_pii(text, prefix=f"T{idx}_")
-            return result.redacted_text, source_ref, result.redaction_map
+            return result.redacted_text, source_ref, result.redaction_map, result.entities_found
 
         combined_redaction_map: dict[str, str] = {}
         redacted_texts: list[tuple[str, str]] = []
+        pii_entities_by_source_ref: dict[str, list[Any]] = {}
         _pii_args = [(i, t, r) for i, (t, r) in enumerate(raw_texts)]
         max_pii_workers = min(len(_pii_args), 4)
         with ThreadPoolExecutor(max_workers=max_pii_workers) as _pool:
-            for _redacted_text, _source_ref, _rmap in _pool.map(_redact_one, _pii_args):
+            for _redacted_text, _source_ref, _rmap, _entities in _pool.map(_redact_one, _pii_args):
                 redacted_texts.append((_redacted_text, _source_ref))
                 combined_redaction_map.update(_rmap)
+                # Store entities by source_ref for later attachment to atoms
+                if _entities:
+                    pii_entities_by_source_ref[_source_ref] = _entities
 
         if combined_redaction_map:
             log.info(
@@ -395,6 +399,7 @@ class IngestionNode:
             unique,
             duplicates,
             upload,
+            pii_entities_by_source_ref=pii_entities_by_source_ref,
         )
         publish_step_progress(
             batch_id,

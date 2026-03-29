@@ -44,30 +44,52 @@ export function ConfidenceHistogram({ results }: ConfidenceHistogramProps) {
   }
 
   const colorMap: Record<Classification, string> = {
-    FIT: '#22c55e',
-    PARTIAL_FIT: '#f59e0b',
-    GAP: '#ef4444',
+    FIT: '#10b981',      // emerald-500
+    PARTIAL_FIT: '#f59e0b', // amber-500
+    GAP: '#ef4444',      // red-500
   }
 
   return (
     <div className="w-full h-80">
       <ResponsiveContainer width="100%" height="100%">
         <BarChart data={bins} margin={{ top: 20, right: 30, left: 0, bottom: 20 }}>
-          <CartesianGrid strokeDasharray="3 3" stroke="var(--color-bg-border)" />
-          <XAxis dataKey="bin" stroke="var(--color-text-muted)" style={{ fontSize: '12px' }} />
-          <YAxis stroke="var(--color-text-muted)" style={{ fontSize: '12px' }} />
+          <CartesianGrid strokeDasharray="3 3" stroke="#334155" vertical={false} />
+          <XAxis
+            dataKey="bin"
+            tick={{ fill: '#e2e8f0', fontSize: 12 }}
+            axisLine={false}
+            tickLine={false}
+          />
+          <YAxis
+            tick={{ fill: '#e2e8f0', fontSize: 12 }}
+            axisLine={false}
+            tickLine={false}
+          />
           <Tooltip
             contentStyle={{
-              backgroundColor: 'var(--color-bg-surface)',
-              border: '1px solid var(--color-bg-border)',
+              backgroundColor: '#0f172a',
+              border: '1px solid #334155',
               borderRadius: '8px',
+              fontSize: 12,
             }}
-            labelStyle={{ color: 'var(--color-text-primary)' }}
+            labelStyle={{ color: '#e2e8f0', fontWeight: 'bold' }}
+            formatter={(value: number) => value.toString()}
+            itemStyle={{ color: '#e2e8f0' }}
+            cursor={{ fill: '#1e293b' }}
           />
-          <Legend wrapperStyle={{ paddingTop: '20px' }} />
-          <Bar dataKey="FIT" fill={colorMap.FIT} name="Fit" />
-          <Bar dataKey="PARTIAL_FIT" fill={colorMap.PARTIAL_FIT} name="Partial Fit" />
-          <Bar dataKey="GAP" fill={colorMap.GAP} name="Gap" />
+          <Legend
+            wrapperStyle={{ paddingTop: '20px' }}
+            formatter={(value) => (
+              <span style={{ color: '#e2e8f0', fontSize: 12 }}>
+                {value === 'FIT' ? 'Fit' : value === 'PARTIAL_FIT' ? 'Partial Fit' : 'Gap'}
+              </span>
+            )}
+            iconType="circle"
+            iconSize={8}
+          />
+          <Bar dataKey="FIT" fill={colorMap.FIT} name="FIT" radius={[3, 3, 0, 0]} />
+          <Bar dataKey="PARTIAL_FIT" fill={colorMap.PARTIAL_FIT} name="PARTIAL_FIT" radius={[3, 3, 0, 0]} />
+          <Bar dataKey="GAP" fill={colorMap.GAP} name="GAP" radius={[3, 3, 0, 0]} />
         </BarChart>
       </ResponsiveContainer>
     </div>

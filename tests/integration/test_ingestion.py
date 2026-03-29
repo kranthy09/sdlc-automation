@@ -295,3 +295,106 @@ def test_ingestion_node_function_is_callable_with_state() -> None:
 
     # Cleanup singleton so other tests get a fresh instance
     ingestion_mod._node = None
+
+
+# ---------------------------------------------------------------------------
+# G2: PII redaction — track entities per atom
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+def test_pii_entities_tracked_in_validated_atoms() -> None:
+    """Requirements with PII should have pii_entities populated in ValidatedAtom."""
+    from modules.dynafit.nodes.ingestion import IngestionNode
+    from platform.parsers.docling_parser import ParseResult, ProseChunk
+
+    # Text with PII: email address
+    req_text = "The system must validate invoices from john.doe@company.com with automated matching."
+    mock_parser = MagicMock()
+    mock_parser.parse.return_value = ParseResult(
+        tables=[],
+        prose=[ProseChunk(text=req_text, section="", page=1,
+                          char_offset=0, has_overlap=False)],
+    )
+    llm = make_llm_client(
+        _batch_atomize_response(
+            [[{"text": req_text, "intent": "FUNCTIONAL", "module": "AccountsPayable"}]])
+    )
+
+    node = IngestionNode(
+        llm_client=llm,
+        parser=mock_parser,
+        embedder=make_embedder(),
+    )
+    state = {
+        "upload": make_raw_upload(
+            filename="requirements.txt",
+            file_bytes=req_text.encode(),
+            country="US",
+        ),
+        "batch_id": "test-pii-001",
+        "errors": [],
+    }
+    result = node(state)
+
+    # Should produce at least one validated atom
+    assert len(result["validated_atoms"]) >= 1
+    atom = result["validated_atoms"][0]
+
+    # PII should be detected and tracked
+    assert hasattr(atom, "pii_entities"), "ValidatedAtom must have pii_entities field"
+    assert len(atom.pii_entities) > 0, "Should detect email address as PII"
+
+    # Check PII entity structure
+    pii_entity = atom.pii_entities[0]
+    assert hasattr(pii_entity, "entity_type")
+    assert hasattr(pii_entity, "score")
+    assert hasattr(pii_entity, "placeholder")
+    assert pii_entity.entity_type == "EMAIL_ADDRESS"
+    assert 0.0 <= pii_entity.score <= 1.0
+    assert "<PII_" in pii_entity.placeholder
+
+    # Requirement text should be redacted (no original email visible)
+    assert "john.doe@company.com" not in atom.requirement_text
+    assert pii_entity.placeholder in atom.requirement_text
+
+
+@pytest.mark.unit
+def test_pii_redaction_map_stored_in_state() -> None:
+    """PII redaction map should be available in state for Phase 5 restoration."""
+    from modules.dynafit.nodes.ingestion import IngestionNode
+    from platform.parsers.docling_parser import ParseResult, ProseChunk
+
+    req_text = "Contact john.smith@example.com for details or call 555-123-4567."
+    mock_parser = MagicMock()
+    mock_parser.parse.return_value = ParseResult(
+        tables=[],
+        prose=[ProseChunk(text=req_text, section="", page=1,
+                          char_offset=0, has_overlap=False)],
+    )
+    llm = make_llm_client(
+        _batch_atomize_response(
+            [[{"text": req_text, "intent": "FUNCTIONAL", "module": "AccountsPayable"}]])
+    )
+
+    node = IngestionNode(
+        llm_client=llm,
+        parser=mock_parser,
+        embedder=make_embedder(),
+    )
+    state = {
+        "upload": make_raw_upload(filename="requirements.txt", file_bytes=req_text.encode()),
+        "batch_id": "test-pii-002",
+        "errors": [],
+    }
+    result = node(state)
+
+    # pii_redaction_map should be stored in result for DynafitState
+    assert "pii_redaction_map" in result, "pii_redaction_map must be in result"
+    pii_map = result["pii_redaction_map"]
+    assert isinstance(pii_map, dict)
+    assert len(pii_map) > 0, "Should have redacted PII entries"
+
+    # Map should contain original values as values
+    values = list(pii_map.values())
+    assert any("john.smith@example.com" in str(v) for v in values), "Email should be in map"

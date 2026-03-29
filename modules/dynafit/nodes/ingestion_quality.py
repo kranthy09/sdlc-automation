@@ -353,6 +353,7 @@ def _apply_quality_gates(
     unique: list[_ClassifiedRequirement],
     potential_duplicates: list[_ClassifiedRequirement],
     upload: RawUpload,
+    pii_entities_by_source_ref: dict[str, list[Any]] | None = None,
 ) -> tuple[list[ValidatedAtom], list[FlaggedAtom]]:
     """Apply all Phase 1 quality gates and produce validated / flagged atom lists.
 
@@ -367,9 +368,19 @@ def _apply_quality_gates(
     Tokenization: each atom is tokenized exactly once via _tokenize_text().
     The resulting _TextTokens is shared across all four scorers, eliminating
     redundant re.findall / .lower() work from the hot per-atom loop.
+
+    Args:
+        unique: List of unique classified requirements
+        potential_duplicates: List of potential duplicates
+        upload: RawUpload metadata
+        pii_entities_by_source_ref: Map of source_ref → list of PIIEntity detected in that text
     """
     validated: list[ValidatedAtom] = []
     flagged: list[FlaggedAtom] = []
+
+    # Initialize PII entities map if not provided
+    if pii_entities_by_source_ref is None:
+        pii_entities_by_source_ref = {}
 
     # Pre-compute entity hints for all unique atoms in one batched spaCy pipe() call.
     _unique_texts = [req.atom.requirement_text for req in unique]
@@ -380,6 +391,7 @@ def _apply_quality_gates(
 
     duplicate_ids = {r.atom.atom_id for r in potential_duplicates}
     for dup in potential_duplicates:
+        pii_entities = pii_entities_by_source_ref.get(dup.atom.source_ref, [])
         flagged.append(
             FlaggedAtom(
                 atom_id=dup.atom.atom_id,
@@ -389,6 +401,7 @@ def _apply_quality_gates(
                 flag_detail=(
                     "cosine similarity 0.80–0.92 with another atom; human review required"
                 ),
+                pii_entities=pii_entities,
             )
         )
 
@@ -398,6 +411,7 @@ def _apply_quality_gates(
 
         text = req.atom.requirement_text
         module = req.module if req.module in _MODULE_SET else "OrganizationAdministration"
+        pii_entities = pii_entities_by_source_ref.get(req.atom.source_ref, [])
 
         # Gate A — schema cross-field consistency (uses raw text, regex only)
         consistency_flag = _check_cross_field_consistency(text, module, upload.country)
@@ -409,6 +423,7 @@ def _apply_quality_gates(
                     requirement_text=text,
                     flag_reason="SCHEMA_MISMATCH",
                     flag_detail=consistency_flag,
+                    pii_entities=pii_entities,
                 )
             )
             continue
@@ -427,6 +442,7 @@ def _apply_quality_gates(
                     flag_reason="TOO_VAGUE",
                     flag_detail=(f"specificity_score={specificity:.2f} below 0.30 threshold"),
                     specificity_score=specificity,
+                    pii_entities=pii_entities,
                 )
             )
             continue
@@ -445,6 +461,7 @@ def _apply_quality_gates(
                         f"specificity={specificity:.2f} both below threshold"
                     ),
                     specificity_score=specificity,
+                    pii_entities=pii_entities,
                 )
             )
             continue
@@ -458,6 +475,7 @@ def _apply_quality_gates(
                     requirement_text=text[:2000],
                     flag_reason="SCHEMA_MISMATCH",
                     flag_detail=(f"requirement_text length {len(text)} outside [10, 2000]"),
+                    pii_entities=pii_entities,
                 )
             )
             continue
@@ -477,6 +495,7 @@ def _apply_quality_gates(
                 entity_hints=_entity_hints_map.get(req.atom.atom_id, []),
                 specificity_score=specificity,
                 completeness_score=completeness,
+                pii_entities=pii_entities,
                 source_refs=[req.atom.source_ref] if req.atom.source_ref else [],
             )
         )

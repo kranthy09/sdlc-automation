@@ -30,6 +30,7 @@ Design:
 
 from __future__ import annotations
 
+import re
 import time
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -85,6 +86,57 @@ _MAX_CAPS_IN_PROMPT: int = 10
 
 
 # ---------------------------------------------------------------------------
+# Config-steps parser  (deterministic fallback for LLM free-text output)
+# ---------------------------------------------------------------------------
+
+
+def _parse_config_steps(text: str) -> list[str]:
+    """Parse free-text config_steps into a structured list.
+
+    The LLM always fills the free-text ``config_steps`` field (the prompt
+    explicitly instructs it).  This parser extracts individual steps from
+    common LLM output formats so ``configuration_steps`` is never None for a
+    PARTIAL_FIT result, even when the LLM skips the structured list.
+
+    Supported formats (in priority order):
+      1. Numbered:  "1. Navigate to..." / "1) Enable..."
+      2. Bulleted:  "- Navigate..." / "• Enable..."
+      3. Plain:     newline-separated sentences
+      4. Fallback:  entire text as a single step
+    """
+    if not text or not text.strip():
+        return []
+
+    stripped = text.strip()
+
+    # Numbered list: "1. ...", "2) ...", "Step 1: ..."
+    numbered = re.findall(
+        r"(?:^|\n)\s*(?:\d+[.):]|[Ss]tep\s+\d+[.):–-])\s+(.+?)(?=\n\s*(?:\d+[.):]|[Ss]tep\s+\d+)|\Z)",
+        stripped,
+        re.DOTALL,
+    )
+    if numbered:
+        return [s.strip() for s in numbered if s.strip()]
+
+    # Bullet list: "- ...", "• ...", "* ..."
+    bulleted = re.findall(
+        r"(?:^|\n)\s*[-•*]\s+(.+?)(?=\n\s*[-•*]|\Z)",
+        stripped,
+        re.DOTALL,
+    )
+    if bulleted:
+        return [s.strip() for s in bulleted if s.strip()]
+
+    # Newline-separated (each non-empty line is one step)
+    lines = [ln.strip() for ln in stripped.split("\n") if ln.strip()]
+    if len(lines) > 1:
+        return lines
+
+    # Single-step fallback
+    return [stripped]
+
+
+# ---------------------------------------------------------------------------
 # LLM output schema  (G9 — tool-use enforced by LLMClient)
 # ---------------------------------------------------------------------------
 
@@ -100,10 +152,23 @@ class LLMClassificationOutput(BaseModel):
     confidence: float = Field(ge=0.0, le=1.0)
     rationale: str
     d365_capability_ref: str = ""
-    config_steps: str = ""  # populated by LLM when verdict=PARTIAL_FIT
+    config_steps: str = Field(
+        default="",
+        description=(
+            "PARTIAL_FIT only: concise summary of the overall D365 configuration "
+            "needed (1-2 sentences). Leave empty for FIT or GAP."
+        ),
+    )
     configuration_steps: list[str] = Field(
         default_factory=list,
-    )  # PARTIAL_FIT: numbered config actions
+        description=(
+            "Required when verdict is PARTIAL_FIT: each D365 configuration action "
+            "as a separate list item. Each item must be one complete, actionable step "
+            "(e.g. 'Navigate to Accounts payable > Setup > Parameters > Invoice tab and "
+            "enable invoice matching'). Minimum 1 item when verdict='PARTIAL_FIT'. "
+            "Leave as empty list for FIT or GAP verdicts."
+        ),
+    )
     gap_description: str = ""  # populated by LLM when verdict=GAP
     dev_effort: Literal["S", "M", "L"] | None = None  # GAP only
     gap_type: str = ""  # GAP: Extension / Integration / New feature
@@ -492,6 +557,26 @@ class ClassificationNode:
         llm_calls: int,
     ) -> ClassificationResult:
         atom = mr.atom
+
+        # Resolve configuration_steps for PARTIAL_FIT results using a 3-tier strategy:
+        #   1. LLM-provided structured list (best — LLM followed schema description)
+        #   2. Parse the free-text config_steps field (guaranteed by prompt instruction)
+        #   3. None — UI shows explicit "not generated" notice (handled in ReviewPage)
+        # FIT and GAP always get None (no configuration steps expected).
+        configuration_steps: list[str] | None = None
+        if out.verdict == "PARTIAL_FIT":
+            if out.configuration_steps:
+                configuration_steps = out.configuration_steps
+            elif out.config_steps:
+                parsed = _parse_config_steps(out.config_steps)
+                configuration_steps = parsed if parsed else None
+                if configuration_steps:
+                    log.debug(
+                        "classification_config_steps_parsed_from_freetext",
+                        atom_id=atom.atom_id,
+                        step_count=len(configuration_steps),
+                    )
+
         return ClassificationResult(
             atom_id=atom.atom_id,
             requirement_text=atom.requirement_text,
@@ -503,7 +588,7 @@ class ClassificationNode:
             rationale=out.rationale,
             d365_capability_ref=out.d365_capability_ref or None,
             config_steps=out.config_steps or None,
-            configuration_steps=out.configuration_steps or None,
+            configuration_steps=configuration_steps,
             gap_description=out.gap_description or None,
             dev_effort=out.dev_effort,
             gap_type=out.gap_type or None,

@@ -1056,6 +1056,29 @@ async def get_gate_atoms(
             except (json.JSONDecodeError, ValueError):
                 rows = []
 
+    # Backwards-compatible metadata enrichment for Phase 2 and 3.
+    # Older batches processed before the metadata fields were added to the
+    # gate extraction helpers will have rows missing module/country/intent/priority.
+    # Cross-reference phase1_atoms (always present, always has full metadata)
+    # and merge any missing atom-level fields into the Phase 2/3 rows.
+    if gate in (2, 3) and rows:
+        first = rows[0]
+        missing_meta = not first.get("module") and not first.get("country")
+        if missing_meta and "phase1_atoms" in batch_state:
+            try:
+                phase1_rows: list[dict[str, Any]] = json.loads(batch_state["phase1_atoms"])
+                meta_lookup: dict[str, dict[str, Any]] = {
+                    r["atom_id"]: r for r in phase1_rows
+                }
+                for row in rows:
+                    p1 = meta_lookup.get(row.get("atom_id", ""), {})
+                    row.setdefault("module", p1.get("module", ""))
+                    row.setdefault("country", p1.get("country", ""))
+                    row.setdefault("intent", p1.get("intent", ""))
+                    row.setdefault("priority", p1.get("priority", ""))
+            except (json.JSONDecodeError, ValueError, KeyError):
+                pass
+
     log.info(
         "gate_atoms_retrieved",
         batch_id=batch_id,

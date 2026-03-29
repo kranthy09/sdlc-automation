@@ -211,3 +211,47 @@ docs:
       the first-period amount (full month, half-year, mid-quarter). The Depreciation
       proposal processes all assets in a batch and generates journal lines for review
       before posting.
+
+  # ---------------------------------------------------------------------------
+  # TaxManagement (doc-tax-*)
+  # ---------------------------------------------------------------------------
+
+  - id: doc-tax-0001
+    module: TaxManagement
+    feature: Sales Tax Configuration
+    title: "Set up sales tax in Dynamics 365 Finance"
+    url: "https://learn.microsoft.com/en-us/dynamics365/finance/general-ledger/indirect-taxes-overview"
+    text: >
+      Sales tax in Dynamics 365 Finance is configured through a layered setup.
+      Sales tax authorities define the taxing body and settlement bank account.
+      Settlement periods link authorities to a reporting frequency (monthly,
+      quarterly). Sales tax codes set the rate or amount method and map to
+      ledger posting groups that determine the GL accounts for input and output
+      tax. Sales tax groups are assigned to vendors and customers; item sales tax
+      groups are assigned to products and procurement categories. The intersection
+      of the transaction's tax group and item tax group determines applicable codes.
+      Tax calculation runs automatically on invoice posting. The Settle and post
+      sales tax periodic task at Tax > Periodic tasks > Sales tax payments
+      calculates net tax due and creates the tax authority payment transaction.
+
+  # ---------------------------------------------------------------------------
+  # TransportManagement (doc-tms-*)
+  # ---------------------------------------------------------------------------
+
+  - id: doc-tms-0001
+    module: TransportManagement
+    feature: Transportation Management Overview
+    title: "Transportation management in Dynamics 365 Supply Chain Management"
+    url: "https://learn.microsoft.com/en-us/dynamics365/supply-chain/transportation/transportation-management-overview"
+    text: >
+      Transportation management (TMS) in Dynamics 365 Supply Chain Management
+      provides end-to-end freight lifecycle management. Core capabilities include
+      carrier rate shopping, load building and consolidation, appointment scheduling,
+      outbound and inbound shipment processing, freight reconciliation, and carrier
+      performance analytics. TMS integrates with warehouse management for seamless
+      outbound shipment processing from wave release through load confirmation and
+      BOL generation. Carrier setup at Transportation management > Setup > Carriers
+      defines shipping carriers, service levels, and rating engines. Route guides
+      at Transportation management > Setup > Route guide automate carrier and service
+      selection per origin-destination lane. Freight reconciliation matches carrier
+      invoices to planned charges for payables validation before AP posting.

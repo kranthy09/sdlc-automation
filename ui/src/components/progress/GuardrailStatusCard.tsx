@@ -1,9 +1,11 @@
 import { CheckCircle2, AlertCircle, XCircle } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { PIIStatusExpandable } from './PIIStatusExpandable'
 import type { PhaseState } from '@/stores/progressStore'
 
 interface GuardrailStatusCardProps {
   phase1: PhaseState
+  batchId?: string
 }
 
 type GuardrailStatus = 'pass' | 'warning' | 'error'
@@ -14,7 +16,7 @@ interface GuardrailItem {
   detail: string
 }
 
-export function GuardrailStatusCard({ phase1 }: GuardrailStatusCardProps) {
+export function GuardrailStatusCard({ phase1, batchId }: GuardrailStatusCardProps) {
   const getStatusColor = (status: GuardrailStatus) => {
     switch (status) {
       case 'pass':
@@ -84,9 +86,16 @@ export function GuardrailStatusCard({ phase1 }: GuardrailStatusCardProps) {
               {getStatusIcon(item.status)}
               <p className="text-xs font-medium text-text-primary">{item.name}</p>
             </div>
-            <p className={cn('text-xs leading-relaxed', getStatusColor(item.status))}>
-              {item.detail}
-            </p>
+            {item.name === 'PII Redaction' && phase1.atomsFlagged > 0 && batchId ? (
+              <PIIStatusExpandable
+                atomsFlagged={phase1.atomsFlagged}
+                batchId={batchId}
+              />
+            ) : (
+              <p className={cn('text-xs leading-relaxed', getStatusColor(item.status))}>
+                {item.detail}
+              </p>
+            )}
           </div>
         ))}
       </div>

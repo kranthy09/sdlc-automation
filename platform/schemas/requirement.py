@@ -21,6 +21,7 @@ from typing import Annotated, Literal
 from pydantic import Field
 
 from .base import PlatformModel
+from .guardrails import PIIEntity
 
 # ---------------------------------------------------------------------------
 # Constrained vocabulary: D365 F&O module names
@@ -143,6 +144,9 @@ class ValidatedAtom(PlatformModel):
     specificity_score: Annotated[float, Field(ge=0.0, le=1.0)]
     completeness_score: Annotated[float, Field(ge=0.0, le=100.0)]
 
+    # PII entities detected and redacted in requirement_text (G2 guardrail)
+    pii_entities: list[PIIEntity] = Field(default_factory=list)
+
     # Audit trail: source references (merged from duplicates if deduped)
     source_refs: list[str] = Field(default_factory=list)
 
@@ -171,5 +175,8 @@ class FlaggedAtom(PlatformModel):
 
     # May be None if the atom was flagged before scoring completed
     specificity_score: Annotated[float, Field(ge=0.0, le=1.0)] | None = None
+
+    # PII entities detected and redacted in requirement_text (G2 guardrail)
+    pii_entities: list[PIIEntity] = Field(default_factory=list)
 
     source_refs: list[str] = Field(default_factory=list)

@@ -159,7 +159,7 @@ export default function ProgressPage() {
 
         {/* Guardrail status (Phase 1) */}
         {phases[0]?.status === 'complete' && (
-          <GuardrailStatusCard phase1={phases[0]} />
+          <GuardrailStatusCard phase1={phases[0]} batchId={batchId} />
         )}
 
         {/* Phase stat cards */}

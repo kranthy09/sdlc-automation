@@ -32,6 +32,8 @@ def review_reason(flags: list[str]) -> str:
         return "pii_detected"
     if "gap_review" in flags:
         return "gap_review"
+    if "partial_fit_no_config" in flags:
+        return "partial_fit_no_config"
     if any(f in _ANOMALY_FLAG_NAMES for f in flags):
         return "anomaly"
     return "low_confidence"

@@ -338,6 +338,21 @@ class ValidationNode:
                 atom_id=result.atom_id,
             )
 
+        # PARTIAL_FIT without configuration steps → HITL mandatory.
+        # The LLM determined D365 requires configuration but could not specify
+        # the steps. An analyst must confirm the classification and provide
+        # or verify the required configuration guidance before it is auto-approved.
+        if (
+            result.classification == FitLabel.PARTIAL_FIT
+            and not result.configuration_steps
+            and not result.config_steps
+        ):
+            flags.append("partial_fit_no_config")
+            log.info(
+                "sanity_partial_fit_no_config",
+                atom_id=result.atom_id,
+            )
+
         return flags
 
     # ------------------------------------------------------------------

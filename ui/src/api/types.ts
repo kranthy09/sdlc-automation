@@ -123,7 +123,7 @@ export interface ReviewItem {
   ai_classification: Classification
   ai_confidence: number
   ai_rationale: string
-  review_reason: 'low_confidence' | 'conflict' | 'anomaly' | 'pii_detected' | 'gap_review'
+  review_reason: 'low_confidence' | 'conflict' | 'anomaly' | 'pii_detected' | 'gap_review' | 'partial_fit_no_config'
   module: string
   evidence: ReviewItemEvidence
   config_steps: string | null
@@ -420,19 +420,32 @@ export interface WSPhaseGate {
 }
 
 // Gate-specific row types for analyst review
+export interface PIIEntityInfo {
+  entity_type: string   // e.g., "PERSON", "EMAIL_ADDRESS", "PHONE_NUMBER"
+  score: number         // 0–1 confidence
+  placeholder: string   // e.g., "<PII_PERSON_1>"
+}
+
 export interface Phase1AtomRow {
   atom_id: string
   requirement_text: string
   intent: string
   module: string
+  country: string
   priority: string
   completeness_score: number  // 0–100 (per ValidatedAtom schema)
   specificity_score: number   // 0–1
+  pii_detected: boolean       // true if PII entities were found
+  pii_entities: PIIEntityInfo[]  // list of detected PII entities
 }
 
 export interface Phase2ContextRow {
   atom_id: string
   requirement_text: string
+  module: string
+  country: string
+  intent: string
+  priority: string
   top_capability: string
   top_capability_score: number
   retrieval_confidence: 'HIGH' | 'MEDIUM' | 'LOW'
@@ -441,6 +454,9 @@ export interface Phase2ContextRow {
 export interface Phase3MatchRow {
   atom_id: string
   requirement_text: string
+  module: string
+  country: string
+  priority: string
   composite_score: number
   route: string
   anomaly_flags: string[]

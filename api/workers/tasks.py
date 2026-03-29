@@ -109,17 +109,29 @@ def _extract_gate1_rows(state: dict[str, Any]) -> list[dict[str, Any]]:
     state["validated_atoms"] is list[ValidatedAtom] — Pydantic models, not dicts.
     completeness_score is 0–100 (per ValidatedAtom schema); sent as-is.
     specificity_score is 0–1.
+    pii_entities is a list of PIIEntity objects, serialized to dicts.
     """
     rows: list[dict[str, Any]] = []
     for atom in state.get("validated_atoms", []):
+        pii_entities_dicts = [
+            {
+                "entity_type": e.entity_type,
+                "score": e.score,
+                "placeholder": e.placeholder,
+            }
+            for e in atom.pii_entities
+        ]
         rows.append({
             "atom_id": atom.atom_id,
             "requirement_text": atom.requirement_text,
             "intent": atom.intent,
             "module": atom.module,
+            "country": atom.country,
             "priority": atom.priority,
             "completeness_score": atom.completeness_score,  # 0–100
             "specificity_score": atom.specificity_score,    # 0–1
+            "pii_detected": len(atom.pii_entities) > 0,
+            "pii_entities": pii_entities_dicts,
         })
     return rows
 
@@ -130,6 +142,8 @@ def _extract_gate2_rows(state: dict[str, Any]) -> list[dict[str, Any]]:
     state["retrieval_contexts"] is list[AssembledContext] — Pydantic models.
     atom_id / requirement_text live on ctx.atom (a nested ValidatedAtom).
     Top capability is ctx.capabilities[0] (a RankedCapability); score is 0–1.
+    module/country/intent/priority are included so the gate 2 drawer can display
+    them without needing the journey endpoint (which requires a completed batch).
     """
     rows: list[dict[str, Any]] = []
     for ctx in state.get("retrieval_contexts", []):
@@ -137,6 +151,10 @@ def _extract_gate2_rows(state: dict[str, Any]) -> list[dict[str, Any]]:
         rows.append({
             "atom_id": ctx.atom.atom_id,
             "requirement_text": ctx.atom.requirement_text,
+            "module": ctx.atom.module,
+            "country": ctx.atom.country,
+            "intent": ctx.atom.intent,
+            "priority": ctx.atom.priority,
             "top_capability": top_cap.feature if top_cap else "",
             "top_capability_score": top_cap.composite_score if top_cap else 0.0,  # 0–1
             "retrieval_confidence": ctx.retrieval_confidence,
@@ -150,12 +168,17 @@ def _extract_gate3_rows(state: dict[str, Any]) -> list[dict[str, Any]]:
     state["match_results"] is list[MatchResult] — Pydantic models.
     atom_id / requirement_text live on match.atom (a nested ValidatedAtom).
     Composite score is match.top_composite_score (0–1).
+    module/country/priority are included so the gate 3 drawer can display them
+    without needing the journey endpoint (which requires a completed batch).
     """
     rows: list[dict[str, Any]] = []
     for match in state.get("match_results", []):
         rows.append({
             "atom_id": match.atom.atom_id,
             "requirement_text": match.atom.requirement_text,
+            "module": match.atom.module,
+            "country": match.atom.country,
+            "priority": match.atom.priority,
             "composite_score": match.top_composite_score,  # 0–1
             "route": match.route,
             "anomaly_flags": match.anomaly_flags,

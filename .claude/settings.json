@@ -26,7 +26,11 @@
       "Bash(find /home/kranthi/Projects/enterprise_ai/docs -name \"*.md\" -type f -exec wc -l {} +)",
       "Bash(/tmp/api_spec_condense.txt:*)",
       "Read(//tmp/**)",
-      "Read(//docs/**)"
+      "Read(//docs/**)",
+      "Bash(find /home/kranthi/Projects/enterprise_ai/ui/src/components -name *.tsx -type f -newer /home/kranthi/Projects/enterprise_ai/CLAUDE.md)"
+    ],
+    "additionalDirectories": [
+      "/tmp"
     ]
   }
 }
