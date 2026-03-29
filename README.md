@@ -5,6 +5,7 @@ AI agent platform for automating ERP implementation workflows. **Module 1: REQFI
 ## What is REQFIT?
 
 5-phase pipeline that converts D365 requirements into validated fitment recommendations with human review:
+
 1. **Ingestion** — Parse requirements from PDF/DOCX/TXT
 2. **RAG** — Retrieve matching D365 capabilities from MS Learn
 3. **Matching** — Identify fitness gaps and alternatives
@@ -31,23 +32,15 @@ knowledge_bases/    Product data (YAML + JSONL only, no Python)
 
 ### Dashboard
 
-![Dashboard Page](./docs/platform_screenshots/dashboard_home.png)
+![Dashboard Page](./docs/screenshots/dashboard_home.png)
 
-### HITL, Validation
+### Phases Overview
 
-![Human Review validation](./docs/platform_screenshots/HITL.png)
+![Human Review validation](./docs/screenshots/phases.png)
 
-### Batch Results
+### Classification Results
 
-![Results Page](./docs/platform_screenshots/batch_results.png)
-
-### Fitment analysis
-
-![Fitment Analysis Page](./docs/platform_screenshots/Fitment_analysis.png)
-
-### Gap Analysis
-
-![Gap Analysis Page](./docs/platform_screenshots/gap_results.png)
+![Results Page](./docs/screenshots/live_classification.png)
 
 ---
 
@@ -185,13 +178,13 @@ All three must pass on every PR. Live LLM calls are never in CI — all LLM test
 
 ## Documentation
 
-| Guide | Purpose |
-|-------|---------|
-| [INDEX.md](docs/INDEX.md) | Navigation — start here for any component |
-| [DEVELOPMENT_RULES.md](docs/DEVELOPMENT_RULES.md) | Build discipline: one component per session, no unrequested features |
-| [DECISIONS.md](docs/DECISIONS.md) | Why we chose X over Y (PDF only, embedding library, MVP guardrails, etc.) |
-| [docs/specs/rules.md](docs/specs/rules.md) | Import boundaries, code standards, CI gates |
-| [docs/specs/dynafit_phases.md](docs/specs/dynafit_phases.md) | REQFIT 5 phases: algorithms, prompts, thresholds |
-| [docs/specs/guardrails.md](docs/specs/guardrails.md) | MVP guardrails (7 active) + post-MVP roadmap |
-| [docs/guides/PATTERNS.md](docs/guides/PATTERNS.md) | Code patterns: nodes, retries, observability, testing |
-| [docs/reference/GLOSSARY.md](docs/reference/GLOSSARY.md) | Terminology: fitment, capability, guardrail, etc. |
+| Guide                                                        | Purpose                                                                   |
+| ------------------------------------------------------------ | ------------------------------------------------------------------------- |
+| [INDEX.md](docs/INDEX.md)                                    | Navigation — start here for any component                                 |
+| [DEVELOPMENT_RULES.md](docs/DEVELOPMENT_RULES.md)            | Build discipline: one component per session, no unrequested features      |
+| [DECISIONS.md](docs/DECISIONS.md)                            | Why we chose X over Y (PDF only, embedding library, MVP guardrails, etc.) |
+| [docs/specs/rules.md](docs/specs/rules.md)                   | Import boundaries, code standards, CI gates                               |
+| [docs/specs/dynafit_phases.md](docs/specs/dynafit_phases.md) | REQFIT 5 phases: algorithms, prompts, thresholds                          |
+| [docs/specs/guardrails.md](docs/specs/guardrails.md)         | MVP guardrails (7 active) + post-MVP roadmap                              |
+| [docs/guides/PATTERNS.md](docs/guides/PATTERNS.md)           | Code patterns: nodes, retries, observability, testing                     |
+| [docs/reference/GLOSSARY.md](docs/reference/GLOSSARY.md)     | Terminology: fitment, capability, guardrail, etc.                         |
