@@ -6,18 +6,23 @@ FROM ghcr.io/astral-sh/uv:python3.12-bookworm-slim
 
 WORKDIR /app
 
-# System deps needed by ml extras (python-magic, spacy)
+# System deps needed by ml + ocr extras:
+#   libmagic1       — python-magic (file-type detection)
+#   poppler-utils   — pdf2image needs pdftoppm/pdfinfo binaries (OCR fallback)
+#   tesseract-ocr   — pytesseract engine (OCR fallback for scanned PDFs)
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    libmagic1 curl && \
+    libmagic1 curl \
+    poppler-utils \
+    tesseract-ocr && \
     rm -rf /var/lib/apt/lists/*
 
 # Install Python dependencies (layer-cached)
 # --mount=type=cache persists uv's package download cache across builds on the
-# same machine — avoids re-downloading docling/spacy and other heavy ml deps
+# same machine — avoids re-downloading pdfplumber/spacy and other heavy ml deps
 # every time pyproject.toml or uv.lock changes.
 COPY pyproject.toml uv.lock ./
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --frozen --no-dev --extra ml
+    uv sync --frozen --no-dev --extra ml --extra ocr
 
 # Bake in the spaCy NER model required by presidio PII redactor (G2).
 # uv pip install works without pip being installed as a Python module.
