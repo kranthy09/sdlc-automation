@@ -1,8 +1,8 @@
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
-import type { PhaseProgressItem } from '@/api/types'
+import type { PhaseState } from '@/stores/progressStore'
 
 interface PhaseLatencyChartProps {
-  phases: PhaseProgressItem[]
+  phases: PhaseState[]
 }
 
 const phaseNames: Record<number, string> = {
@@ -14,7 +14,7 @@ const phaseNames: Record<number, string> = {
 }
 
 export function PhaseLatencyChart({ phases }: PhaseLatencyChartProps) {
-  const completedPhases = phases.filter((p) => p.status === 'complete' && p.latency_ms !== null)
+  const completedPhases = phases.filter((p) => p.status === 'complete' && p.latencyMs !== null)
 
   if (completedPhases.length === 0) {
     return (
@@ -27,7 +27,7 @@ export function PhaseLatencyChart({ phases }: PhaseLatencyChartProps) {
   const data = completedPhases.map((p) => ({
     phase: `Phase ${p.phase}`,
     name: phaseNames[p.phase] || `Phase ${p.phase}`,
-    latency: Math.round((p.latency_ms || 0) / 1000), // Convert to seconds
+    latency: Math.round((p.latencyMs || 0) / 1000), // Convert ms → seconds
   }))
 
   const formatTime = (ms: number) => {

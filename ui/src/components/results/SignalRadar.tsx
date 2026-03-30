@@ -39,15 +39,16 @@ export function SignalRadar({ signals, compositeScore }: SignalRadarProps) {
     <div className="relative w-full h-80 flex items-center justify-center">
       <ResponsiveContainer width="100%" height="100%">
         <RadarChart data={data}>
-          <PolarGrid stroke="var(--color-bg-border)" />
-          <PolarAngleAxis dataKey="name" stroke="var(--color-text-muted)" style={{ fontSize: '11px' }} />
-          <PolarRadiusAxis stroke="var(--color-text-muted)" angle={90} domain={[0, 100]} />
+          <PolarGrid stroke="#475569" strokeDasharray="3 3" />
+          <PolarAngleAxis dataKey="name" tick={{ fill: '#94a3b8', fontSize: 11 }} tickLine={false} />
+          <PolarRadiusAxis stroke="#475569" angle={90} domain={[0, 100]} tick={{ fill: '#64748b', fontSize: 9 }} />
           <Radar
             name="Score"
             dataKey="value"
-            stroke="var(--color-accent-glow)"
-            fill="var(--color-accent-glow)"
-            fillOpacity={0.25}
+            stroke="#60a5fa"
+            fill="#60a5fa"
+            fillOpacity={0.45}
+            strokeWidth={2}
           />
           <Tooltip
             contentStyle={{

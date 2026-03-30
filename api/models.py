@@ -247,6 +247,36 @@ class UploadMetadata(BaseModel):
     content_hash: str
 
 
+class DocumentMetadata(BaseModel):
+    """Metadata embedded in Qdrant payload for docs."""
+
+    id: str
+    module: str
+    feature: str
+    url: str | None = None
+
+
+class DocumentItem(BaseModel):
+    """Single document from knowledge base."""
+
+    id: str
+    module: str
+    feature: str
+    title: str
+    text: str
+    url: str | None = None
+    score: float | None = None
+
+
+class KnowledgeBaseListResponse(BaseModel):
+    """Response for knowledge base documents query."""
+
+    product: str
+    documents: list[DocumentItem]
+    total_count: int
+    module_counts: dict[str, int] = Field(default_factory=dict)
+
+
 class PipelineConfig(BaseModel):
     """Full pipeline configuration for Celery task execution."""
 

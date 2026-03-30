@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { ArrowLeft, Download, FileSpreadsheet, LayoutList } from 'lucide-react'
+import { ArrowLeft, Download, FileSpreadsheet, LayoutList, BookOpen } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { SummaryCards } from '@/components/results/SummaryCards'
@@ -120,6 +120,15 @@ export default function ResultsPage() {
             >
               <LayoutList className="h-3.5 w-3.5" />
               Feature Report
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => navigate('/knowledge-base')}
+              title="Browse MS Learn documentation across D365 F&O modules"
+            >
+              <BookOpen className="h-3.5 w-3.5" />
+              Documentation
             </Button>
           </div>
         }

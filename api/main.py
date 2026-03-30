@@ -12,6 +12,7 @@ from api.middleware.cors import add_cors
 from api.middleware.logging import RequestLoggingMiddleware
 from api.routes.dynafit import public_router
 from api.routes.dynafit import router as dynafit_router
+from api.routes.knowledge_base import router as knowledge_base_router
 from api.websocket.progress import progress_handler
 from platform.config.settings import get_settings
 from platform.retrieval.vector_store import (
@@ -136,6 +137,7 @@ app = FastAPI(
 add_cors(app)
 app.add_middleware(RequestLoggingMiddleware)
 app.include_router(dynafit_router, prefix="/api/v1")
+app.include_router(knowledge_base_router, prefix="/api/v1")
 app.include_router(public_router, prefix="/api")
 
 

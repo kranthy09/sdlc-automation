@@ -10,6 +10,7 @@ import {
   Bell,
   Menu,
   Settings,
+  BookOpen,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useUIStore } from '@/stores/uiStore'
@@ -21,6 +22,7 @@ import { CommandPalette } from '@/components/layout/CommandPalette'
 const NAV = [
   { to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
   { to: '/upload', icon: Upload, label: 'Upload' },
+  { to: '/knowledge-base', icon: BookOpen, label: 'Knowledge Base' },
 ] as const
 
 function NavItem({

@@ -488,3 +488,28 @@ export type WSMessage =
 
 // Discriminator used by the backend (Pydantic `event` field)
 export type WSEventType = WSMessage['event']
+
+// ─── Knowledge Base ─────────────────────────────────────────────────────────
+
+export interface DocumentItem {
+  id: string
+  module: string
+  feature: string
+  title: string
+  text: string
+  url: string | null
+  score: number | null
+}
+
+export interface KnowledgeBaseListResponse {
+  product: string
+  documents: DocumentItem[]
+  total_count: number
+  module_counts: Record<string, number>
+}
+
+export interface ModulesResponse {
+  product: string
+  modules: string[]
+  count: number
+}

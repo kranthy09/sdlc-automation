@@ -1,6 +1,7 @@
 import { lazy, Suspense } from 'react'
 import { createBrowserRouter, Navigate, RouterProvider } from 'react-router-dom'
 import { AppShell } from '@/components/layout/AppShell'
+import { ErrorBoundary } from '@/components/ui/ErrorBoundary'
 import { Skeleton } from '@/components/ui/Skeleton'
 
 // ─── Lazy-loaded pages ────────────────────────────────────────────────────────
@@ -13,6 +14,7 @@ const FeatureDetailPage = lazy(() => import('@/pages/FeatureDetailPage'))
 const AtomDetailPage = lazy(() => import('@/pages/AtomDetailPage'))
 const ComparePage = lazy(() => import('@/pages/ComparePage'))
 const SettingsPage = lazy(() => import('@/pages/SettingsPage'))
+const KnowledgeBasePage = lazy(() => import('@/pages/KnowledgeBasePage'))
 
 // ─── Page-level loading fallback ──────────────────────────────────────────────
 function PageLoader() {
@@ -107,6 +109,16 @@ const router = createBrowserRouter([
           <Suspense fallback={<PageLoader />}>
             <SettingsPage />
           </Suspense>
+        ),
+      },
+      {
+        path: 'knowledge-base',
+        element: (
+          <ErrorBoundary>
+            <Suspense fallback={<PageLoader />}>
+              <KnowledgeBasePage />
+            </Suspense>
+          </ErrorBoundary>
         ),
       },
     ],
