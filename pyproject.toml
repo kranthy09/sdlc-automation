@@ -38,8 +38,8 @@ dependencies = [
 [project.optional-dependencies]
 # Heavy ML/parsing stack — installed from Layer 2 onward (make setup installs this)
 ml = [
-    # Document parsing (text-only — no ML models, no OCR)
-    "pypdf>=4.0",
+    # Document parsing — pdfplumber for PDF (table-aware); python-docx for DOCX
+    "pdfplumber>=0.11",
     "python-docx>=1.1",
     "python-magic>=0.4",
 
@@ -56,6 +56,12 @@ ml = [
     "rank-bm25>=0.2",
     # Deduplication ANN for large batches (a > 300) — CPU-only, ~30 MB
     "faiss-cpu>=1.7",
+]
+
+# OCR fallback for scanned PDFs — optional, requires poppler-utils + tesseract-ocr system packages
+ocr = [
+    "pdf2image>=1.17",
+    "pytesseract>=0.3",
 ]
 
 # Dev tooling only — what CI installs for Layer 0/1
@@ -137,6 +143,10 @@ module = [
     "fastembed.*",
     "rank_bm25.*",
     "magic.*",
+    "pdf2image.*",
+    "pdfminer.*",
+    "pdfplumber.*",
+    "pytesseract.*",
     "spacy.*",
     "rapidfuzz.*",
     "celery.*",
