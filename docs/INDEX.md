@@ -65,6 +65,8 @@ Why certain choices were made. Read when understanding architecture.
 
 All decisions documented in [DECISIONS.md](DECISIONS.md):
 - **Supported formats:** PDF, DOCX, TXT only. No Excel/ZIP.
+- **PDF parser:** pdfplumber — table detection + prose isolation + OCR fallback. Not pypdf or Docling.
+- **PARTIAL_FIT UI:** Configuration Steps section always visible in results view (placeholder shown when LLM returns null).
 - **Embedding library:** fastembed (ONNX), not sentence-transformers.
 - **MVP Guardrails:** 7 of 14 guardrails in MVP, 7 deferred to post-MVP.
 - **HITL:** Human-in-the-loop at Phase 5 is mandatory.

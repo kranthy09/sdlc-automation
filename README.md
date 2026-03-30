@@ -55,7 +55,7 @@ knowledge_bases/    Product data (YAML + JSONL only, no Python)
 | Sparse retrieval | rank_bm25                                                   |
 | Reranker         | Xenova/ms-marco-MiniLM (fastembed)                          |
 | Storage          | PostgreSQL + pgvector, Redis                                |
-| Document parsing | Docling (primary), Unstructured (fallback) — PDF, DOCX, TXT |
+| Document parsing | pdfplumber (PDF tables + prose + OCR fallback), python-docx (DOCX), stdlib (TXT) |
 | API              | FastAPI + Celery + WebSocket                                |
 | Observability    | structlog + Prometheus + Grafana                            |
 | Package manager  | uv                                                          |
@@ -83,7 +83,7 @@ source ~/.bashrc
 ```bash
 # Setup (one time)
 git clone <repo-url> && cd enterprise_ai
-uv venv --python 3.12 && uv sync --all-extras
+uv venv --python 3.12 && uv sync --extra ml --extra ocr --extra dev
 source .venv/bin/activate
 cp .env.example .env  # Set ANTHROPIC_API_KEY
 make setup

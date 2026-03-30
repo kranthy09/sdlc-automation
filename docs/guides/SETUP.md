@@ -12,16 +12,25 @@
 # Clone and enter
 cd /home/kranthi/Projects/enterprise_ai
 
-# Create venv
-python3.12 -m venv .venv
-source .venv/bin/activate
+# Install uv (if not already)
+curl -LsSf https://astral.sh/uv/install.sh | sh && source ~/.bashrc
 
-# Install deps
-pip install -e .
+# Create venv and install all extras (ml = pdfplumber/spaCy/qdrant; ocr = pdf2image/tesseract; dev = pytest/ruff/mypy)
+uv sync --extra ml --extra ocr --extra dev
+
+# Activate
+source .venv/bin/activate
 
 # Validate
 make validate-contracts
 ```
+
+> **OCR system packages** (required by the `ocr` extra):
+> ```bash
+> sudo apt-get install -y poppler-utils tesseract-ocr   # Debian/Ubuntu
+> brew install poppler tesseract                         # macOS
+> ```
+> OCR is only used as a fallback for scanned/image-only PDF pages. The parser works without it — scanned pages are skipped with a DEBUG log.
 
 ## Frontend
 

@@ -20,16 +20,17 @@
    - Validate format or raise `UnsupportedFormatError`
    - Detect encoding (UTF-8, Latin-1, etc.)
 
-2. **Extract Tables & Prose** (Docling):
-   - `DocumentConverter().convert(file_path)` → `DoclingDocument`
-   - Preserve table structure, heading hierarchy
-   - Extract images separately (Phase 1, Step 4)
-   - Fallback: `Unstructured.partition_auto()` if Docling fails
+2. **Extract Tables & Prose** (pdfplumber / python-docx / stdlib):
+   - `DoclingParser().parse(path)` → `ParseResult(tables, prose)`
+   - PDF: `pdfplumber.find_tables()` → table rows as `list[dict[str,str]]`; prose via `outside_bbox()` chaining
+   - DOCX: python-docx paragraphs; `Heading`/`Title` styles preserved as section labels
+   - TXT: double-newline paragraph split
+   - OCR fallback: pages with < 20 chars trigger `pdf2image` + `pytesseract` (optional `ocr` extra)
 
-3. **Image Processing** (Optional but recommended):
-   - Extract all images from document
-   - Generate captions via Claude vision: "What requirement does this diagram/screenshot show?"
-   - Treat captions as text requirements
+3. **Header Mapping** (`ingestion_column_mapper.py`):
+   - `_map_table_rows_to_canonical(parse_result.tables)` — RapidFuzz fuzzy-match on raw column headers
+   - Maps vendor-specific column names (e.g. "Req. Description") to canonical fields (e.g. `requirement_text`)
+   - Unmatched columns kept as-is with `col_N` placeholder names
 
 ### Step 2: Requirement Extractor (LLM-powered)
 

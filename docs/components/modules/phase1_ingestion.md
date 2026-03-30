@@ -13,11 +13,11 @@
 ## What It Does
 
 1. **Validate file** (G1-lite) — Size < 50 MB, format is PDF/DOCX/TXT
-2. **Detect format** — Magic bytes + content analysis
-3. **Parse document** — Docling + fallback to Unstructured
-4. **Extract images** — Run OCR on diagrams (may contain requirements)
-5. **Split content** — Tables → atoms, Prose → chunks → atoms
-6. **Map headers** — Fuzzy-match table columns to canonical fields
+2. **Detect format** — Magic bytes + content analysis (`platform/parsers/format_detector.py`)
+3. **Parse document** — pdfplumber (PDF), python-docx (DOCX), stdlib (TXT) via `DoclingParser`
+4. **OCR fallback** — Scanned PDF pages (< 20 chars of extracted text) trigger pdf2image + pytesseract
+5. **Split content** — Tables → `ParseResult.tables`, Prose → `ParseResult.prose` chunks
+6. **Map headers** — Fuzzy-match raw column headers to canonical fields (`ingestion_column_mapper.py`)
 7. **Scan for injection** (G3-lite) — Block/flag malicious content
 8. **Atomize** — Create RequirementAtom for each requirement
 9. **Deduplicate** — Remove exact duplicates within batch
@@ -56,78 +56,46 @@ class RequirementAtom(BaseModel):
 
 ## Supported Formats
 
-| Format | Parsed By | Notes |
-|--------|-----------|-------|
-| PDF | Docling | Tables, prose, images extracted |
-| DOCX | Docling | Same as PDF |
-| TXT | Docling | Plain text split by paragraphs |
+| Format | Parsed By | Tables | Prose | OCR fallback |
+|--------|-----------|--------|-------|--------------|
+| PDF | pdfplumber | ✅ lattice + stream detection | ✅ outside_bbox isolation | ✅ pdf2image + pytesseract |
+| DOCX | python-docx | ❌ (always `tables=[]`) | ✅ paragraph-level, headings preserved | ❌ |
+| TXT | stdlib pathlib | ❌ | ✅ double-newline split | ❌ |
 
 **Not supported:** Excel (.xlsx), standalone ZIP archives → `UnsupportedFormatError` (quarantined)
 
-**Why:** All real-world requirement docs are PDF/DOCX/TXT. Docling handles them natively. Excel parsing adds complexity with no additional coverage. See [DECISIONS.md](../../DECISIONS.md#supported-document-formats).
+**Parser:** `platform/parsers/docling_parser.py` → `DoclingParser.parse(path)` → `ParseResult(tables, prose)`
+
+**OCR trigger threshold:** `_SCANNED_THRESHOLD = 20` chars — pages below this after table removal attempt OCR. Silently skipped if `pdf2image`/`pytesseract` are not installed (requires `--extra ocr` + system packages `poppler-utils`, `tesseract-ocr`).
+
+See [DECISIONS.md](../../DECISIONS.md#pdf-parser-pdfplumber) for why pdfplumber was chosen.
 
 ## Implementation Pattern
 
 ```python
-async def phase1_ingestion(upload: RawUpload) -> AtomizedBatch:
-    """
-    Step 1: Validate file (G1-lite)
-    Step 2: Detect format
-    Step 3: Parse with Docling
-    Step 4: Extract tables, prose, images in parallel
-    Step 5: Scan for injection (G3-lite)
-    Step 6: Map table headers
-    Step 7: Create RequirementAtom for each requirement
-    Step 8: Deduplicate
-    Step 9: Return batch
-    """
+# platform/parsers/docling_parser.py
+parser = DoclingParser()
+result = parser.parse(Path("requirements.pdf"))
+# result.tables → list[dict[str, str]]  — one dict per table row, keys = raw column headers
+# result.prose  → list[ProseChunk]      — ≤1500 char chunks, 2-sentence overlap prefix
 
-    # 1. File validation
-    file_check = validate_file(upload.file_bytes, upload.filename)
-    if not file_check.passed:
-        raise GuardrailError(file_check.flags)
-
-    # 2. Format detection
-    detected = detect_format(upload.file_bytes)
-
-    # 3. Parse
-    doc = DocumentConverter().convert(upload.filename)
-
-    # 4. Extract (parallel)
-    tables, prose_chunks, images = await asyncio.gather(
-        extract_tables(doc),
-        extract_prose(doc),
-        extract_images(doc)
-    )
-
-    # 5. Scan for injection
-    for chunk in prose_chunks:
-        scan = scan_injection(chunk.text)
-        if scan.severity == "BLOCK":
-            raise GuardrailError(scan.flags)
-        if scan.severity == "FLAG_FOR_REVIEW":
-            chunk.flagged = True
-
-    # 6. Map headers in tables
-    for table in tables:
-        headers = map_table_headers(table.headers)
-
-    # 7-8. Atomize
-    atoms = []
-    for item in tables + prose_chunks:
-        atom = create_atom_from(item, upload.filename)
-        atoms.append(atom)
-
-    atoms = deduplicate(atoms)
-
-    # 9. Return
-    return AtomizedBatch(
-        batch_id=str(uuid4()),
-        atoms=atoms,
-        document_count=1,
-        parsed_at=datetime.utcnow()
-    )
+# modules/dynafit/nodes/ingestion.py
+parse_result = DoclingParser().parse(path)
+canonical_rows = _map_table_rows_to_canonical(parse_result.tables)  # RapidFuzz header matching
+texts = _collect_requirement_texts(parse_result)  # prefers tables > prose
 ```
+
+**Table extraction (PDF):**
+1. `page.find_tables()` — detects lattice (bordered) and stream (whitespace-aligned) tables
+2. First row = headers; blank cells → `col_N` placeholder
+3. `page.outside_bbox(table.bbox)` — excludes each table region before prose extraction
+4. Empty rows (all cells blank) are dropped
+
+**Prose chunking:**
+- Max 1500 chars per chunk (`_MAX_CHUNK_CHARS`)
+- 2-sentence overlap prefix on each chunk for retrieval context continuity (`_OVERLAP_SENTENCES = 2`)
+- Heading items (DOCX `Heading`/`Title` styles) flush the buffer and reset `section` label
+- `ProseChunk.section` tracks the most recent heading above each chunk
 
 ## Common Issues
 
@@ -144,7 +112,7 @@ async def phase1_ingestion(upload: RawUpload) -> AtomizedBatch:
 → G3-lite blocks or flags. Block = drop file. Flag = Phase 5 reviews.
 
 **No requirements extracted?**
-→ Check document structure. Docling may fail on non-standard formats. Try Unstructured fallback.
+→ Check document structure. pdfplumber requires selectable (non-scanned) text. For scanned PDFs install `--extra ocr` and system packages `poppler-utils` + `tesseract-ocr`.
 
 ## Testing
 
