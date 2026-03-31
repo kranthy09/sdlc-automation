@@ -38,8 +38,15 @@ _REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 def _load_capabilities(product: str, source: str) -> list[dict]:
-    """Load capability dicts from knowledge_bases/{product}/capabilities_{source}.yaml."""
-    yaml_path = _REPO_ROOT / "knowledge_bases" / product / f"capabilities_{source}.yaml"
+    """Load capabilities from capabilities_{source}.yaml.
+
+    Capabilities are curated D365 features (module-scoped, structured).
+    Uses hybrid retrieval (dense embeddings + BM25 sparse keywords).
+    Text field is mapped to 'description' in the capability collection payload.
+    """
+    yaml_path = (
+        _REPO_ROOT / "knowledge_bases" / product / f"capabilities_{source}.yaml"
+    )
     if not yaml_path.exists():
         print(f"ERROR: YAML not found: {yaml_path}", file=sys.stderr)
         sys.exit(1)
@@ -53,11 +60,13 @@ def _load_capabilities(product: str, source: str) -> list[dict]:
 
 
 def _load_docs(product: str, source: str) -> list[dict]:
-    """Load doc dicts from knowledge_bases/{product}/docs_{source}.yaml.
+    """Load MS Learn documentation from docs_corpus_{source}.yaml.
 
+    Docs corpus is raw Microsoft Learn documentation (broad scope, semantic search).
+    Uses dense-only retrieval (no BM25 sparse, no module filter) for cross-module insights.
     Returns empty list if the file does not exist — docs are optional.
     """
-    yaml_path = _REPO_ROOT / "knowledge_bases" / product / f"docs_{source}.yaml"
+    yaml_path = _REPO_ROOT / "knowledge_bases" / product / f"docs_corpus_{source}.yaml"
     if not yaml_path.exists():
         return []
     with yaml_path.open() as f:
@@ -89,13 +98,15 @@ def main() -> None:
     cap_collection = f"{args.product}_capabilities"
     doc_collection = f"{args.product}_docs"
 
-    # 1. Load YAMLs
-    print(f"Loading knowledge_bases/{args.product}/capabilities_{args.source}.yaml ...")
+    # 1. Load YAMLs (separated files: capabilities + docs_corpus)
+    print(
+        f"Loading knowledge_bases/{args.product}/"
+        f"(capabilities_{args.source}.yaml + docs_corpus_{args.source}.yaml) ..."
+    )
     caps = _load_capabilities(args.product, args.source)
-    cap_descriptions = [c["description"] for c in caps]
+    cap_descriptions = [c["text"] for c in caps]
     print(f"  {len(caps)} capabilities loaded")
 
-    print(f"Loading knowledge_bases/{args.product}/docs_{args.source}.yaml ...")
     docs = _load_docs(args.product, args.source)
     doc_texts = [d["text"] for d in docs]
     print(f"  {len(docs)} docs loaded")

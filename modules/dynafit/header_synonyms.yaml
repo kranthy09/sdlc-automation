@@ -2,10 +2,11 @@
 # Structure: canonical_field → { lang_code: [synonyms...] }
 # Language codes: en, de, fr
 # All comparison is done case-insensitively after strip().
-# Three-tier resolution in phase1_ingestion.py:
-#   1. Exact match      → confidence 1.0
-#   2. Fuzzy match >70  → confidence 0.7-0.9  (rapidfuzz token_set_ratio)
-#   3. No match         → (None, 0.0)
+# Three-tier resolution in ingestion_column_mapper.py:
+#   1. Exact match            → confidence 1.0
+#   2. Fuzzy match >70        → confidence 0.7-0.9  (rapidfuzz token_set_ratio)
+#   3. spaCy similarity >0.65 → confidence 0.65-0.95 (en_core_web_lg vectors)
+#   Unmatched                 → (None, 0.0)
 # CRITICAL: requirement_text MUST be found or the document is rejected.
 
 requirement_text:

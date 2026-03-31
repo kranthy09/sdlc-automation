@@ -15,7 +15,8 @@ Table extraction (PDF only):
   of {raw_column_header: cell_value} dicts — one per data row — returned
   in ParseResult.tables.  Prose text is extracted from the remaining page
   area after table regions are excluded via outside_bbox().
-  DOCX and TXT always produce tables=[].
+  DOCX tables are extracted via doc.tables (top-level tables only).
+  TXT always produces tables=[].
 
 OCR fallback:
   Pages whose non-table prose text is shorter than _SCANNED_THRESHOLD chars
@@ -89,10 +90,9 @@ class ParseResult:
     """Output of a successful ``DoclingParser.parse()`` call.
 
     Attributes:
-        tables: Structured table rows extracted from PDF pages.  Each row is
-                a dict mapping raw column header text to cell value.  Rows
-                with no cell values are dropped.  Always ``[]`` for DOCX and
-                TXT files.
+        tables: Structured table rows extracted from PDF and DOCX files.  Each
+                row is a dict mapping raw column header text to cell value.
+                Rows with no cell values are dropped.  Always ``[]`` for TXT.
         prose:  Ordered list of prose chunks (≤ 1500 chars each) from
                 non-table page regions, with 2-sentence overlap prefix for
                 retrieval context continuity.
@@ -121,7 +121,8 @@ class DoclingParser:
           2. Extract prose from non-table page regions (ParseResult.prose).
           3. Attempt OCR on pages that yield no embedded text.
 
-        DOCX and TXT produce tables=[] and prose only.
+        DOCX extracts both tables (via doc.tables) and prose (via doc.paragraphs).
+        TXT produces tables=[] and prose only.
 
         Args:
             path: Path to a PDF, DOCX, or TXT file.
@@ -137,8 +138,7 @@ class DoclingParser:
             if suffix == ".pdf":
                 items, tables = _extract_pdf(path)
             elif suffix == ".docx":
-                items = _extract_docx(path)
-                tables = []
+                items, tables = _extract_docx(path)
             else:
                 items = _extract_txt(path)
                 tables = []
@@ -287,11 +287,25 @@ def _ocr_page(path: Path, page_no: int) -> str:
         return ""
 
 
-def _extract_docx(path: Path) -> list[_TextItem]:
-    """Extract text from a DOCX using python-docx.
+def _extract_docx(
+    path: Path,
+) -> tuple[list[_TextItem], list[dict[str, str]]]:
+    """Extract prose items and structured table rows from a DOCX.
 
     Paragraphs whose style name starts with ``Heading`` or equals ``Title``
     are treated as section headings; everything else is prose.
+
+    ``doc.paragraphs`` returns only body-level paragraphs — table cell
+    paragraphs are excluded, so table content never double-counts in prose.
+    ``doc.tables`` is iterated separately to extract structured rows:
+      - First row → column headers; blank cells → ``col_N`` placeholder.
+      - Tables with fewer than 2 rows (header-only) are skipped.
+      - Data rows with no non-empty cells are dropped.
+
+    Returns:
+        (prose_items, table_rows) where prose_items feed ``_chunk()`` and
+        table_rows are ``{raw_header: cell_value}`` dicts ready for
+        ``_map_table_rows_to_canonical()`` in the ingestion pipeline.
     """
     import io  # noqa: PLC0415
 
@@ -299,14 +313,38 @@ def _extract_docx(path: Path) -> list[_TextItem]:
 
     doc = Document(io.BytesIO(path.read_bytes()))
     items: list[_TextItem] = []
+    tables: list[dict[str, str]] = []
+
+    # Prose — body-level paragraphs only (table cells excluded by python-docx)
     for para in doc.paragraphs:
         text = para.text.strip()
         if not text:
             continue
         style_name = para.style.name if para.style else ""
-        is_heading = style_name.startswith("Heading") or style_name == "Title"
+        is_heading = (
+            style_name.startswith("Heading") or style_name == "Title"
+        )
         items.append((is_heading, text, 1))
-    return items
+
+    # Tables — top-level tables only (doc.tables does not recurse nested)
+    for table in doc.tables:
+        rows = table.rows
+        if len(rows) < 2:  # need header + at least 1 data row
+            continue
+        headers = [
+            (rows[0].cells[j].text.strip() or f"col_{j}")
+            for j in range(len(rows[0].cells))
+        ]
+        for row in rows[1:]:
+            row_dict: dict[str, str] = {}
+            for header, cell in zip(headers, row.cells):
+                val = cell.text.strip()
+                if val:
+                    row_dict[header] = val
+            if row_dict:
+                tables.append(row_dict)
+
+    return items, tables
 
 
 def _extract_txt(path: Path) -> list[_TextItem]:

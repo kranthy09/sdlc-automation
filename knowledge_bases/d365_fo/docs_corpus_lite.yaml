@@ -1,0 +1,1127 @@
+docs:
+- id: doc-tax-0001
+  module: TaxManagement
+  feature: Sales Tax Codes and Tax Groups
+  title: Sales Tax Codes and Tax Groups
+  url: https://learn.microsoft.com/en-us/dynamics365/finance/general-ledger/indirect-taxes-overview
+  text: 'Sales tax codes are configured at Tax > Indirect taxes > Sales tax > Sales tax codes. Each code defines the tax rate
+    or amount, settlement period, ledger posting group, and rounding rules. Tax groups at Tax > Indirect taxes > Sales tax
+    > Sales tax groups assign applicable codes per transaction type, vendor, or customer. Item sales tax groups at Tax > Indirect
+    taxes > Sales tax > Item sales tax groups assign tax codes per product or procurement category. The intersection of tax
+    group and item tax group determines the applicable code on each transaction line. Tax overrides at the document header
+    allow ad-hoc tax group changes. Tax temporary table inquiry shows calculated tax per line before posting.
+
+    '
+- id: doc-tax-0002
+  module: TaxManagement
+  feature: VAT Configuration and EU Reporting
+  title: VAT Configuration and EU Reporting
+  url: https://learn.microsoft.com/en-us/dynamics365/finance/general-ledger/indirect-taxes-overview
+  text: 'VAT reporting is configured at Tax > Setup > Sales tax > VAT reporting codes and VAT report layout. EU sales list
+    (ESL) at Tax > Declarations > Foreign trade > EU sales list reports intra-community supplies and services to tax authorities.
+    Intrastat at Tax > Declarations > Foreign trade > Intrastat captures goods movements between EU member states with commodity
+    codes, statistical values, and transport modes. VAT return generation at Tax > Declarations > Sales tax > Report sales
+    tax for settlement period aggregates net VAT payable/receivable by box code. Electronic VAT submission uses ER format
+    configurations for country-specific XML or file formats. VAT reconciliation compares the GL VAT control account to the
+    sales tax settlement journal.
+
+    '
+- id: doc-tax-0003
+  module: TaxManagement
+  feature: Withholding Tax (1099 / TDS / TCS)
+  title: Withholding Tax (1099 / TDS / TCS)
+  url: https://learn.microsoft.com/en-us/dynamics365/finance/general-ledger/indirect-taxes-overview
+  text: 'Withholding tax codes are configured at Tax > Indirect taxes > Withholding tax > Withholding tax codes with rate,
+    threshold, and component definitions. Withholding tax groups at Tax > Indirect taxes > Withholding tax > Withholding tax
+    groups are assigned to vendors. On invoice posting the system deducts withholding tax from the payable amount and posts
+    to a withholding tax liability account. US 1099 reporting at Accounts payable > Periodic tasks > 1099 statement generates
+    vendor 1099 forms (1099-MISC, 1099-NEC, 1099-INT) and electronic IRS filing files. India TDS (Tax Deducted at Source)
+    and TCS (Tax Collected at Source) configurations are handled via the India localization feature set activated in Feature
+    management.
+
+    '
+- id: doc-tax-0004
+  module: TaxManagement
+  feature: Sales Tax Settlement and Payment
+  title: Sales Tax Settlement and Payment
+  url: https://learn.microsoft.com/en-us/dynamics365/finance/general-ledger/indirect-taxes-overview
+  text: 'Settlement periods are configured at Tax > Indirect taxes > Sales tax > Sales tax settlement periods defining the
+    authority, payment interval (monthly, quarterly), and bank account. The settle and post sales tax process at Tax > Periodic
+    tasks > Sales tax payments calculates net tax payable to each authority for the period, creates a payment transaction,
+    and marks settled transactions. The sales tax payment correction facility adjusts prior-period settlements. Sales tax
+    transactions inquiry at Tax > Inquiries > Sales tax transactions shows all posted tax entries filterable by period, code,
+    and ledger account. The Sales tax specification by ledger transaction report reconciles tax postings to the GL sales tax
+    accounts.
+
+    '
+- id: doc-tax-0005
+  module: TaxManagement
+  feature: Tax Exempt Certificates and Exemptions
+  title: Tax Exempt Certificates and Exemptions
+  url: https://learn.microsoft.com/en-us/dynamics365/finance/general-ledger/indirect-taxes-overview
+  text: 'Tax exemption certificates are recorded per customer at Accounts receivable > Customers > All customers > Invoice
+    and delivery tab > Tax exempt number. Exemption validation at Tax > Setup > Sales tax > Sales tax exempt numbers links
+    the customer certificate to applicable tax codes with validity dates. Expired certificates trigger tax application on
+    new invoices automatically. Certificate audit reports at Tax > Inquiries show exemptions applied per customer and order.
+    Vendor exemption for purchase transactions is configured at Tax > Indirect taxes > Sales tax > Conditional sales tax,
+    applying tax only on payment settlement rather than invoice posting for cash-basis jurisdictions (e.g. Italy, Portugal).
+
+    '
+- id: doc-tax-0006
+  module: TaxManagement
+  feature: Tax Engine (Global Tax Engine / RCS)
+  title: Tax Engine (Global Tax Engine / RCS)
+  url: https://learn.microsoft.com/en-us/dynamics365/finance/general-ledger/indirect-taxes-overview
+  text: 'The Tax Calculation service at Tax > Tax Calculation service setup provides a cloud-hosted tax determination engine
+    replacing the legacy built-in sales tax engine. Tax applicability rules at Regulatory Configuration Service (RCS) > Tax
+    feature > Tax applicability conditions evaluate transaction attributes (document type, legal entity, customer/vendor country,
+    item, procurement category) to select tax codes via a decision matrix rather than tax group intersection. Tax rates, formulas,
+    and thresholds are maintained in RCS configurations deployable across multiple legal entities. The service supports real-time
+    US sales tax via Avalara or Vertex integration connectors. Globalization Studio workspace in RCS manages feature versions
+    and publishing lifecycle.
+
+    '
+- id: doc-tax-0007
+  module: TaxManagement
+  feature: Reverse Charge VAT Mechanism
+  title: Reverse Charge VAT Mechanism
+  url: https://learn.microsoft.com/en-us/dynamics365/finance/general-ledger/indirect-taxes-overview
+  text: 'Reverse charge VAT shifts tax liability from vendor to purchaser for intra-EU B2B services and specified goods. Configuration
+    at Tax > Setup > Sales tax > Reverse charge item groups and Tax > Setup > Sales tax > Reverse charge rules defines item
+    groups and country-pair rules triggering reverse charge. On purchase invoice posting the system posts both input VAT (deductible)
+    and output VAT (payable) to separate GL accounts, netting to zero cash impact. The Reverse charge VAT report at Tax >
+    Reports > Reverse charge VAT lists all reverse charge transactions for audit and VAT return box population. Country- specific
+    variants (e.g. Germany §13b UStG, UK domestic reverse charge for construction) are supported via localization configurations.
+
+    '
+- id: doc-tax-0008
+  module: TaxManagement
+  feature: Conditional Sales Tax (Cash-Basis VAT)
+  title: Conditional Sales Tax (Cash-Basis VAT)
+  url: https://learn.microsoft.com/en-us/dynamics365/finance/general-ledger/indirect-taxes-overview
+  text: 'Conditional sales tax defers VAT recognition until payment is received (AR) or made (AP), rather than at invoice
+    date, for cash-basis VAT jurisdictions. Configuration at Tax > Indirect taxes > Sales tax > Sales tax codes with the Conditional
+    sales tax checkbox enabled. On invoice posting VAT is recorded in a suspense account (Incoming conditional sales tax).
+    On payment settlement the portion of VAT corresponding to the settled amount transfers from the suspense account to the
+    final sales tax payable or receivable account. Partial payment handling allocates conditional VAT proportionally. The
+    Conditional VAT transactions report at Tax > Inquiries tracks deferred and recognised amounts per invoice.
+
+    '
+- id: doc-tax-0009
+  module: TaxManagement
+  feature: Transfer Pricing and Intercompany Tax
+  title: Transfer Pricing and Intercompany Tax
+  url: https://learn.microsoft.com/en-us/dynamics365/finance/general-ledger/indirect-taxes-overview
+  text: 'Intercompany pricing documentation is maintained at Organization administration > Intercompany > Transfer pricing.
+    Transfer price methods (Cost plus, Resale minus, Comparable uncontrolled price, TNMM) are defined per intercompany relationship
+    and transaction type. Country-by-country reporting (CbCR) at Tax > Declarations > Transfer pricing > Country by country
+    report generates the OECD CbCR XML for submission to home-country tax authority. Advance pricing agreement (APA) terms
+    are documented in intercompany contracts. Thin capitalisation rules at Tax > Setup > Thin capitalisation define debt-to-equity
+    thresholds limiting deductible interest expense. TP documentation packages are stored in document management linked to
+    the legal entity record.
+
+    '
+- id: doc-tax-0010
+  module: TaxManagement
+  feature: Tax Audit and Compliance Reporting
+  title: Tax Audit and Compliance Reporting
+  url: https://learn.microsoft.com/en-us/dynamics365/finance/general-ledger/indirect-taxes-overview
+  text: 'Navigate to Tax > Inquiries and reports > Sales tax transactions. The Audit file generation at Tax > Electronic reporting
+    > Audit file exports transactional tax data in country-specific audit formats: SAF-T (OECD standard adopted by Norway,
+    Poland, Austria, Portugal, Lithuania), GDPdU/GoBD (Germany), FEC (France), and SII (Spain real- time VAT). The Tax reporting
+    codes at Tax > Setup > Sales tax > Tax reporting codes map transaction types to VAT return box numbers. The Sales tax
+    specification report breaks down VAT by code, rate, and base amount per period. Automated tax compliance workflows schedule
+    report generation and submission deadlines with alert notifications to the tax team.
+
+    '
+- id: doc-cbm-0001
+  module: CashBankManagement
+  feature: Bank Account Setup and Bank Groups
+  title: Bank Account Setup and Bank Groups
+  url: https://learn.microsoft.com/en-us/dynamics365/finance/cash-bank-management/cash-bank-management
+  text: 'Bank accounts are configured at Cash and bank management > Bank accounts > Bank accounts. Each bank account captures
+    bank name, routing number, IBAN, SWIFT/BIC, currency, GL main account, and transit account for outstanding checks. Bank
+    groups at Cash and bank management > Setup > Bank groups organize accounts for reporting and reconciliation. Active period
+    control prevents posting to closed periods per bank account. Bank account security restricts which users can initiate
+    payments from each account using role-based access assignments. The Bank account statement inquiry shows all transactions
+    with running balance. Multiple bank accounts per legal entity and per currency are fully supported.
+
+    '
+- id: doc-cbm-0002
+  module: CashBankManagement
+  feature: Cash Flow Forecasting
+  title: Cash Flow Forecasting
+  url: https://learn.microsoft.com/en-us/dynamics365/finance/cash-bank-management/cash-bank-management
+  text: 'Cash flow forecasting is configured at Cash and bank management > Setup > Cash flow forecast. Forecast models aggregate
+    projected inflows (AR due dates, sales order expected invoices, project invoice proposals) and outflows (AP due dates,
+    purchase order expected invoices, payroll schedules, tax payment schedules, loan repayments) from across all subledgers.
+    The Cash flow forecast workspace at Cash and bank management > Cash flow forecast displays a liquidity timeline by bank
+    account and currency. Scenario modelling at Cash and bank management > Setup > Cash flow forecast scenarios compares base,
+    optimistic, and pessimistic cash positions. Finance Insights AI forecasting augments rule-based forecasts with machine
+    learning predictions from historical payment patterns.
+
+    '
+- id: doc-cbm-0003
+  module: CashBankManagement
+  feature: Letter of Credit and Letter of Guarantee
+  title: Letter of Credit and Letter of Guarantee
+  url: https://learn.microsoft.com/en-us/dynamics365/finance/cash-bank-management/cash-bank-management
+  text: 'Import letters of credit (LC) are created at Cash and bank management > Letters of credit > Import letter of credit.
+    LC records capture issuing bank, confirming bank, beneficiary, amount, validity dates, required documents, and shipment
+    terms. LC amendment processing tracks changes to terms. Document compliance checking at Cash and bank management > Letters
+    of credit > Check documents verifies submitted documents against LC requirements. Export letters of credit at Cash and
+    bank management > Letters of credit > Export letter of credit manage outbound LC receipt from foreign buyers. Letters
+    of guarantee at Cash and bank management > Letters of guarantee provide bank guarantees for performance bonds and advance
+    payment security.
+
+    '
+- id: doc-cbm-0004
+  module: CashBankManagement
+  feature: Promissory Notes and Bills of Exchange
+  title: Promissory Notes and Bills of Exchange
+  url: https://learn.microsoft.com/en-us/dynamics365/finance/cash-bank-management/cash-bank-management
+  text: 'Bills of exchange (BOE) are created from customer invoices at Accounts receivable > Payments > Customer promissory
+    notes > Draw bills of exchange journal. The BOE lifecycle includes Draw, Remit to bank (discount or collection), Accept,
+    Protest, and Redraw stages. Each stage generates journal entries updating the negotiable instruments account. Promissory
+    notes for vendor payments at Accounts payable > Payments > Vendor promissory notes > Redraw bills of exchange capture
+    payment commitments. BOE settlement at maturity closes the receivable and derecognises the instrument. The Bills of exchange
+    report at Cash and bank management > Inquiries shows outstanding instruments by maturity date and status.
+
+    '
+- id: doc-cbm-0005
+  module: CashBankManagement
+  feature: Advanced Bank Reconciliation Matching Rules
+  title: Advanced Bank Reconciliation Matching Rules
+  url: https://learn.microsoft.com/en-us/dynamics365/finance/cash-bank-management/cash-bank-management
+  text: 'Advanced bank reconciliation matching rules at Cash and bank management > Setup > Advanced bank reconciliation >
+    Reconciliation matching rules define automated matching logic: Rule 1 Match by amount and date within tolerance, Rule
+    2 Match by check number, Rule 3 Match by document reference, Rule 4 New transaction creation for bank charges and interest
+    income. Matching rule sets prioritise rule evaluation order at Cash and bank management > Setup > Advanced bank reconciliation
+    > Matching rule sets. Bank statement import formats BAI2, MT940, CAMT.053, and CSV are configured via Electronic reporting.
+    Matched transactions display side-by-side bank statement lines and book transactions. The reconciliation worksheet shows
+    matched, unmatched, and outstanding amounts.
+
+    '
+- id: doc-cbm-0006
+  module: CashBankManagement
+  feature: Centralized Payments and Payment Hub
+  title: Centralized Payments and Payment Hub
+  url: https://learn.microsoft.com/en-us/dynamics365/finance/cash-bank-management/cash-bank-management
+  text: 'Centralized payments allow a central treasury entity to make or receive payments on behalf of other legal entities.
+    Configuration at Cash and bank management > Setup > Centralised payments defines central payment entity relationships.
+    The central entity generates payment files consolidating payables from subsidiary legal entities. Intercompany settlement
+    entries are auto-generated on payment posting. Centralized AR collection pools customer receipts in the central entity
+    and distributes to subsidiary AR subledgers. The Centralized payment overview at Cash and bank management > Inquiries
+    shows cross- entity payment positions. Centralized payments reduce banking fees by consolidating disbursements and collection
+    through fewer bank accounts.
+
+    '
+- id: doc-cbm-0007
+  module: CashBankManagement
+  feature: Bank Facility and Credit Line Management
+  title: Bank Facility and Credit Line Management
+  url: https://learn.microsoft.com/en-us/dynamics365/finance/cash-bank-management/cash-bank-management
+  text: 'Bank facilities are recorded at Cash and bank management > Bank accounts > Bank accounts > Credit facilities. Facility
+    types include Overdraft, Revolving credit, Term loan, and Working capital line. Facility terms capture limit, interest
+    rate, maturity date, and covenant conditions. Outstanding utilisation is tracked against the facility limit with alert
+    thresholds. Loan repayment schedules at Cash and bank management > Periodic tasks > Loan repayment generate instalment
+    journal entries for principal and interest. Interest accrual calculations use actual/360 or 30/360 day-count conventions.
+    The Bank facility report at Cash and bank management > Inquiries shows facility utilisation, available credit, and upcoming
+    maturity dates across all banking relationships.
+
+    '
+- id: doc-cbm-0008
+  module: CashBankManagement
+  feature: Foreign Currency Bank Revaluation
+  title: Foreign Currency Bank Revaluation
+  url: https://learn.microsoft.com/en-us/dynamics365/finance/cash-bank-management/cash-bank-management
+  text: 'Navigate to Cash and bank management > Periodic tasks > Foreign currency revaluation for bank accounts. The process
+    revalues outstanding foreign currency bank balances using the exchange rate type (Spot, Average) configured at General
+    ledger > Currencies > Currency exchange rates. Unrealised gain/loss postings use accounts configured at Cash and bank
+    management > Setup > Bank posting profiles. The revaluation preview report shows the adjustment amount per bank account
+    and currency pair before committing. The revaluation reversing entry is auto-posted at the beginning of the next period
+    if the Reverse option is selected. Realised gains and losses post at settlement when the actual payment rate differs from
+    the invoice rate.
+
+    '
+- id: doc-cbm-0009
+  module: CashBankManagement
+  feature: Cash Denomination Counting
+  title: Cash Denomination Counting
+  url: https://learn.microsoft.com/en-us/dynamics365/finance/cash-bank-management/cash-bank-management
+  text: 'Cash denomination control at Cash and bank management > Setup > Cash > Cash denominations defines available bill
+    and coin denominations per currency. Cash accounts at Cash and bank management > Bank accounts > Cash accounts manage
+    petty cash and cashier registers. Cash transaction posting at Cash and bank management > Journal entries > Cash journal
+    records cash receipts and disbursements with denomination breakdown. The cash balance report at Cash and bank management
+    > Inquiries > Cash balance shows denomination-level breakdown of on-hand cash. Cash register shift closing at Retail >
+    Cash management performs tender declaration with denomination counting and variance reporting before end-of-day cashier
+    reconciliation.
+
+    '
+- id: doc-cbm-0010
+  module: CashBankManagement
+  feature: Payment Reversals and Void Transactions
+  title: Payment Reversals and Void Transactions
+  url: https://learn.microsoft.com/en-us/dynamics365/finance/cash-bank-management/cash-bank-management
+  text: 'Payment reversal at Accounts payable > Payments > Vendor payment journal > Reverse or Accounts receivable > Payments
+    > Customer payment journal > Reverse voids a posted payment. Reversal creates offsetting journal entries restoring the
+    original open invoice. The reversal date can be the original posting date or a new date for period control. Check void
+    at Cash and bank management > Checks > Void check marks the check cancelled and generates a void positive pay record.
+    NSF (non-sufficient funds) processing at Accounts receivable > Payments > NSF processing reverses customer payments returned
+    by the bank and charges configurable NSF fees. The Payment reversal audit report tracks all voided and reversed payments
+    with user and reason documentation.
+
+    '
+- id: doc-tms-0001
+  module: TransportManagement
+  feature: Carrier and Shipping Service Setup
+  title: Carrier and Shipping Service Setup
+  url: https://learn.microsoft.com/en-us/dynamics365/supply-chain/transportation/transportation-management-overview
+  text: 'Shipping carriers are configured at Transportation management > Setup > Carriers > Shipping carriers. Each carrier
+    defines name, SCAC code, transportation mode (Air, Truck, Rail, Ocean, Parcel), and service levels (e.g. Ground, 2-Day,
+    Overnight). Carrier rating engines at Transportation management > Setup > Rating > Rate masters calculate freight charges
+    based on origin-destination zone matrices, weight breaks, and fuel surcharges. Carrier commitments at Transportation management
+    > Carriers > Transit times define lane- level transit time in days. Carrier API integration at Transportation management
+    > Setup > Carriers > Carrier gateways enables real-time rate shopping, shipment booking, label generation, and tracking
+    status updates.
+
+    '
+- id: doc-tms-0002
+  module: TransportManagement
+  feature: Load Building and Freight Consolidation
+  title: Load Building and Freight Consolidation
+  url: https://learn.microsoft.com/en-us/dynamics365/supply-chain/transportation/transportation-management-overview
+  text: 'Load planning at Transportation management > Planning > Load planning workbench combines sales order, transfer order,
+    and purchase return shipments into loads for truck or container optimisation. Load templates at Transportation management
+    > Setup > Loads > Load templates define maximum weight and volume constraints per mode. The automatic load build process
+    groups outbound shipments by ship date, destination region, and carrier service. Hub consolidation at Transportation management
+    > Setup > Hub > Hub profiles routes multi-stop loads through intermediate hubs for cross-docking. The load confirmation
+    step books the load with the carrier and generates the BOL. Route guide templates at Transportation management > Setup
+    > Route guide automate carrier and service selection per lane.
+
+    '
+- id: doc-tms-0003
+  module: TransportManagement
+  feature: Freight Reconciliation and Vendor Invoice Matching
+  title: Freight Reconciliation and Vendor Invoice Matching
+  url: https://learn.microsoft.com/en-us/dynamics365/supply-chain/transportation/transportation-management-overview
+  text: 'Freight reconciliation at Transportation management > Reconciliation > Freight reconciliation workbench matches carrier
+    invoices to planned freight charges. Carrier invoices are imported electronically via EDI 210 or CSV upload. Matching
+    rules compare invoice charges to rate master calculated amounts with configurable tolerance thresholds. Variance investigation
+    at Transportation management > Reconciliation > Freight bill details shows line-level discrepancies. Approved charges
+    create vendor invoice journals in AP. Disputed charges are escalated through a freight dispute workflow. The Freight reconciliation
+    report at Transportation management > Inquiries shows matched, unmatched, and disputed charges by carrier and period for
+    freight audit purposes.
+
+    '
+- id: doc-tms-0004
+  module: TransportManagement
+  feature: Route Plans and Hub Networks
+  title: Route Plans and Hub Networks
+  url: https://learn.microsoft.com/en-us/dynamics365/supply-chain/transportation/transportation-management-overview
+  text: 'Route plans at Transportation management > Setup > Routing > Route plans define multi-leg transportation sequences
+    for complex delivery networks. Route segments link origin facility, hub, and destination with carrier, service level,
+    and transit days per segment. Route guide assignment at Transportation management > Setup > Route guide automatically
+    selects the optimal route plan per load based on origin, destination, service requirements, and freight class. Rate master
+    association links pricing to route segments. The Route plan inquiry at Transportation management > Inquiries > Route plans
+    shows active routes with performance metrics (on-time %, average freight cost per mile, carrier utilisation). Route plan
+    versioning manages effective-dated changes to carrier networks.
+
+    '
+- id: doc-tms-0005
+  module: TransportManagement
+  feature: Inbound Transportation and Appointment Scheduling
+  title: Inbound Transportation and Appointment Scheduling
+  url: https://learn.microsoft.com/en-us/dynamics365/supply-chain/transportation/transportation-management-overview
+  text: 'Inbound load planning at Transportation management > Planning > Inbound load planning workbench organises purchase
+    order receipts into truck loads for dock scheduling. Appointment scheduling at Transportation management > Setup > Appointments
+    > Appointment profiles defines time-slot availability per dock door. Carriers and vendors submit delivery appointments
+    via the Vendor collaboration portal. Appointment confirmations send automated notifications. Dock assignment routes arriving
+    trucks to optimal doors by load type and unload sequence. The Inbound shipment inquiry shows scheduled, arrived, and completed
+    receipts per carrier per day. Detention tracking records waiting time beyond the free-time window for carrier invoicing.
+
+    '
+- id: doc-tms-0006
+  module: TransportManagement
+  feature: Shipping Container Tracking and IMO Compliance
+  title: Shipping Container Tracking and IMO Compliance
+  url: https://learn.microsoft.com/en-us/dynamics365/supply-chain/transportation/transportation-management-overview
+  text: 'Ocean container management at Transportation management > Containers tracks container number, seal, booking reference,
+    vessel, voyage, ETD, ETA, and port of lading and discharge. Container stuffing at Transportation management > Containers
+    > Stuffing assigns purchase order lines to containers for import customs declarations. Dangerous goods compliance at Transportation
+    management > Setup > Hazardous materials > Hazardous material items assigns UN numbers, hazard class, packing group, and
+    label codes per item for compliance with IMDG (ocean), IATA (air), and ADR (road) regulations. Hazardous materials check
+    at load confirmation validates restricted co-loading combinations. Shipping documents (MSDs, SDS) are attached to the
+    load record for carrier and customs submission.
+
+    '
+- id: doc-tms-0007
+  module: TransportManagement
+  feature: Parcel Rate Shopping and Small Parcel Shipping
+  title: Parcel Rate Shopping and Small Parcel Shipping
+  url: https://learn.microsoft.com/en-us/dynamics365/supply-chain/transportation/transportation-management-overview
+  text: 'Small parcel carrier integration at Transportation management > Setup > Carriers > Carrier gateways connects D365
+    to carrier APIs (UPS, FedEx, USPS, DHL) for real-time rate quotes, label printing, and tracking number retrieval. Rate
+    shopping at Transportation management > Planning > Rate shopping evaluates multiple carrier service levels for each shipment
+    and selects the lowest cost option meeting the delivery date. Shipping label print at warehouse pack station uses carrier-provided
+    thermal label formats. Tracking number write-back populates the sales order and packing slip for customer-facing shipment
+    notifications. Package weight and dimension measurement via dimensioning systems (e.g. Cubiscan) auto-populates the rate
+    shop input.
+
+    '
+- id: doc-tms-0008
+  module: TransportManagement
+  feature: Transportation Accessorial Charges
+  title: Transportation Accessorial Charges
+  url: https://learn.microsoft.com/en-us/dynamics365/supply-chain/transportation/transportation-management-overview
+  text: 'Accessorial charges at Transportation management > Setup > Charges > Accessorial charges define supplemental freight
+    fees: fuel surcharge, residential delivery, liftgate, inside delivery, hazmat fee, and signature required. Charge assignment
+    rules at Transportation management > Setup > Charges > Accessorial assignment rules apply charges automatically based
+    on load attributes (destination type, item hazmat class, delivery service). Accessorial charges are included in the freight
+    cost calculation visible on the load and shipment. Customer-billed accessorials are posted to the AR invoice as separate
+    charge lines. The Accessorial charges inquiry at Transportation management > Inquiries tracks all accessorials applied
+    per shipment for freight cost analysis.
+
+    '
+- id: doc-tms-0009
+  module: TransportManagement
+  feature: Transportation Order Status and Tracking
+  title: Transportation Order Status and Tracking
+  url: https://learn.microsoft.com/en-us/dynamics365/supply-chain/transportation/transportation-management-overview
+  text: 'Shipment status tracking at Transportation management > Shipments > All shipments shows current status (Scheduled,
+    Confirmed, In transit, Delivered, Exception) with last-known location and ETA. Carrier event updates are received via
+    EDI 214 transaction sets or carrier API webhooks updating status in real time. Delivery confirmation proof-of-delivery
+    (POD) capture at Transportation management > Shipments > Shipment details records signed delivery with timestamp and recipient
+    name. Exception management at Transportation management > Exceptions flags delayed, damaged, or missing shipments with
+    escalation workflow. Customer shipment notifications via email or SMS are triggered on status transitions. Transportation
+    analytics dashboard tracks carrier on-time performance and exception rates.
+
+    '
+- id: doc-tms-0010
+  module: TransportManagement
+  feature: Freight Cost Allocation to Sales and Purchase Orders
+  title: Freight Cost Allocation to Sales and Purchase Orders
+  url: https://learn.microsoft.com/en-us/dynamics365/supply-chain/transportation/transportation-management-overview
+  text: 'Freight cost allocation at Transportation management > Setup > Transportation management parameters > Charges defines
+    how transportation charges are distributed to source documents. Allocation methods include: Proportional to line value,
+    Proportional to weight, Proportional to volume, and Equal per line. Freight charges are written back to the originating
+    sales order or purchase order lines updating the unit cost. Charges posting profiles at Accounts payable > Setup > Charges
+    > Charges codes define GL accounts for freight expense and customer-billed freight revenue. The Freight cost by shipment
+    report at Transportation management > Inquiries > Freight cost analysis shows total freight spend by carrier, lane, mode,
+    and customer for logistics cost management.
+
+    '
+- id: doc-ret-0001
+  module: RetailCommerce
+  feature: Commerce Headquarters Channel Setup
+  title: Commerce Headquarters Channel Setup
+  url: https://learn.microsoft.com/en-us/dynamics365/finance/accounts-payable/accounts-payable
+  text: 'Retail channels are configured at Retail and Commerce > Channels > Stores. Store setup captures store number, legal
+    entity, warehouse, time zone, language, currency, and tax group. Channel database at Retail and Commerce > Channel setup
+    > Channel databases registers the Commerce Scale Unit (CSU) serving each store for data synchronisation. Distribution
+    schedules at Retail and Commerce > IT > Distribution schedule push product, price, customer, and configuration data to
+    store databases on defined intervals. Commerce parameters at Retail and Commerce > Headquarters setup > Commerce parameters
+    control global settings for receipt numbering, return policies, and loyalty expiry. Online store channels at Retail and
+    Commerce > Channels > Online stores configure e-commerce storefronts integrated with Dynamics 365 Commerce.
+
+    '
+- id: doc-ret-0002
+  module: RetailCommerce
+  feature: Point of Sale (MPOS and CPOS) Operations
+  title: Point of Sale (MPOS and CPOS) Operations
+  url: https://learn.microsoft.com/en-us/dynamics365/finance/accounts-payable/accounts-payable
+  text: 'POS registers are configured at Retail and Commerce > Channel setup > POS setup > Registers with hardware profile
+    (receipt printer, cash drawer, card reader, barcode scanner, payment terminal) and visual profile (button grid layout,
+    colour theme). MPOS (Modern POS) runs as a Windows app with offline mode capability; CPOS (Cloud POS) runs in a browser.
+    Cashier operations include sale, return, layaway, customer order, gift card, void, discount override, price check, and
+    end-of-day Z-report with cash reconciliation. Manager operations enable price override, transaction void, float in/out,
+    and blind close. POS extensibility framework allows custom operations and custom UI views via the POS SDK.
+
+    '
+- id: doc-ret-0003
+  module: RetailCommerce
+  feature: Product Assortment and Category Management
+  title: Product Assortment and Category Management
+  url: https://learn.microsoft.com/en-us/dynamics365/finance/accounts-payable/accounts-payable
+  text: 'Assortments are configured at Retail and Commerce > Catalogs and assortments > Assortments assigning product groups
+    to channels with effective dates. Category hierarchies at Retail and Commerce > Products and variants > Category hierarchies
+    define the navigation taxonomy for POS and e-commerce. Product attributes at Retail and Commerce > Products and variants
+    > Attributes capture colour, size, style, and custom properties for product variants. The Retail product kit at Retail
+    and Commerce > Products and variants > Retail product kits bundles components for POS sale as a single item with component
+    substitution rules. Assortment publishing pushes product lists to channel databases via Commerce Data Exchange (CDX).
+    The Assortment report shows product availability by channel and variant.
+
+    '
+- id: doc-ret-0004
+  module: RetailCommerce
+  feature: Commerce Pricing and Discount Engine
+  title: Commerce Pricing and Discount Engine
+  url: https://learn.microsoft.com/en-us/dynamics365/finance/accounts-payable/accounts-payable
+  text: 'Commerce pricing at Retail and Commerce > Pricing and discounts > Price groups links price lists to channels, loyalty
+    tiers, customer affiliations, and catalogs. Discount types at Retail and Commerce > Pricing and discounts include Quantity
+    discount (buy N get % off), Mix-and-match (buy items from groups for a set price), Threshold (order total triggers discount),
+    and Simple discount. Discount priority and concurrency rules control how multiple discounts compound or exclude each other.
+    Best price and compound calculations optimise customer value. Discount approval workflows at Retail and Commerce > Setup
+    > Discount approval route high-value promotions through management sign-off before activation. Loyalty discounts apply
+    points redemption at POS automatically per loyalty program rules.
+
+    '
+- id: doc-ret-0005
+  module: RetailCommerce
+  feature: Omnichannel Order Fulfillment
+  title: Omnichannel Order Fulfillment
+  url: https://learn.microsoft.com/en-us/dynamics365/finance/accounts-payable/accounts-payable
+  text: 'Omnichannel orders are managed at Retail and Commerce > Orders > All customer orders. Order types include Online
+    order (from e- commerce), Call centre order (telephony), and Customer order (POS). Fulfillment options: Ship to customer
+    (standard fulfilment), Pick up in store (BOPIS – buy online pick up in store), and Ship from store. Distributed order
+    management (DOM) at Retail and Commerce > Distributed order management > Fulfillment rules assigns fulfilment to the optimal
+    location (lowest cost, proximity, inventory availability). Store inventory real-time check at POS uses ATP from the headquarters
+    inventory feed. Cross-channel returns allow in-store return of online purchases. The Omnichannel order analytics workspace
+    tracks fulfilment performance by channel and mode.
+
+    '
+- id: doc-ret-0006
+  module: RetailCommerce
+  feature: Customer Loyalty Programs
+  title: Customer Loyalty Programs
+  url: https://learn.microsoft.com/en-us/dynamics365/finance/accounts-payable/accounts-payable
+  text: 'Loyalty programs are configured at Retail and Commerce > Customers > Loyalty > Loyalty programs. Program tiers define
+    earning and redemption rules: points earned per currency unit, bonus points on qualifying products, tier upgrade thresholds,
+    tier benefit levels (Gold, Silver, Bronze). Loyalty cards at Retail and Commerce > Customers > Loyalty > Loyalty cards
+    link customers to programs. Points expiry rules at Retail and Commerce > Customers > Loyalty > Loyalty points expiry schedule
+    point forfeiture. POS automatically calculates and tenders loyalty point redemptions. The Loyalty card balance inquiry
+    at Retail and Commerce > Inquiries shows tier status, point balance, and transaction history per member. Loyalty analytics
+    tracks earn rates, redemption rates, and tier migration.
+
+    '
+- id: doc-ret-0007
+  module: RetailCommerce
+  feature: Store Inventory and Replenishment
+  title: Store Inventory and Replenishment
+  url: https://learn.microsoft.com/en-us/dynamics365/finance/accounts-payable/accounts-payable
+  text: 'Store inventory is tracked at Retail and Commerce > Inventory management > On-hand inventory by store. Stock counting
+    at Retail and Commerce > Inventory management > Store inventory counts creates periodic or tag counting journals using
+    WMA or handheld scanner. Store replenishment at Retail and Commerce > Replenishment > Replenishment rules defines min/max
+    levels triggering transfer orders from a distribution centre to the store warehouse. Cross-docking at the distribution
+    centre routes inbound merchandise directly to store transfer orders. The Retail inventory statement at Retail and Commerce
+    > Inventory management > Statements reconciles POS sales, returns, and adjustments to the inventory subledger for financial
+    posting. Shrinkage and breakage tracking records loss events with reason codes.
+
+    '
+- id: doc-ret-0008
+  module: RetailCommerce
+  feature: Call Centre and Assisted Selling
+  title: Call Centre and Assisted Selling
+  url: https://learn.microsoft.com/en-us/dynamics365/finance/accounts-payable/accounts-payable
+  text: 'Call centre channels at Retail and Commerce > Channels > Call centres enable telephony-based order entry with customer
+    identity lookup, order history view, and product search. Upsell and cross-sell at Retail and Commerce > Call centre setup
+    > Upsell / cross-sell products suggests companion items during order entry. Script management at Retail and Commerce >
+    Call centre setup > Scripts presents agents with guided conversation flows. Hold code management places orders on hold
+    for fraud, payment, or stock review. Back-order notification workflows alert customers to delayed fulfilment. The Order
+    completion rate and Average order value workspace tracks call centre agent productivity. Continuity programmes (subscription
+    orders) auto-create recurring orders at configured intervals.
+
+    '
+- id: doc-ret-0009
+  module: RetailCommerce
+  feature: Gift Cards and Store Credit
+  title: Gift Cards and Store Credit
+  url: https://learn.microsoft.com/en-us/dynamics365/finance/accounts-payable/accounts-payable
+  text: 'Gift cards are configured at Retail and Commerce > Products and variants > Gift cards. Physical and digital gift
+    card issuance occurs at POS with a linked gift card number and balance. Gift card tender type at Retail and Commerce >
+    Channel setup > Payment methods enables balance inquiry, partial redemption, and re-load at any channel. Gift card liability
+    is tracked in a dedicated GL account with breakage estimation. Store credit (credit memo) is issued at POS for no-receipt
+    returns or customer goodwill. Store credit balance is stored on the customer loyalty card or account record. Cross- channel
+    balance inquiry allows gift card balance checks online or in-store. Gift card expiry rules manage regulatory compliance
+    on dormancy fees per jurisdiction.
+
+    '
+- id: doc-ret-0010
+  module: RetailCommerce
+  feature: Commerce Analytics and Retail Reporting
+  title: Commerce Analytics and Retail Reporting
+  url: https://learn.microsoft.com/en-us/dynamics365/finance/accounts-payable/accounts-payable
+  text: 'The Retail and Commerce analytics workspace provides embedded Power BI dashboards: Sales by channel, product, category,
+    and store with period comparison; Average transaction value and items per basket; Conversion rate from shopper count to
+    transactions; Top-selling and slow-moving SKUs by location; Inventory turn rate and days-on-hand by store. The Retail
+    sales report at Retail and Commerce > Inquiries and reports > Retail sales statement shows daily revenue, cost, margin,
+    and tax by store. The Shift report provides end-of-day cashier-level payment reconciliation. Commerce entity store measures
+    are refreshed from the D365 entity store on a configurable schedule for near-real-time dashboard updates.
+
+    '
+- id: doc-bud-0001
+  module: BudgetManagement
+  feature: Budget Planning (Budget Plan Module)
+  title: Budget Planning (Budget Plan Module)
+  url: https://learn.microsoft.com/en-us/dynamics365/finance/accounts-payable/accounts-payable
+  text: 'Budget plans are created at Budgeting > Budget planning > Budget plans. Budget planning workflows route the plan
+    through Department submission, Finance review, CFO approval, and Board sign-off stages with configurable routing rules.
+    Budget plan scenarios (e.g. Base, Optimistic, Conservative) allow parallel version modelling. Budget allocation templates
+    distribute annual totals to months using seasonal allocation keys. Budget planning layouts define which columns (scenarios,
+    periods, comparison) and rows (accounts, dimensions) appear in the plan entry spreadsheet. The Plan-to- register action
+    transfers approved budget plan amounts to budget register entries for budget control activation. Excel add-in integration
+    allows offline budget entry with upload synchronization.
+
+    '
+- id: doc-bud-0002
+  module: BudgetManagement
+  feature: Budget Register Entries and Revisions
+  title: Budget Register Entries and Revisions
+  url: https://learn.microsoft.com/en-us/dynamics365/finance/accounts-payable/accounts-payable
+  text: 'Budget register entries at Budgeting > Budget register entries record original budget, revisions, transfers, and
+    encumbrances. Budget codes at Budgeting > Setup > Basic budgeting > Budget codes define entry types (Original, Revision,
+    Transfer, Encumbrance, Pre-encumbrance) with workflow routing and reversibility rules. Budget transfer rules at Budgeting
+    > Setup > Budget control > Budget transfer rules enforce who can transfer between budget lines (e.g. transfers within
+    a department are self-approved; cross-department transfers require Finance approval). The Budget register entry inquiry
+    at Budgeting > Inquiries > Budget register entries shows all entries with approval status, account, period, and cumulative
+    impact. Period allocation recalculates monthly budget from annual revisions using the configured key.
+
+    '
+- id: doc-bud-0003
+  module: BudgetManagement
+  feature: Budget Control and Funds Checking
+  title: Budget Control and Funds Checking
+  url: https://learn.microsoft.com/en-us/dynamics365/finance/accounts-payable/accounts-payable
+  text: 'Budget control is configured at Budgeting > Setup > Budget control > Budget control configuration. Funds checking
+    documents include purchase requisitions (pre-encumbrance), purchase orders (encumbrance), vendor invoices, expense reports,
+    journal entries, and project cost postings. Budget funds check results are: Funds available (transaction proceeds), Funds
+    not available (transaction blocked), or Warning (user can override). Over-budget override requires a configurable approval
+    workflow. Budget thresholds at Budgeting > Setup > Budget control > Budget thresholds define warning percentage (e.g.
+    warn at 90% consumed). Budget control statistics at Budgeting > Inquiries > Budget control statistics shows budget, encumbrances,
+    actual, and remaining balance by financial dimension per period.
+
+    '
+- id: doc-bud-0004
+  module: BudgetManagement
+  feature: Position Budgeting and FTE Planning
+  title: Position Budgeting and FTE Planning
+  url: https://learn.microsoft.com/en-us/dynamics365/finance/accounts-payable/accounts-payable
+  text: 'Position budgeting at Budgeting > Position budgeting > Position budget plans integrates headcount planning with the
+    financial budget. Budget cost elements at Budgeting > Setup > Position budgeting > Budget cost element groups define compensation
+    components (salary, benefits, payroll taxes) with calculation rules. Position forecasts link proposed headcount to job
+    grades and budget cost elements. The position budget calculation generates the annual compensation cost per position based
+    on grade, band, and benefit elections. Vacancy and attrition assumptions adjust the position budget for expected turnover.
+    The Position budget vs actuals report compares planned FTE cost to posted payroll and benefits expenses. Integration with
+    HR position management ensures approved new positions are budgeted before recruitment begins.
+
+    '
+- id: doc-bud-0005
+  module: BudgetManagement
+  feature: Budget Planning Excel Integration
+  title: Budget Planning Excel Integration
+  url: https://learn.microsoft.com/en-us/dynamics365/finance/accounts-payable/accounts-payable
+  text: 'Budget planning Excel templates at Budgeting > Budget planning > Budget planning configuration > Layouts define the
+    workbook format with account dimension rows, scenario columns, and formula cells. The Excel add-in enables budget analysts
+    to work offline, entering assumptions and running sensitivity models. Publish to D365 uploads the completed workbook back
+    to the budget plan record with conflict detection for concurrent edits. Attachment templates at Budgeting > Setup > Budget
+    planning > Budget planning configuration specify which Excel layout applies per planning stage. Justification documents
+    and supporting analysis can be attached to the budget plan as document management records. The Excel layout supports dynamic
+    filtering by department, cost centre, and legal entity for decentralised planning.
+
+    '
+- id: doc-bud-0006
+  module: BudgetManagement
+  feature: Revenue Forecasting and Sales Budget
+  title: Revenue Forecasting and Sales Budget
+  url: https://learn.microsoft.com/en-us/dynamics365/finance/accounts-payable/accounts-payable
+  text: 'Revenue budgets are entered as budget register entries on income account segments or created from the budget plan.
+    Sales forecast integration at Budgeting > Setup > Basic budgeting > Budget model pulls demand forecast quantities from
+    Master planning > Demand forecasting, converting units to revenue using price lists. The Budget vs actual P&L report at
+    General ledger > Inquiries and reports > Financial reporting uses budget register entries as the comparison column against
+    posted revenue. Rolling forecast at Budgeting > Budget register entries > Create rolling forecast replaces remaining budget
+    periods with updated projections. KPI tiles in the CFO workspace show revenue attainment percentage, YTD budget variance,
+    and full-year revised estimate (RE) vs original budget.
+
+    '
+- id: doc-bud-0007
+  module: BudgetManagement
+  feature: Capital Budget (CAPEX) Tracking
+  title: Capital Budget (CAPEX) Tracking
+  url: https://learn.microsoft.com/en-us/dynamics365/finance/accounts-payable/accounts-payable
+  text: 'Capital expenditure budgets are managed by creating budget register entries against asset acquisition and improvement
+    GL accounts with a dedicated CAPEX budget code. Integration with Fixed assets allows linking approved capital budget lines
+    to fixed asset projects or asset groups. Purchase requisitions for capital items trigger CAPEX budget checking, creating
+    encumbrances against the capital budget. The CAPEX approval workflow routes high-value asset purchase requests through
+    project sponsor, CFO, and board approval tiers based on configurable amount thresholds. The Capital project tracker at
+    Fixed assets > Inquiries shows budget, committed, and spent amounts per capital project. Asset activation transfers capitalised
+    costs from the construction-in-progress account to the fixed asset account consuming the CAPEX budget.
+
+    '
+- id: doc-bud-0008
+  module: BudgetManagement
+  feature: Grant and Public Sector Fund Budgeting
+  title: Grant and Public Sector Fund Budgeting
+  url: https://learn.microsoft.com/en-us/dynamics365/finance/accounts-payable/accounts-payable
+  text: 'Public sector fund accounting at General ledger > Setup > Chart of accounts > Funds associates transactions with
+    specific funds (General, Special Revenue, Capital Projects, Debt Service). Fund budgets at Budgeting > Budget register
+    entries track appropriations per fund for government accounting compliance. Allotment schedules at Budgeting > Setup >
+    Public sector > Budget allotments release portions of annual appropriations to spending departments on a time-controlled
+    basis. Grant management at Project management and accounting > Grants > Grants tracks grant awards, matching requirements,
+    and spending eligibility rules. Grant budget consumption reporting at Project management and accounting > Inquiries >
+    Grant utilisation shows spend against grant ceiling for grantor reporting compliance.
+
+    '
+- id: doc-bud-0009
+  module: BudgetManagement
+  feature: Budget Scenario Modelling and What-If Analysis
+  title: Budget Scenario Modelling and What-If Analysis
+  url: https://learn.microsoft.com/en-us/dynamics365/finance/accounts-payable/accounts-payable
+  text: 'Multiple budget scenarios are maintained in parallel within a single budget plan at Budgeting > Budget planning >
+    Budget plans. Scenario types (Pessimistic, Base, Optimistic, Board Submission) allow simultaneous modelling of different
+    business assumptions. The Budget allocation template at Budgeting > Budget planning > Budget allocation templates redistributes
+    scenario amounts using seasonal keys, driver-based formulas, or fixed percentages. Budget comparison reports at Budgeting
+    > Inquiries > Budget vs actual show multiple scenario columns side-by-side for sensitivity analysis. The CFO scenario
+    comparison workspace presents variance analysis between scenarios with drill-through to account-level detail. Approved
+    scenarios are promoted to the Active status for budget control activation.
+
+    '
+- id: doc-bud-0010
+  module: BudgetManagement
+  feature: Budget Inquiry and Reporting Workspaces
+  title: Budget Inquiry and Reporting Workspaces
+  url: https://learn.microsoft.com/en-us/dynamics365/finance/accounts-payable/accounts-payable
+  text: 'The Budget analysis workspace at Budgeting > Budget plans > Budget analysis provides a cross-dimensional tile view
+    of budget consumption by department, cost centre, and account. KPI tiles show: Total budget, Total actuals, Encumbrances,
+    Pre-encumbrances, Available balance, and Consumed percentage. Drill-through from any tile opens the Budget control statistics
+    form with transaction- level detail. The Budget funds check activity report at Budgeting > Inquiries > Budget check activity
+    log shows all funds-check results (passed, warned, failed) with user, document, and timestamp for audit and compliance
+    reviews. Export to Excel and Power BI publishing provide self-service budget reporting for department managers.
+
+    '
+- id: doc-er-0001
+  module: ElectronicReporting
+  feature: Electronic Reporting (ER) Framework Overview
+  title: Electronic Reporting (ER) Framework Overview
+  url: https://learn.microsoft.com/en-us/dynamics365/fin-ops-core/dev-itpro/analytics/general-electronic-reporting
+  text: 'Electronic reporting (ER) at Organization administration > Electronic reporting > Reporting configurations provides
+    a no-code configuration framework for generating structured output formats (XML, JSON, Excel, Word, PDF, CSV, text) from
+    D365 data. The ER framework separates data model (abstract business domain model), model mapping (data model to application
+    tables binding), and format (output structure and layout) into independent configurations. Configurations are versioned
+    with Draft, Completed, Shared, and Discontinued statuses. The ER designer uses a tree-based structure with a formula editor
+    supporting 300+ built-in functions (string, date, logical, list, data conversion). ER runs on-demand from menu items,
+    on schedule via batch, or triggered from document management events.
+
+    '
+- id: doc-er-0002
+  module: ElectronicReporting
+  feature: ER Configuration Repository and LCS Import
+  title: ER Configuration Repository and LCS Import
+  url: https://learn.microsoft.com/en-us/dynamics365/fin-ops-core/dev-itpro/analytics/general-electronic-reporting
+  text: 'ER global repository at Organization administration > Electronic reporting > Repositories > Global hosts Microsoft-published
+    configurations for regulatory requirements (tax returns, audit files, SEPA payments, Intrastat, ISO 20022). Import from
+    Global repository downloads configurations to the local instance. Lifecycle Services (LCS) project asset library at Organization
+    administration > Electronic reporting > Repositories > LCS stores custom configurations for team sharing and deployment
+    across environments. Configuration provider at Organization administration > Electronic reporting > Configuration providers
+    manages the organisation''s publishing identity for custom configurations. RCS (Regulatory Configuration Service) provides
+    a centralised cloud workspace for multi-tenant configuration development and lifecycle management separate from D365 environments.
+
+    '
+- id: doc-er-0003
+  module: ElectronicReporting
+  feature: Data Management Framework (DIXF)
+  title: Data Management Framework (DIXF)
+  url: https://learn.microsoft.com/en-us/dynamics365/fin-ops-core/dev-itpro/analytics/general-electronic-reporting
+  text: 'The Data management framework at Workspaces > Data management enables bulk data import, export, and migration using
+    data entities. Data entities are pre-built or custom abstractions over application tables exposing business objects (customers,
+    vendors, products, GL journals, opening balances). Import/export projects define the entity, file format (Excel, CSV,
+    XML, JSON), and field mapping. Staging table processing validates imported records with error reporting before committing
+    to application tables. The Copy into legal entity function at Data management > Copy into legal entity replicates configuration
+    data (chart of accounts, payment terms, vendor groups) across legal entities. Recurring integration at Data management
+    > Manage > Recurring data jobs automates scheduled file-based data exchange with external systems.
+
+    '
+- id: doc-er-0004
+  module: ElectronicReporting
+  feature: Business Document Management
+  title: Business Document Management
+  url: https://learn.microsoft.com/en-us/dynamics365/fin-ops-core/dev-itpro/analytics/general-electronic-reporting
+  text: 'Business document management (BDM) at Organization administration > Electronic reporting > Business document management
+    enables business users to edit customer-facing document templates (invoices, packing slips, purchase orders, cheques)
+    without developer access. Templates are Word or Excel files with ER format binding via tagged bookmarks or named ranges.
+    Template editing in BDM opens the document in the browser or desktop Word/Excel via Office integration. Template versioning
+    tracks changes with publish and activate lifecycle. Active templates replace the base ER format output at runtime. The
+    BDM template library at Organization administration > Electronic reporting > Business document management shows all available
+    templates with their base format, status, and last modified date.
+
+    '
+- id: doc-er-0005
+  module: ElectronicReporting
+  feature: Dual-Write Integration with Dataverse
+  title: Dual-Write Integration with Dataverse
+  url: https://learn.microsoft.com/en-us/dynamics365/fin-ops-core/dev-itpro/analytics/general-electronic-reporting
+  text: 'Dual-write at System administration > Dual-write enables near-real- time bidirectional synchronisation between Dynamics
+    365 Finance and Operations and Dataverse. Table maps link F&O entities (customers, products, sales orders, invoices) to
+    Dataverse tables for integration with D365 Sales, Customer Service, Commerce, and Power Platform apps. Initial synchronisation
+    uses the bootstrap process to align existing records. Conflict resolution rules at System administration > Dual-write
+    > Conflict handling define precedence when simultaneous updates occur. Error handling at System administration > Dual-write
+    > Errors shows failed synchronisation records with retry capability. The Dual-write health dashboard monitors synchronisation
+    latency and error rates. Finance Insights features (payment predictions, cash flow forecasts, budget proposals) depend
+    on Dual-write for Dataverse data access.
+
+    '
+- id: doc-er-0006
+  module: ElectronicReporting
+  feature: Finance Insights and AI-Powered Predictions
+  title: Finance Insights and AI-Powered Predictions
+  url: https://learn.microsoft.com/en-us/dynamics365/fin-ops-core/dev-itpro/analytics/general-electronic-reporting
+  text: 'Finance Insights at System administration > Feature management > Finance Insights enables AI-powered financial predictions.
+    Customer payment predictions use machine learning trained on payment history to forecast On time, Late, or Very late payment
+    probability per invoice, helping collections prioritisation. Cash flow forecasting at Finance Insights > Cash flow forecasting
+    combines rule-based subledger projections with ML-adjusted payment timing predictions. Budget proposals at Finance Insights
+    > Budget proposal generate ML-based budget amounts from historical actuals as a starting point for the planning process.
+    External data integration adds economic indicators, FX rates, and commodity prices to forecast models. Finance Insights
+    requires Azure Machine Learning workspace and Dataverse environment configuration.
+
+    '
+- id: doc-er-0007
+  module: ElectronicReporting
+  feature: Power BI Embedded and Entity Store
+  title: Power BI Embedded and Entity Store
+  url: https://learn.microsoft.com/en-us/dynamics365/fin-ops-core/dev-itpro/analytics/general-electronic-reporting
+  text: 'Power BI embedded analytics at Workspaces > [module workspace] are powered by the Entity store at System administration
+    > Setup > Entity store. Entity store is an operational data warehouse (Azure SQL) optimised for analytical queries with
+    pre-aggregated measurements. Aggregate measurements are refreshed from D365 OLTP data on a configurable schedule (every
+    1, 2, 4, or 24 hours). Standard Power BI reports and workspaces include Procurement and sourcing analytics, Inventory
+    performance, Financial performance, Production performance, and Retail channel performance. DirectQuery mode connects
+    Power BI Desktop to Entity store for custom report development without data export. Premium workspaces push curated reports
+    to the Power BI service for broader distribution.
+
+    '
+- id: doc-er-0008
+  module: ElectronicReporting
+  feature: Regulatory Feature Management
+  title: Regulatory Feature Management
+  url: https://learn.microsoft.com/en-us/dynamics365/fin-ops-core/dev-itpro/analytics/general-electronic-reporting
+  text: 'Feature management at Workspaces > Feature management > All provides a controlled release mechanism for new and preview
+    features before they become mandatory. Features show status: Preview, Generally Available, Mandatory (automatically enabled
+    at a specified release). Enabling features activates new menus, data entities, and workflows. The Feature management search
+    filters by module, status, and release wave. Globalization features at Workspaces > Globalization > Electronic reporting
+    are country-specific regulatory configurations (localised payment formats, tax returns, audit file requirements) deployed
+    from the Global repository. The Regulatory feature watchlist at Workspaces > Globalization > Localization alerts administrators
+    to upcoming mandatory compliance requirements by country.
+
+    '
+- id: doc-er-0009
+  module: ElectronicReporting
+  feature: Audit Workbench and Compliance Monitoring
+  title: Audit Workbench and Compliance Monitoring
+  url: https://learn.microsoft.com/en-us/dynamics365/fin-ops-core/dev-itpro/analytics/general-electronic-reporting
+  text: 'The Audit workbench at System administration > Inquiries > Database log provides a consolidated view of tracked field-level
+    changes with filters for table, field, user, and date range. Database logging configuration at System administration >
+    Setup > Database log configuration defines which tables and fields are tracked. The User log at System administration
+    > Inquiries > User log records all user sign-in and sign-out events with IP address and session duration. The Security
+    diagnostic at System administration > Security > Security diagnostics checks user-privilege compliance against Segregation
+    of Duties (SoD) conflict rules. The Scheduled task log at System administration > Inquiries > Batch job history shows
+    all batch executions with start/end time, status, and error messages. Compliance alerting at System administration > Setup
+    > Alert rules creates exception notifications for rule violations.
+
+    '
+- id: doc-er-0010
+  module: ElectronicReporting
+  feature: Data Export to Azure Data Lake
+  title: Data Export to Azure Data Lake
+  url: https://learn.microsoft.com/en-us/dynamics365/fin-ops-core/dev-itpro/analytics/general-electronic-reporting
+  text: 'Export to Azure Data Lake at System administration > Setup > Export to Data Lake continuously exports D365 F&O entity
+    change data to Azure Data Lake Storage Gen2 in Common Data Model (CDM) format. Table and entity selection at System administration
+    > Setup > Export to Data Lake > Configure data lake > Add tables specifies which objects are replicated. Change data capture
+    (CDC) exports incremental changes as they occur in near real time. The Lake integration supports Azure Synapse Analytics,
+    Azure Databricks, Power BI DirectQuery, and Microsoft Fabric for enterprise analytics. The Data lake health check at System
+    administration > Setup > Export to Data Lake > Health check validates connectivity and replication status. BYOD (Bring
+    Your Own Database) provides an alternative bulk export mechanism to Azure SQL Database.
+
+    '
+- id: doc-svc-0001
+  module: ServiceManagement
+  feature: Service Agreements and Contracts
+  title: Service Agreements and Contracts
+  url: https://learn.microsoft.com/en-us/dynamics365/supply-chain/service-management/service-management-home-page
+  text: 'Service agreements are created at Service management > Service agreements > Service agreements. Agreements define
+    the customer, service level, contract start and end dates, billing frequency, response and resolution time targets, and
+    pricing method (Fixed, Time and material, Per unit, Subscription). Service agreement lines specify services, spare parts,
+    and fee categories with contracted prices and quantities. Service subscriptions at Service management > Service subscriptions
+    > Service subscriptions generate recurring service fees at the configured period. Agreement renewal alerts notify service
+    managers before contract expiry. The Service agreement profitability inquiry at Service management > Inquiries shows revenue,
+    cost, and margin per contract.
+
+    '
+- id: doc-svc-0002
+  module: ServiceManagement
+  feature: Service Order Processing
+  title: Service Order Processing
+  url: https://learn.microsoft.com/en-us/dynamics365/supply-chain/service-management/service-management-home-page
+  text: 'Service orders are created at Service management > Service orders > Service orders for ad-hoc or agreement-based
+    service work. Service order stages (Open, Dispatched, In progress, Complete, Cancelled) track lifecycle status. Service
+    order lines capture the service task, object (customer asset), technician assignment, estimated and actual hours, spare
+    parts consumed, and expenses. Parts consumption posts inventory issue transactions. Technician time is posted via service
+    order time journals linked to worker cost rates. The repair stage tracking at Service management > Service orders > Repair
+    stages records fault symptom, diagnosis, correction, and final verification. Posting the service order generates the customer
+    invoice and cost journals.
+
+    '
+- id: doc-svc-0003
+  module: ServiceManagement
+  feature: Dispatch Board and Technician Scheduling
+  title: Dispatch Board and Technician Scheduling
+  url: https://learn.microsoft.com/en-us/dynamics365/supply-chain/service-management/service-management-home-page
+  text: 'The dispatch board at Service management > Dispatch board provides a calendar view of technician assignments by day,
+    week, or month. Dispatchers drag service orders to available technician time slots from the open work queue. Technician
+    skill matching at Service management > Setup > Skills assigns certifications and competencies to workers, enabling skill-based
+    dispatch. Travel time estimates consider technician location and customer site address. Capacity view shows technician
+    utilisation percentage by period. The dispatch confirmation sends technician assignment notifications via email or mobile.
+    Customer appointment notifications include expected arrival window and technician contact details. Service SLA monitoring
+    flags response-time breaches with escalation alerts.
+
+    '
+- id: doc-svc-0004
+  module: ServiceManagement
+  feature: Service Object and BOM Management
+  title: Service Object and BOM Management
+  url: https://learn.microsoft.com/en-us/dynamics365/supply-chain/service-management/service-management-home-page
+  text: 'Service objects (customer assets) are registered at Service management > Service objects > Service objects. Object
+    records capture serial number, model, installation date, location, warranty expiry, and linked service agreement. The
+    service object BOM at Service management > Service objects > Service BOM documents the component structure of the asset,
+    enabling spare parts identification and replacement history tracking. BOM line replacement records (Replace, Replenish,
+    Remove) create a service change history per component. The Object BOM inquiry shows current and replaced components with
+    replacement date and technician. Template BOMs at Service management > Setup > Service BOM templates define standard component
+    structures reused across multiple service objects of the same model.
+
+    '
+- id: doc-svc-0005
+  module: ServiceManagement
+  feature: Service Level Agreements (SLA) and Priority Rules
+  title: Service Level Agreements (SLA) and Priority Rules
+  url: https://learn.microsoft.com/en-us/dynamics365/supply-chain/service-management/service-management-home-page
+  text: 'Service level agreements are configured at Service management > Service level agreements > Service level agreements
+    defining response time, acknowledgement time, and resolution time targets by priority (P1 Critical, P2 High, P3 Medium,
+    P4 Low). SLA assignment rules at Service management > Setup > SLA assignment rules automatically apply the correct SLA
+    based on customer tier, service category, or product type. SLA breach monitoring at Service management > Service orders
+    > SLA status calculates elapsed and remaining time against targets with RAG status indicators. Escalation actions at Service
+    management > Setup > Escalation rules trigger automatic notifications to supervisors or account managers when SLA breach
+    is imminent (e.g. 80% of target time consumed). SLA compliance reporting tracks response and resolution performance by
+    customer, priority, and period.
+
+    '
+- id: doc-svc-0006
+  module: ServiceManagement
+  feature: Warranty Management
+  title: Warranty Management
+  url: https://learn.microsoft.com/en-us/dynamics365/supply-chain/service-management/service-management-home-page
+  text: 'Warranty templates are configured at Service management > Setup > Warranty > Warranty templates defining coverage
+    terms (parts only, labour and parts, full replacement), duration, and exclusions. Warranty agreements at Service management
+    > Warranty > Warranty agreements link warranty coverage to specific service objects or product groups with start and end
+    dates. On service order creation the system checks warranty status and applies covered cost offsets. Out-of-warranty notifications
+    alert customers before warranty expiry. Warranty claim processing at Service management > Warranty > Warranty claims routes
+    cost reimbursement requests to manufacturers or insurers. The Warranty coverage report at Service management > Inquiries
+    shows active warranties, upcoming expirations, and claim history by object.
+
+    '
+- id: doc-svc-0007
+  module: ServiceManagement
+  feature: Service Cost and Revenue Analysis
+  title: Service Cost and Revenue Analysis
+  url: https://learn.microsoft.com/en-us/dynamics365/supply-chain/service-management/service-management-home-page
+  text: 'Service order profitability at Service management > Inquiries > Service order analysis shows revenue (invoiced service
+    fees and parts), direct cost (technician labour at cost rate, parts at inventory cost), and gross margin per service order
+    and aggregate by contract, customer, service category, and period. Technician cost rates at Service management > Setup
+    > Cost price (hour) and Sales price (hour) define standard rates for billing and costing. Parts margin analysis compares
+    spare parts sales price to inventory cost. The Service subscription revenue inquiry at Service management > Service subscriptions
+    > Subscription transactions shows recurring revenue accruals per period. Budget vs actual reporting for service operations
+    uses project budget integration when service orders are linked to project contracts.
+
+    '
+- id: doc-svc-0008
+  module: ServiceManagement
+  feature: Service Repair Stages and Quality Control
+  title: Service Repair Stages and Quality Control
+  url: https://learn.microsoft.com/en-us/dynamics365/supply-chain/service-management/service-management-home-page
+  text: 'Repair stages are defined at Service management > Setup > Repair > Repair stages with the processing sequence: Diagnosis,
+    Quotation, Approval, Repair, Test, Close. Each stage has an optional external notification to inform the customer of progress.
+    Condition codes at Service management > Setup > Conditions record the asset state at receipt (Damaged, Functional, Unknown)
+    and after repair (Repaired, Replaced, Beyond repair). Symptom, cause, and resolution code hierarchies at Service management
+    > Setup > Symptom codes / Cause codes / Resolution codes enable structured fault coding for reliability analysis. The
+    fault code analysis report identifies repeat failures by symptom and cause code for product quality improvement. Customer
+    satisfaction surveys linked to service order closure capture NPS and CSAT scores.
+
+    '
+- id: doc-svc-0009
+  module: ServiceManagement
+  feature: Subscription Billing for Service Contracts
+  title: Subscription Billing for Service Contracts
+  url: https://learn.microsoft.com/en-us/dynamics365/supply-chain/service-management/service-management-home-page
+  text: 'Service subscriptions generate periodic invoices for ongoing maintenance contracts. Subscription parameters at Service
+    management > Setup > Service management parameters define the invoicing frequency granularity (Hour, Day, Week, Month,
+    Quarter, Year). Subscription fee accruals at Service management > Periodic tasks > Post accruals recognise revenue ratably
+    over the subscription period in deferred revenue accounts. The subscription fee transaction inquiry at Service management
+    > Inquiries > Service subscription transactions shows all created, posted, and cancelled subscription fees. Proration
+    on mid-period subscription start or end calculates partial-period amounts. Escalation (annual price increase) is configured
+    per subscription with percentage or index-linked uplift. Integration with Revenue recognition posts deferred billing to
+    the appropriate period.
+
+    '
+- id: doc-svc-0010
+  module: ServiceManagement
+  feature: Service Analytics and KPI Reporting
+  title: Service Analytics and KPI Reporting
+  url: https://learn.microsoft.com/en-us/dynamics365/supply-chain/service-management/service-management-home-page
+  text: 'The Service management analytics workspace provides KPI tiles and charts: First-time fix rate (service orders resolved
+    without repeat visits), Mean time to repair (MTTR) and mean time between failures (MTBF) by object type, SLA compliance
+    rate by priority tier, Technician utilisation and productivity (billable hours vs available hours), Spare parts consumption
+    value by category, and Customer satisfaction score trend. The Power BI Service performance dashboard at Service management
+    > Inquiries > Service analytics drills into individual technician, customer, or product-level performance. Benchmarking
+    compares current period metrics to prior period and annual targets. Alert rules at System administration > Alert rules
+    notify service managers when KPIs breach defined thresholds.
+
+    '
+- id: doc-cs-0001
+  module: ComplianceSecurity
+  feature: Role-Based Access Control (RBAC)
+  title: Role-Based Access Control (RBAC)
+  url: https://learn.microsoft.com/en-us/dynamics365/finance/accounts-payable/accounts-payable
+  text: 'Security roles are configured at System administration > Security > Security roles. Each role contains privileges
+    (access rights to individual secured objects: menus, forms, data entities, service operations) grouped into duties (business
+    functions e.g. Maintain vendor invoices). Role assignment to users at System administration > Users > Users controls application
+    access. D365 includes 200+ pre-defined roles covering standard business functions. Custom roles are created by copying
+    and modifying existing roles in the Security role tree. The Record-level security framework restricts data access to specific
+    legal entities, departments, or dimension values. Extensible data security (XDS) policies at System administration > Security
+    > Security policies define row-level data filters based on user context.
+
+    '
+- id: doc-cs-0002
+  module: ComplianceSecurity
+  feature: Segregation of Duties (SoD) Rules
+  title: Segregation of Duties (SoD) Rules
+  url: https://learn.microsoft.com/en-us/dynamics365/finance/accounts-payable/accounts-payable
+  text: 'SoD rules are configured at System administration > Security > Segregation of duties > Segregation of duties rules.
+    Each rule defines two conflicting duties that must not be assigned to the same user (e.g. Maintain vendor invoices AND
+    Approve vendor invoices AND Generate vendor payments). The SoD conflict check at System administration > Security > Segregation
+    of duties > Verify compliance of user-role assignments scans all users for active role-duty conflicts and reports violations.
+    Compliance violations at System administration > Security > Segregation of duties > Segregation of duties conflicts shows
+    conflicting role assignments requiring remediation. Compensating controls at System administration > Security > Segregation
+    of duties > Compensating controls document accepted risk exceptions with approver and review date for audit.
+
+    '
+- id: doc-cs-0003
+  module: ComplianceSecurity
+  feature: Electronic Signature for Critical Transactions
+  title: Electronic Signature for Critical Transactions
+  url: https://learn.microsoft.com/en-us/dynamics365/finance/accounts-payable/accounts-payable
+  text: 'Electronic signatures are configured at Organization administration > Electronic signature > Electronic signature
+    requirements. Signature requirement rules at Organization administration > Electronic signature > Electronic signature
+    requirements specify which processes require signer identity verification: PO confirmation above threshold, change order
+    approval, vendor master changes, price override, quality order disposition, and batch record certification. Signature
+    capture at the point of transaction prompts the signer to re-authenticate with username and password plus optional reason
+    code and comment. The Electronic signature log at Organization administration > Electronic signature > Electronic signature
+    certificates provides a tamper-evident record of all signed events with date, user, and document reference for FDA 21
+    CFR Part 11 and GxP compliance.
+
+    '
+- id: doc-cs-0004
+  module: ComplianceSecurity
+  feature: Alert Rules and Proactive Notifications
+  title: Alert Rules and Proactive Notifications
+  url: https://learn.microsoft.com/en-us/dynamics365/finance/accounts-payable/accounts-payable
+  text: 'Alert rules are configured at System administration > Setup > Alert rules per user or system-wide. Alert types: Change-based
+    (trigger when a field value changes, e.g. vendor bank account changed), Due-date (trigger when a date field falls within
+    or beyond a threshold), and Condition (trigger when a computed expression becomes true). Alert delivery methods include
+    Action centre (in-app notification), Email, and batch-generated alert messages. System-defined critical alerts at System
+    administration > Setup > Alerts > System alerts notify administrators of infrastructure events (batch job failures, certificate
+    expiry, synchronisation errors). Alert aggregation at System administration > Inquiries > Alerts shows all triggered alerts
+    by type, user, and status (Read, Unread, Dismissed).
+
+    '
+- id: doc-cs-0005
+  module: ComplianceSecurity
+  feature: User Provisioning and Azure AD Integration
+  title: User Provisioning and Azure AD Integration
+  url: https://learn.microsoft.com/en-us/dynamics365/finance/accounts-payable/accounts-payable
+  text: 'User accounts are provisioned at System administration > Users > Users by importing Azure Active Directory (Entra
+    ID) identities. Azure AD group-to-role mapping at System administration > Security > Assign users to roles via Azure AD
+    groups automates role provisioning based on group membership, reducing manual role administration. Single sign-on (SSO)
+    via Azure AD enables seamless browser-based authentication. External users (vendors, contractors, auditors) are provisioned
+    via Azure AD B2B guest accounts. User import from Azure AD at System administration > Users > Import users from Azure
+    Active Directory syncs user attributes. The User provisioning report at System administration > Inquiries > Security shows
+    all active user accounts, their assigned roles, and last sign-in date.
+
+    '
+- id: doc-cs-0006
+  module: ComplianceSecurity
+  feature: Data Encryption and Privacy Controls
+  title: Data Encryption and Privacy Controls
+  url: https://learn.microsoft.com/en-us/dynamics365/finance/accounts-payable/accounts-payable
+  text: 'D365 Finance and Operations encrypts all data at rest using Transparent Data Encryption (TDE) with Microsoft-managed
+    or Customer-managed keys (CMK) in Azure Key Vault. Data in transit uses TLS 1.2 minimum. Sensitive field masking at System
+    administration > Setup > Sensitive fields allows specific fields (bank account number, Social Security Number, salary)
+    to be masked for users without the View sensitive data privilege. GDPR controls at Organization administration > Global
+    address book > Person search enable right-to-erasure processing and personal data export. Data subject request tracking
+    at Organization administration > Compliance > Person search compliance logs all GDPR requests with completion status.
+    The Privacy compliance workspace monitors data retention policies and overdue deletion tasks.
+
+    '
+- id: doc-cs-0007
+  module: ComplianceSecurity
+  feature: Audit Trail and Change History
+  title: Audit Trail and Change History
+  url: https://learn.microsoft.com/en-us/dynamics365/finance/accounts-payable/accounts-payable
+  text: 'Database logging at System administration > Setup > Database logging configures field-level change capture for selected
+    tables. Each log entry records: Table name, Field name, Old value, New value, User ID, Date and time stamp, Company ID,
+    and Session ID. The Database log inquiry at System administration > Inquiries > Database log supports filtering by table,
+    field, user, company, and date range with export to Excel. The Financial journal audit trail at General ledger > Inquiries
+    > Audit trail shows all journal postings with voucher, user, date, and amounts for subledger review. Document control
+    history at document management level captures who created, modified, and approved each attached document. Audit log retention
+    at System administration > Periodic tasks > Database log cleanup manages log volume.
+
+    '
+- id: doc-cs-0008
+  module: ComplianceSecurity
+  feature: Lifecycle Services (LCS) Environment Management
+  title: Lifecycle Services (LCS) Environment Management
+  url: https://learn.microsoft.com/en-us/dynamics365/finance/accounts-payable/accounts-payable
+  text: 'Lifecycle Services (LCS) at lcs.dynamics.com provides environment management, deployment, and monitoring for D365
+    F&O. Environment topology at LCS > Project > Environments defines production, sandbox, and developer environment tiers.
+    Deployable packages at LCS > Asset library > Software deployable packages contain AOT packages for application updates
+    and ISV solutions. One-click deployment from LCS pushes packages to target environments. Database refresh at LCS > Environments
+    > Maintain > Move database copies production data to sandbox for testing. The Monitoring and Diagnostics portal at LCS
+    > Environments > Monitoring provides application event logs, performance counters, and SQL query analysis. Microsoft Service
+    updates are scheduled and managed via LCS with configurable update windows and pause periods.
+
+    '
+- id: doc-cs-0009
+  module: ComplianceSecurity
+  feature: Task Recorder and Business Process Modeler (BPM)
+  title: Task Recorder and Business Process Modeler (BPM)
+  url: https://learn.microsoft.com/en-us/dynamics365/finance/accounts-payable/accounts-payable
+  text: 'Task recorder at Settings > Task recorder captures step-by-step recordings of D365 processes generating Word documentation,
+    Visio diagrams, AX test scripts, and RSAT test case files automatically. The Business Process Modeler (BPM) library at
+    LCS > Business process libraries organises task recordings into hierarchical business process libraries aligned to APQC
+    industry reference frameworks. BPM libraries serve as the foundation for fit-gap analysis during implementation projects,
+    with capability to mark processes as In scope, Custom, Out of scope, or Gap. BPM-to-Azure DevOps synchronisation at LCS
+    > Business process libraries > Sync to DevOps creates work items for identified gaps. Help documentation in D365 launches
+    contextual task guide walkthroughs from BPM recordings directly within the application.
+
+    '
+- id: doc-cs-0010
+  module: ComplianceSecurity
+  feature: Regulatory Compliance and Policy Management
+  title: Regulatory Compliance and Policy Management
+  url: https://learn.microsoft.com/en-us/dynamics365/finance/accounts-payable/accounts-payable
+  text: 'The Compliance management workspace at Organization administration > Compliance > Compliance management tracks regulatory
+    obligations, internal policies, and compliance controls across the organisation. Policy documents are stored in document
+    management with version control and approval workflows. Compliance tasks are assigned to control owners with due dates,
+    evidence requirements, and completion sign-off. Risk assessment at Organization administration > Compliance > Risk assessment
+    scores inherent and residual risk per control. The ISO 27001, SOX, and GDPR compliance frameworks are supported through
+    pre-configured control libraries. Compliance analytics at Organization administration > Compliance > Compliance analytics
+    shows control pass/fail rates, overdue tasks, and risk heatmaps for executive governance reporting.
+
+    '
+- id: doc-gl-0001
+  module: GeneralLedger
+  feature: Financial Dimensions
+  title: Financial dimensions overview
+  url: https://learn.microsoft.com/en-us/dynamics365/finance/general-ledger/financial-dimensions
+  text: 'Financial dimensions in Dynamics 365 Finance provide multi-dimensional cost accounting without separate ledgers.
+    Dimensions are defined at General ledger > Chart of accounts > Dimensions > Financial dimensions. Account structures link
+    dimensions to main accounts and enforce entry rules. Default dimension values can be inherited from customers, vendors,
+    products, or projects. Dimension combinations on journal lines and document headers drive segmented P&L and balance sheet
+    reporting by cost centre, department, or project.
+
+    '

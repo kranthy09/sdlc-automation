@@ -54,6 +54,7 @@ from .ingestion_atomiser import (
     _ClassifiedRequirement,
 )
 from .ingestion_column_mapper import (
+    ColumnMappingResult,
     _map_column_to_canonical,
     _map_table_rows_to_canonical,
 )
@@ -73,6 +74,7 @@ __all__ = [
     "_ClassifiedRequirement",
     "_infer_moscow_priority",
     "_score_specificity",
+    "ColumnMappingResult",
     "_map_column_to_canonical",
     "_map_table_rows_to_canonical",
     "_atomise_and_classify_batch",

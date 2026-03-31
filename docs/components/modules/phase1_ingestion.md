@@ -59,7 +59,7 @@ class RequirementAtom(BaseModel):
 | Format | Parsed By | Tables | Prose | OCR fallback |
 |--------|-----------|--------|-------|--------------|
 | PDF | pdfplumber | ✅ lattice + stream detection | ✅ outside_bbox isolation | ✅ pdf2image + pytesseract |
-| DOCX | python-docx | ❌ (always `tables=[]`) | ✅ paragraph-level, headings preserved | ❌ |
+| DOCX | python-docx | ✅ first row = headers; blank cells → `col_N`; header-only tables skipped | ✅ paragraph-level, headings preserved; table cells excluded from prose | ❌ |
 | TXT | stdlib pathlib | ❌ | ✅ double-newline split | ❌ |
 
 **Not supported:** Excel (.xlsx), standalone ZIP archives → `UnsupportedFormatError` (quarantined)

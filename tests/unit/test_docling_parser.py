@@ -56,6 +56,33 @@ def _write_docx(
     return p
 
 
+def _write_docx_with_table(
+    tmp_path: Path,
+    rows: list[list[str]],  # rows[0] = header row
+    heading: str = "",
+    body: str = "",
+    name: str = "reqs.docx",
+) -> Path:
+    """Create a real DOCX with an optional heading, a table, and an optional body paragraph."""
+    from docx import Document
+
+    buf = io.BytesIO()
+    doc = Document()
+    if heading:
+        doc.add_heading(heading, level=1)
+    if rows:
+        table = doc.add_table(rows=len(rows), cols=len(rows[0]))
+        for i, row_data in enumerate(rows):
+            for j, cell_text in enumerate(row_data):
+                table.rows[i].cells[j].text = cell_text
+    if body:
+        doc.add_paragraph(body)
+    doc.save(buf)
+    p = tmp_path / name
+    p.write_bytes(buf.getvalue())
+    return p
+
+
 def _write_pdf(tmp_path: Path, text: str, name: str = "reqs.pdf") -> Path:
     """Create a minimal valid PDF with embedded text (no OCR needed)."""
     safe = (
@@ -212,6 +239,116 @@ def test_parse_docx_no_heading_section_is_empty(tmp_path: Path) -> None:
 
     assert len(result.prose) >= 1
     assert result.prose[0].section == ""
+
+
+# ---------------------------------------------------------------------------
+# DOCX — table extraction
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+def test_parse_docx_table_rows_populate_tables_field(tmp_path: Path) -> None:
+    """Table data rows appear in ParseResult.tables with correct keys and values."""
+    from platform.parsers.docling_parser import DoclingParser
+
+    path = _write_docx_with_table(
+        tmp_path,
+        rows=[
+            ["Requirement Description", "Priority", "Wave"],
+            ["The system must validate vendor invoices against purchase orders.", "MUST", "Wave 1"],
+            ["The system shall calculate tax amounts per invoice automatically.", "SHOULD", "Wave 2"],
+        ],
+    )
+    result = DoclingParser().parse(path)
+
+    assert len(result.tables) == 2
+    assert result.tables[0]["Requirement Description"] == (
+        "The system must validate vendor invoices against purchase orders."
+    )
+    assert result.tables[0]["Priority"] == "MUST"
+    assert result.tables[0]["Wave"] == "Wave 1"
+    assert result.tables[1]["Priority"] == "SHOULD"
+    assert result.tables[1]["Wave"] == "Wave 2"
+
+
+@pytest.mark.unit
+def test_parse_docx_table_first_row_is_headers(tmp_path: Path) -> None:
+    """The first row of a DOCX table becomes the dict keys, not a data row."""
+    from platform.parsers.docling_parser import DoclingParser
+
+    path = _write_docx_with_table(
+        tmp_path,
+        rows=[
+            ["Req ID", "Description"],
+            ["REQ-001", "The system must archive vendor records after 7 years."],
+        ],
+    )
+    result = DoclingParser().parse(path)
+
+    assert len(result.tables) == 1
+    assert set(result.tables[0].keys()) == {"Req ID", "Description"}
+    assert result.tables[0]["Req ID"] == "REQ-001"
+
+
+@pytest.mark.unit
+def test_parse_docx_blank_header_cell_gets_placeholder(tmp_path: Path) -> None:
+    """A blank header cell in a DOCX table is replaced with col_N placeholder."""
+    from platform.parsers.docling_parser import DoclingParser
+
+    path = _write_docx_with_table(
+        tmp_path,
+        rows=[
+            ["Requirement", "", "Priority"],
+            ["System shall validate invoices", "AP-001", "MUST"],
+        ],
+    )
+    result = DoclingParser().parse(path)
+
+    assert len(result.tables) == 1
+    row = result.tables[0]
+    assert row["Requirement"] == "System shall validate invoices"
+    assert row["col_1"] == "AP-001"
+    assert row["Priority"] == "MUST"
+
+
+@pytest.mark.unit
+def test_parse_docx_header_only_table_is_skipped(tmp_path: Path) -> None:
+    """A DOCX table with only a header row (no data rows) produces tables=[]."""
+    from platform.parsers.docling_parser import DoclingParser
+
+    path = _write_docx_with_table(
+        tmp_path,
+        rows=[
+            ["Req ID", "Description"],  # header only, no data rows
+        ],
+    )
+    result = DoclingParser().parse(path)
+
+    assert result.tables == []
+
+
+@pytest.mark.unit
+def test_parse_docx_table_and_prose_both_extracted(tmp_path: Path) -> None:
+    """A DOCX with a heading, table, and body paragraph yields both tables and prose;
+    table cell text does not appear in prose."""
+    from platform.parsers.docling_parser import DoclingParser
+
+    path = _write_docx_with_table(
+        tmp_path,
+        rows=[
+            ["Requirement Description", "Priority"],
+            ["The system must validate three-way matching for vendor invoices.", "MUST"],
+        ],
+        heading="Accounts Payable",
+        body="This document covers AP requirements for Wave 1 implementation.",
+    )
+    result = DoclingParser().parse(path)
+
+    assert len(result.tables) >= 1
+    assert len(result.prose) >= 1
+    full_prose = " ".join(c.text for c in result.prose)
+    assert "Wave 1 implementation" in full_prose
+    assert "three-way matching" not in full_prose
 
 
 # ---------------------------------------------------------------------------
