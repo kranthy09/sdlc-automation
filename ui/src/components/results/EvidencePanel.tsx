@@ -498,6 +498,7 @@ export interface EvidencePanelProps {
   gapDescription?: string | null
   devEffort?: 'S' | 'M' | 'L' | null
   gapType?: string | null
+  evidence?: FitmentEvidence
 }
 
 const TAB_CONTENT: Record<TabKey, (j: AtomJourney) => JSX.Element> = {

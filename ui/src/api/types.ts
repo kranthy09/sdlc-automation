@@ -153,6 +153,8 @@ export interface ReviewItem {
   dev_effort: 'S' | 'M' | 'L' | null
   gap_type: string | null
   reviewed: boolean
+  d365_capability: string | null
+  caveats: string | null
 }
 
 export interface AutoApprovedItem {
@@ -170,6 +172,7 @@ export interface AutoApprovedItem {
   gap_type: string | null
   dev_effort: 'S' | 'M' | 'L' | null
   evidence: ReviewItemEvidence
+  caveats: string | null
 }
 
 export interface ReviewResponse {

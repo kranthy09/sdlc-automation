@@ -159,6 +159,104 @@ def test_clean_pass_no_interrupt(tmp_path) -> None:
 
 
 @pytest.mark.unit
+def test_clean_pass_publishes_phase_start_event(tmp_path) -> None:
+    """Phase 5 publishes phase_start event unconditionally, even in clean pass.
+
+    Business logic: Phase 5 should announce its entry via PhaseStartEvent
+    unconditionally at the beginning, matching Phases 1–4 behavior.
+    This test verifies the publish_phase_start() is called by checking
+    that it doesn't raise an exception and the node completes successfully.
+    """
+    from modules.dynafit.events import publish_phase_start
+
+    node = _make_node(tmp_path)
+    # Clean pass: no flagged items
+    state = _make_state([_FIT], match_results=[
+                        _mr("REQ-AP-001", top_composite_score=0.92)])
+
+    # Verify publish_phase_start is called during node execution
+    with patch.object(_v5_module, "publish_phase_start") as mock_pub_start:
+        with patch.object(_v5_module, "interrupt") as mock_interrupt:
+            result = node(state)
+
+    # publish_phase_start called exactly once (at phase entry)
+    mock_pub_start.assert_called_once()
+    call_kwargs = mock_pub_start.call_args[1]
+    assert call_kwargs["phase"] == 5
+    assert call_kwargs["phase_name"] == "Validation"
+    # Batch completed successfully
+    assert result["validated_batch"] is not None
+
+
+@pytest.mark.unit
+def test_step_progress_events_published_in_clean_pass(tmp_path) -> None:
+    """Clean pass publishes 2 step_progress events: sanity_gate, then output.
+
+    Business logic: UI receives progress feedback at key milestones.
+    Clean pass: 1/2 (sanity gate) → 2/2 (output generated).
+    """
+    node = _make_node(tmp_path)
+    state = _make_state([_FIT], match_results=[
+                        _mr("REQ-AP-001", top_composite_score=0.92)])
+
+    with patch.object(_v5_module, "publish_step_progress") as mock_progress:
+        with patch.object(_v5_module, "interrupt"):
+            node(state)
+
+    # Two progress events: sanity_gate (1/2), then output (2/2)
+    assert mock_progress.call_count == 2
+
+    # First call: sanity gate complete
+    call1 = mock_progress.call_args_list[0]
+    assert call1[1]["step"] == "sanity_gate_complete"
+    assert call1[1]["completed"] == 1
+    assert call1[1]["total"] == 2
+
+    # Second call: output generated
+    call2 = mock_progress.call_args_list[1]
+    assert call2[1]["step"] == "validation_output_generated"
+    assert call2[1]["completed"] == 2
+    assert call2[1]["total"] == 2
+
+
+@pytest.mark.unit
+def test_step_progress_events_published_in_flagged_pass(tmp_path) -> None:
+    """Flagged pass publishes 3 step_progress events: sanity_gate, HITL, output.
+
+    Business logic: UI shows progress through HITL checkpoint and back.
+    Flagged pass: 1/3 (sanity gate) → 2/3 (HITL complete) → 3/3 (output).
+    """
+    node = _make_node(tmp_path)
+    state = _make_state([_GAP], match_results=[
+                        _mr("REQ-AP-003", top_composite_score=0.40)])
+
+    with patch.object(_v5_module, "publish_step_progress") as mock_progress:
+        with patch.object(_v5_module, "interrupt", return_value={}):
+            node(state)
+
+    # Three progress events: sanity_gate (1/3), HITL (2/3), output (3/3)
+    assert mock_progress.call_count == 3
+
+    # First call: sanity gate complete
+    call1 = mock_progress.call_args_list[0]
+    assert call1[1]["step"] == "sanity_gate_complete"
+    assert call1[1]["completed"] == 1
+    assert call1[1]["total"] == 3
+
+    # Second call: HITL review complete
+    call2 = mock_progress.call_args_list[1]
+    assert call2[1]["step"] == "hitl_review_complete"
+    assert call2[1]["completed"] == 2
+    assert call2[1]["total"] == 3
+
+    # Third call: output generated
+    call3 = mock_progress.call_args_list[2]
+    assert call3[1]["step"] == "validation_output_generated"
+    assert call3[1]["completed"] == 3
+    assert call3[1]["total"] == 3
+
+
+@pytest.mark.unit
 def test_flagged_results_trigger_interrupt(tmp_path) -> None:
     """A high_confidence_gap result (_GAP) → interrupt() called once."""
     node = _make_node(tmp_path)
@@ -224,25 +322,35 @@ def test_confidence_filter_flags_low_confidence_non_gap(tmp_path) -> None:
 
 
 @pytest.mark.unit
-def test_confidence_filter_does_not_flag_gap_regardless_of_confidence(tmp_path) -> None:
-    """GAP with low confidence is not caught by confidence filter (non-GAP only rule)."""
+def test_gap_always_triggers_mandatory_review(tmp_path) -> None:
+    """All GAP classifications trigger gap_review (mandatory analyst sign-off).
+
+    Even GAPs with low confidence are flagged because rule 5 (gap_review)
+    applies to ALL GAP classifications, not just high-confidence ones.
+    Rule 4 (low_confidence) doesn't apply to GAP — that's the distinction here.
+    """
     low_conf_gap = make_classification_result(
         atom_id="REQ-GAP-LOW",
         classification=FitLabel.GAP,
-        confidence=0.45,  # low — but confidence filter is for non-GAP only
+        confidence=0.45,  # low confidence
         route_used=RouteLabel.GAP_CONFIRM,
     )
     node = _make_node(tmp_path)
     # composite=0.40, confidence=0.45 < fit_threshold (0.85) → rule 1 NOT triggered
+    # BUT rule 5 (gap_review) applies to ALL GAPs
     state = _make_state(
         [low_conf_gap], match_results=[
             _mr("REQ-GAP-LOW", top_composite_score=0.40)]
     )
 
-    with patch.object(_v5_module, "interrupt") as mock_interrupt:
+    with patch.object(_v5_module, "interrupt", return_value={}) as mock_interrupt:
         node(state)
 
-    mock_interrupt.assert_not_called()
+    # interrupt() IS called because rule 5 (gap_review) flags all GAPs
+    mock_interrupt.assert_called_once()
+    payload = mock_interrupt.call_args[0][0]
+    assert "REQ-GAP-LOW" in payload["flagged_atom_ids"]
+    assert "gap_review" in payload["flagged_reasons"]["REQ-GAP-LOW"]
 
 
 @pytest.mark.unit
@@ -291,24 +399,28 @@ def test_interrupt_payload_structure(tmp_path) -> None:
 
 @pytest.mark.unit
 def test_phase_start_event_published_before_interrupt(tmp_path) -> None:
-    """RedisPubSub.publish() is called with PhaseStartEvent(phase=5) before interrupt()."""
-    from platform.schemas.events import PhaseStartEvent
+    """Phase 5 publishes phase_start unconditionally, before any gates.
 
-    redis = make_redis_pub_sub()
-    node = _make_node(tmp_path, redis=redis)
+    Business logic: Phase 5 should announce its entry immediately,
+    not wait until flagged items are detected. This matches Phases 1–4.
+    The interrupt() call is separate and handles HITL flow.
+    """
+    node = _make_node(tmp_path)
+    # Flagged pass: will trigger interrupt
     state = _make_state(
         [_REVIEW],
         match_results=[_mr("REQ-AP-004", top_composite_score=0.50)],
     )
 
-    with patch.object(_v5_module, "interrupt", return_value={}):
-        node(state)
+    with patch.object(_v5_module, "publish_phase_start") as mock_pub_start:
+        with patch.object(_v5_module, "interrupt", return_value={}):
+            node(state)
 
-    redis.publish.assert_called()
-    first_event = redis.publish.call_args_list[0][0][0]
-    assert isinstance(first_event, PhaseStartEvent)
-    assert first_event.phase == 5
-    assert first_event.phase_name == "human_review"
+    # publish_phase_start called exactly once (at phase entry, not when flagged)
+    mock_pub_start.assert_called_once()
+    call_kwargs = mock_pub_start.call_args[1]
+    assert call_kwargs["phase"] == 5
+    assert call_kwargs["phase_name"] == "Validation"
 
 
 # ===========================================================================

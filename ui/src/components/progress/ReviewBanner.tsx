@@ -6,21 +6,30 @@ interface ReviewBannerProps {
   batchId: string
   reviewItems: number
   reasons: {
-    low_confidence: number
-    conflicts: number
-    anomalies: number
+    low_confidence?: number
+    anomaly?: number
+    pii_detected?: number
+    gap_review?: number
+    partial_fit_no_config?: number
   }
+}
+
+const REASON_LABELS: Record<keyof Exclude<ReviewBannerProps['reasons'], undefined>, string> = {
+  low_confidence: 'low confidence',
+  anomaly: 'anomaly',
+  pii_detected: 'PII detected',
+  gap_review: 'gap review',
+  partial_fit_no_config: 'missing config',
 }
 
 export function ReviewBanner({ batchId, reviewItems, reasons }: ReviewBannerProps) {
   const navigate = useNavigate()
 
-  const breakdown = [
-    reasons.low_confidence > 0 && `${reasons.low_confidence} low confidence`,
-    reasons.conflicts > 0 && `${reasons.conflicts} conflict${reasons.conflicts > 1 ? 's' : ''}`,
-    reasons.anomalies > 0 && `${reasons.anomalies} anomal${reasons.anomalies > 1 ? 'ies' : 'y'}`,
-  ]
-    .filter(Boolean)
+  const breakdown = (
+    Object.entries(reasons) as Array<[keyof typeof REASON_LABELS, number | undefined]>
+  )
+    .filter(([_, count]) => (count ?? 0) > 0)
+    .map(([reason, count]) => `${count} ${REASON_LABELS[reason]}`)
     .join(' · ')
 
   return (

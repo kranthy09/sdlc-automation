@@ -59,6 +59,7 @@ from platform.storage.redis_pub import RedisPubSub
 from ..events import (
     publish_phase_complete,
     publish_phase_start,
+    publish_step_progress,
     run_async,
 )
 from ..guardrails import run_sanity_check
@@ -176,6 +177,14 @@ class ValidationNode:
                 repr(classifications).encode()).hexdigest()[:16],
         )
 
+        # Publish phase_start event to signal Phase 5 entry (before any gates)
+        # This follows the pattern in Phases 1–4: always announce phase entry.
+        publish_phase_start(
+            batch_id,
+            phase=5,
+            phase_name="Validation",
+        )
+
         match_by_atom: dict[str, MatchResult] = {
             mr.atom.atom_id: mr for mr in match_results}
 
@@ -193,16 +202,21 @@ class ValidationNode:
             else:
                 clean.append(result)
 
+        # Signal sanity gate completion
+        # For clean pass: step 1/2; for flagged pass: step 1/3
+        publish_step_progress(
+            batch_id,
+            phase=5,
+            step="sanity_gate_complete",
+            completed=1,
+            total=3 if flagged else 2,
+        )
+
         # ----------------------------------------------------------------
         # HITL: interrupt if any items need human review
         # ----------------------------------------------------------------
         overrides: dict[str, Any] = {}
         if flagged:
-            publish_phase_start(
-                batch_id,
-                phase=5,
-                phase_name="human_review",
-            )
             log.info(
                 "hitl_checkpoint",
                 batch_id=batch_id,
@@ -222,6 +236,15 @@ class ValidationNode:
             )
             overrides = raw if isinstance(raw, dict) else {}
 
+            # Signal HITL review completion (human decision received)
+            publish_step_progress(
+                batch_id,
+                phase=5,
+                step="hitl_review_complete",
+                completed=2,
+                total=3,
+            )
+
         # ----------------------------------------------------------------
         # Pass 2 (Sub-phase 5B): Merge → build → write-back → report
         # ----------------------------------------------------------------
@@ -230,6 +253,16 @@ class ValidationNode:
         pii_map = state.get("pii_redaction_map")
         report_path = self._write_csv(merged, batch.batch_id, pii_map)
         final_batch = batch.model_copy(update={"report_path": report_path})
+
+        # Signal validation output generation complete
+        # For clean pass: step 2/2; for flagged pass: step 3/3
+        publish_step_progress(
+            batch_id,
+            phase=5,
+            step="validation_output_generated",
+            completed=3 if flagged else 2,
+            total=3 if flagged else 2,
+        )
 
         # Write-back to postgres (fire-and-forget; errors logged, not raised)
         run_async(self._write_back(merged, state))
@@ -283,77 +316,12 @@ class ValidationNode:
         mr: MatchResult | None,
         config: ProductConfig,
     ) -> list[str]:
-        """Return all flags for one result: G10-lite + confidence filter + anomaly.
+        """Return all flags for one result: G10-lite + Phase 5 validation rules.
 
-        G10-lite rules (high_confidence_gap, low_score_fit, llm_schema_retry_exhausted)
-        are delegated to modules/dynafit/guardrails.py.
-
-        Additional checks here:
-          - low_confidence: non-GAP result with confidence below review threshold
-            (catches results the LLM was uncertain about that G10-lite doesn't cover)
-          - phase3_anomaly: Phase 3 raised anomaly_flags for this atom
+        Delegates to modules/dynafit/guardrails.py::run_sanity_check() which
+        implements all 8 rules (3 G10-lite + 5 Phase 5 validation).
         """
-        flags: list[str] = []
-
-        if mr is not None:
-            flags.extend(run_sanity_check(result, mr, config))
-        elif result.classification == FitLabel.REVIEW_REQUIRED:
-            # No MatchResult but LLM still failed to produce a valid label —
-            # Rule 3 (llm_schema_retry_exhausted) must fire unconditionally.
-            flags.append("llm_schema_retry_exhausted")
-
-        # Confidence filter — non-GAP, non-REVIEW_REQUIRED results below threshold
-        if (
-            result.classification not in (
-                FitLabel.GAP, FitLabel.REVIEW_REQUIRED)
-            and result.confidence < config.review_confidence_threshold
-        ):
-            flags.append("low_confidence")
-            log.info(
-                "sanity_low_confidence",
-                atom_id=result.atom_id,
-                confidence=result.confidence,
-                threshold=config.review_confidence_threshold,
-            )
-
-        # All GAP items require mandatory analyst sign-off
-        if result.classification == FitLabel.GAP:
-            flags.append("gap_review")
-            log.info("sanity_gap_mandatory_review", atom_id=result.atom_id)
-
-        # Phase 3 anomaly flags → HITL
-        if mr is not None and mr.anomaly_flags:
-            flags.append("phase3_anomaly")
-            log.info(
-                "sanity_phase3_anomaly",
-                atom_id=result.atom_id,
-                anomalies=mr.anomaly_flags,
-            )
-
-        # G11: PII detected in LLM response → HITL (consultant must review)
-        if result.caveats and "G11:" in result.caveats:
-            flags.append("response_pii_leak")
-            log.warning(
-                "sanity_response_pii_leak",
-                atom_id=result.atom_id,
-            )
-
-        # PARTIAL_FIT without configuration steps → HITL mandatory.
-        # The LLM determined D365 requires configuration but could not specify
-        # the steps. An analyst must confirm the classification and provide
-        # or verify the required configuration guidance before it is auto-approved.
-        if (
-            result.classification == FitLabel.PARTIAL_FIT
-            and not result.configuration_steps
-            and not result.config_steps
-        ):
-            flags.append("partial_fit_no_config")
-            log.info(
-                "sanity_partial_fit_no_config",
-                atom_id=result.atom_id,
-            )
-
-        return flags
+        return run_sanity_check(result, mr, config)
 
     # ------------------------------------------------------------------
     # Sub-phase 5B helpers

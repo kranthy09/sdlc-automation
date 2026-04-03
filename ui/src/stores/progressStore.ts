@@ -40,7 +40,13 @@ export interface LiveClassificationRow {
 
 interface ReviewRequiredState {
   reviewItems: number
-  reasons: { low_confidence: number; conflicts: number; anomalies: number }
+  reasons: {
+    low_confidence?: number
+    anomaly?: number
+    pii_detected?: number
+    gap_review?: number
+    partial_fit_no_config?: number
+  }
   reviewUrl: string
 }
 
@@ -200,9 +206,11 @@ export const useProgressStore = create<ProgressState>((set) => ({
             reviewRequired: {
               reviewItems: msg.review_items,
               reasons: {
-                low_confidence: msg.reasons.low_confidence,
-                conflicts: msg.reasons.conflicts ?? 0,
-                anomalies: msg.reasons.anomalies ?? 0,
+                low_confidence: msg.reasons.low_confidence ?? 0,
+                anomaly: msg.reasons.anomaly ?? 0,
+                pii_detected: msg.reasons.pii_detected ?? 0,
+                gap_review: msg.reasons.gap_review ?? 0,
+                partial_fit_no_config: msg.reasons.partial_fit_no_config ?? 0,
               },
               reviewUrl: msg.review_url,
             },
@@ -293,7 +301,13 @@ export const useProgressStore = create<ProgressState>((set) => ({
           phases,
           reviewRequired: {
             reviewItems,
-            reasons: { low_confidence: reviewItems, conflicts: 0, anomalies: 0 },
+            reasons: {
+              low_confidence: reviewItems,
+              anomaly: 0,
+              pii_detected: 0,
+              gap_review: 0,
+              partial_fit_no_config: 0,
+            },
             reviewUrl: `/review/${resultsData.batch_id}`,
           },
         }
