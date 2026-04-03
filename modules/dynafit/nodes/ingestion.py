@@ -32,13 +32,26 @@ from typing import Any
 from platform.guardrails.file_validator import validate_file
 from platform.guardrails.injection_scanner import scan_for_injection
 from platform.guardrails.pii_redactor import redact_pii
+from platform.ingestion import (
+    ArtifactStore,
+    DocumentConverter,
+    ElementExtractor,
+    ImageDescriptor,
+    SemanticChunker,
+    TableNarrator,
+    Unifier,
+    get_ingestion_config,
+)
+from platform.ingestion.schemas import RawDocument
 from platform.llm.client import LLMClient
 from platform.observability.logger import get_logger
 from platform.parsers.docling_parser import DoclingParser
 from platform.schemas.product import ProductConfig
 from platform.schemas.requirement import RawUpload, RequirementAtom
 
+
 from ..events import (
+    publish_artifact_path,
     publish_phase_complete,
     publish_phase_start,
     publish_step_progress,
@@ -129,6 +142,7 @@ def _build_classified_requirements(
     config: ProductConfig,
     *,
     batch_id: str = "",
+    enriched_chunks: list[dict] | None = None,
 ) -> list[_ClassifiedRequirement]:
     """Run batch atomisation + classification on all raw texts.
 
@@ -137,6 +151,9 @@ def _build_classified_requirements(
     to individual calls for any batch that fails or returns a count
     mismatch.
     Returns a flat list of _ClassifiedRequirement, one per atom.
+
+    If enriched_chunks is provided, populates source_modality and
+    has_visual_evidence fields in the returned _ClassifiedRequirement objects.
     """
     texts = [t for t, _ in raw_texts]
     source_refs = [r for _, r in raw_texts]
@@ -156,11 +173,23 @@ def _build_classified_requirements(
         total=4,
     )
 
+    # Build a map from source_ref (e.g., "chunk_0") to chunk metadata
+    chunk_metadata_map: dict[str, dict] = {}
+    if enriched_chunks:
+        for i, chunk in enumerate(enriched_chunks):
+            source_ref = f"chunk_{i}"
+            chunk_metadata_map[source_ref] = chunk
+
     results: list[_ClassifiedRequirement] = []
     counter = 0
     id_prefix = upload.upload_id[:8].upper()
 
     for atom_list, source_ref in zip(all_atom_lists, source_refs, strict=True):
+        # Get modality info from chunk metadata if available
+        chunk_meta = chunk_metadata_map.get(source_ref, {})
+        modality_composition: dict = chunk_meta.get("modality_composition", {})
+        has_visual = "TABLE" in modality_composition or "IMAGE" in modality_composition
+
         for atom in atom_list:
             if len(atom.text.strip()) < 10:
                 continue
@@ -179,6 +208,8 @@ def _build_classified_requirements(
                     atom=requirement,
                     intent=atom.intent,
                     module=atom.module,
+                    source_modality=atom.source_modality,
+                    has_visual_evidence=has_visual or atom.has_visual_evidence,
                 )
             )
             counter += 1
@@ -193,6 +224,12 @@ def _build_classified_requirements(
 
 class IngestionNode:
     """Phase 1 ingestion pipeline with injectable dependencies.
+
+    Combines two parallel paths:
+      Path A (legacy): DoclingParser → raw text extraction → atomization
+      Path B (new): DocumentConverter → ElementExtractor → Unifier → SemanticChunker
+
+    Path B output (enriched_chunks, artifacts) is returned in state for downstream use.
 
     Instantiate directly in tests with mock infrastructure:
 
@@ -213,11 +250,15 @@ class IngestionNode:
         llm_client: LLMClient | None = None,
         parser: DoclingParser | None = None,
         embedder: Any | None = None,
+        table_narrator: TableNarrator | None = None,
+        image_descriptor: ImageDescriptor | None = None,
     ) -> None:
         self._llm = llm_client
         self._parser = parser
         self._embedder = embedder
-
+        self._narrator = table_narrator
+        self._descriptor = image_descriptor
+        self._ingestion_config = get_ingestion_config()
     # ------------------------------------------------------------------
     # Lazy infra
     # ------------------------------------------------------------------
@@ -239,6 +280,23 @@ class IngestionNode:
             config = get_product_config(product_id)
             self._embedder = Embedder(config.embedding_model)
         return self._embedder
+
+    def _get_narrator(self) -> TableNarrator:
+        if self._narrator is None:
+            self._narrator = TableNarrator(
+                llm_client=self._get_llm(),
+                concurrency=self._ingestion_config.narration_concurrency,
+            )
+        return self._narrator
+
+    def _get_descriptor(self) -> ImageDescriptor:
+        if self._descriptor is None:
+            self._descriptor = ImageDescriptor(
+                model=self._ingestion_config.image_description_model,
+                llm_client=self._get_llm(),
+                concurrency=self._ingestion_config.description_concurrency,
+            )
+        return self._descriptor
 
     # ------------------------------------------------------------------
     # Rejection helper — always publishes phase_complete before returning
@@ -305,13 +363,38 @@ class IngestionNode:
             )
             return self._reject(batch_id, f"file_validation_failed: {file_check.rejection_reason}", t0)
 
-        # 2. Document parsing
-        parse_result = self._parse_document(upload, batch_id)
-        if parse_result is None:
-            return self._reject(batch_id, f"parse_failed: {upload.filename}", t0)
+        # 2a. Try unified multimodal pipeline first (Phases B–E)
+        enriched_chunks_output: list[dict] | None = None
+        artifact_store_path: str | None = None
+        raw_texts: list[tuple[str, str]] = []
 
-        # 3. Extract raw requirement texts
-        raw_texts = _collect_requirement_texts(parse_result)
+        raw_doc = RawDocument(
+            doc_id=batch_id,
+            file_bytes=upload.file_bytes,
+            mime_type=upload.mime_type or "application/pdf",
+            filename=upload.filename,
+            upload_metadata={"upload_id": upload.upload_id, "product_id": upload.product_id},
+        )
+
+        unified_texts, artifact_path, enriched_chunks_output = self._run_unified_pipeline(raw_doc, batch_id)
+        if unified_texts:
+            raw_texts = unified_texts
+            artifact_store_path = artifact_path
+            log.info(
+                "unified_pipeline_success",
+                batch_id=batch_id,
+                text_count=len(raw_texts),
+            )
+            # Publish artifact path to Redis for API retrieval
+            if artifact_store_path:
+                publish_artifact_path(batch_id, artifact_store_path)
+        else:
+            # 2b. Fall back to legacy parser if unified pipeline fails
+            parse_result = self._parse_document(upload, batch_id)
+            if parse_result is None:
+                return self._reject(batch_id, f"parse_failed: {upload.filename}", t0)
+            raw_texts = _collect_requirement_texts(parse_result)
+
         if not raw_texts:
             log.warning(
                 "ingestion_no_text_found",
@@ -379,6 +462,7 @@ class IngestionNode:
             self._get_llm(),
             config,
             batch_id=batch_id,
+            enriched_chunks=enriched_chunks_output,
         )
         if not classified:
             return self._reject(batch_id, "atomisation_produced_no_atoms", t0)
@@ -446,7 +530,101 @@ class IngestionNode:
         }
         if combined_redaction_map:
             result["pii_redaction_map"] = combined_redaction_map
+        if artifact_store_path:
+            result["artifact_store_batch_path"] = artifact_store_path
+        if enriched_chunks_output:
+            result["enriched_chunks"] = enriched_chunks_output
         return result
+
+    # ------------------------------------------------------------------
+    # Unified multimodal pipeline (Phases B–E)
+    # ------------------------------------------------------------------
+
+    def _run_unified_pipeline(
+        self,
+        raw_doc: RawDocument,
+        batch_id: str,
+    ) -> tuple[list[tuple[str, str]], str | None, list[dict] | None]:
+        """Run the unified multimodal ingestion pipeline (Phases B-E).
+
+        Returns:
+            (requirement_texts, artifact_store_batch_path, enriched_chunks)
+            where requirement_texts is list of (text, source_ref) tuples
+            or ([], None, None) on failure
+        """
+        try:
+            # Phase B: Convert → Extract
+            converter = DocumentConverter(self._ingestion_config)
+            docling_doc = converter.convert(raw_doc)
+            publish_step_progress(batch_id, phase=1, step="convert", completed=1, total=5)
+
+            extractor = ElementExtractor(
+                window_size=self._ingestion_config.element_extractor_window_size
+                if hasattr(self._ingestion_config, "element_extractor_window_size")
+                else 5
+            )
+            elements = extractor.extract(docling_doc, source_doc=raw_doc.filename)
+            publish_step_progress(batch_id, phase=1, step="extract", completed=2, total=5)
+
+            log.debug(
+                "extracted_elements",
+                batch_id=batch_id,
+                count=len(elements),
+            )
+
+            # Phase C: Store artifacts
+            store = ArtifactStore(batch_id=batch_id)
+            artifact_map = store.store_all(elements, extractor)
+            publish_step_progress(batch_id, phase=1, step="store_artifacts", completed=3, total=5)
+
+            # Phase D: Narrate & Describe & Unify
+            narrator = self._get_narrator()
+            descriptor = self._get_descriptor()
+            unifier = Unifier(narrator, descriptor)
+            unified_elements = unifier.unify(elements, artifact_map)
+            publish_step_progress(batch_id, phase=1, step="unify", completed=4, total=5)
+
+            log.debug(
+                "unified_elements",
+                batch_id=batch_id,
+                count=len(unified_elements),
+            )
+
+            # Phase E: Semantic Chunking
+            chunker = SemanticChunker(
+                tokenizer_name=self._ingestion_config.chunk_tokenizer,
+                max_tokens=self._ingestion_config.chunk_max_tokens,
+                overlap_tokens=self._ingestion_config.chunk_overlap_tokens,
+            )
+            enriched_chunks = chunker.chunk(unified_elements)
+            publish_step_progress(batch_id, phase=1, step="chunk", completed=5, total=5)
+
+            log.debug(
+                "enriched_chunks_produced",
+                batch_id=batch_id,
+                count=len(enriched_chunks),
+            )
+
+            # Extract requirement texts from enriched chunks
+            requirement_texts: list[tuple[str, str]] = []
+            for i, chunk in enumerate(enriched_chunks):
+                text = chunk.unified_text.strip()
+                if len(text) >= 10:
+                    source_ref = f"chunk_{i}"
+                    requirement_texts.append((text, source_ref))
+
+            # Serialize enriched chunks for state
+            chunks_serialized = [c.model_dump() for c in enriched_chunks]
+
+            return requirement_texts, store.batch_path, chunks_serialized
+
+        except Exception as exc:
+            log.warning(
+                "unified_pipeline_failed",
+                batch_id=batch_id,
+                error=str(exc),
+            )
+            return [], None, None
 
     # ------------------------------------------------------------------
     # Document parsing

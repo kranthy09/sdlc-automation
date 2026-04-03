@@ -43,6 +43,16 @@ class DynafitState(TypedDict):
     validated_atoms: NotRequired[list[ValidatedAtom]]  # passed quality gates
     flagged_atoms: NotRequired[list[FlaggedAtom]]  # need human review
 
+    # --- Phase 1 — Unified Multimodal Ingestion (Phases B–E) -----
+    # enriched_chunks: serialized EnrichedChunk.model_dump() list
+    #   — output from platform/ingestion/chunker.py (Phase E)
+    #   — preferentially used by downstream phases for structured content
+    # artifact_store_batch_path: path to batch artifact directory
+    #   — e.g., "{DATA_DIR}/artifacts/{batch_id}"
+    #   — used by Phase 5 HITL review and API artifact retrieval endpoints
+    enriched_chunks: NotRequired[list[dict[str, Any]]]
+    artifact_store_batch_path: NotRequired[str]
+
     # --- Phase 2 — Knowledge Retrieval (RAG) ---------------------------------
     # one per validated atom
     retrieval_contexts: NotRequired[list[AssembledContext]]

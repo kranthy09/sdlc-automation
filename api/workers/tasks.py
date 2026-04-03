@@ -46,6 +46,8 @@ from modules.dynafit.presentation import (
     build_complete_data,
     build_hitl_data,
 )
+from platform.parsers.format_detector import detect_format
+from platform.schemas.errors import UnsupportedFormatError
 from platform.schemas.events import ErrorEvent, PhaseGateEvent, ReviewRequiredEvent
 from platform.schemas.requirement import RawUpload
 from platform.storage.postgres import PostgresStore
@@ -731,11 +733,17 @@ def run_dynafit_pipeline(
         _emit_error(batch_id, exc)
         return
 
+    try:
+        mime_type = detect_format(file_path).mime
+    except UnsupportedFormatError:
+        mime_type = "application/pdf"
+
     raw_upload = RawUpload(
         upload_id=upload_id,
         product_id=upload_meta.product,
         filename=upload_meta.filename,
         file_bytes=file_bytes,
+        mime_type=mime_type,
         wave=upload_meta.wave,
         country=upload_meta.country,
     )

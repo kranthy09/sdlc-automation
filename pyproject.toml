@@ -43,6 +43,13 @@ ml = [
     "python-docx>=1.1",
     "python-magic>=0.4",
 
+    # Multimodal document ingestion (Phase B–E)
+    "docling>=2.25",
+    "docling-core>=2.25",
+    "pyarrow>=18.0",
+    "pandas>=2.0",
+    "Pillow>=10.0",
+
     # NLP
     "spacy>=3.7",
     "rapidfuzz>=3.6",
@@ -53,6 +60,7 @@ ml = [
     # Vector / retrieval (fastembed uses ONNX Runtime ~50 MB — no PyTorch)
     "qdrant-client>=1.8",
     "fastembed>=0.3",
+    "tokenizers>=0.21",
     "rank-bm25>=0.2",
     # Deduplication ANN for large batches (a > 300) — CPU-only, ~30 MB
     "faiss-cpu>=1.7",
@@ -154,6 +162,11 @@ module = [
     "langchain_anthropic.*",
     "langchain_core.*",
     "langgraph.*",
+    "docling.*",
+    "docling_core.*",
+    "pandas.*",
+    "pyarrow.*",
+    "PIL.*",
 ]
 ignore_missing_imports = true
 

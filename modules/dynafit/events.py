@@ -154,6 +154,31 @@ def publish_classification_event(
     _publish_sync(event, batch_id, phase=4)
 
 
+def publish_artifact_path(batch_id: str, path: str) -> None:
+    """Write artifact_store_batch_path to Redis batch hash (durable).
+
+    Called after Phase 1 unified pipeline completes to make artifact metadata
+    available to API artifact endpoints.
+    """
+    try:
+        RedisPubSub.write_batch_state_sync(
+            REDIS_URL,
+            batch_id,
+            artifact_store_batch_path=path,
+        )
+        log.debug(
+            "artifact_path_published",
+            batch_id=batch_id,
+            path=path,
+        )
+    except Exception as exc:
+        log.warning(
+            "artifact_path_publish_failed",
+            batch_id=batch_id,
+            error=str(exc),
+        )
+
+
 # -----------------------------------------------------------
 # Internal helpers
 # -----------------------------------------------------------

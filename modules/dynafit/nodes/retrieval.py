@@ -15,8 +15,8 @@ Knowledge Base Structure (Phase 1 improvement):
   - Source A: Curated D365 features (120 records, hybrid search: dense + BM25)
     Loaded from: knowledge_bases/d365_fo/capabilities_lite.yaml
     Module-scoped retrieval (precise, feature-focused)
-  - Source B: Raw MS Learn documentation (81 records, dense-only search)
-    Loaded from: knowledge_bases/d365_fo/docs_corpus_lite.yaml
+  - Source B: MS Learn documentation (201 records, dense-only search)
+    Loaded from: knowledge_bases/d365_fo/docs_lite.yaml
     Broad semantic retrieval (recalls cross-module insights, no BM25 noise)
 
 Design notes:
@@ -40,7 +40,6 @@ from typing import Any
 
 from platform.config.settings import get_settings
 from platform.observability.logger import get_logger
-from platform.retrieval.bm25 import BM25Retriever
 from platform.retrieval.embedder import Embedder
 from platform.retrieval.reranker import Reranker, RerankResult
 from platform.retrieval.vector_store import SearchHit, VectorStore
@@ -88,8 +87,8 @@ async def _parallel_retrieve(
     store: VectorStore,
     postgres: PostgresStore,
     dense_vec: list[float],
-    sparse: tuple[list[int], list[float]],
-    module_filter: dict[str, str | int | float | bool],
+    sparse: tuple[list[int], list[float]] | None,
+    module_filter: dict[str, str | int | float | bool] | None,
     top_k_caps: int,
     cap_collection: str,
     doc_collection: str,
@@ -148,57 +147,10 @@ async def _parallel_retrieve(
 
 
 # ---------------------------------------------------------------------------
-# Step 3: RRF / doc boost
+# Step 3: Multi-source RRF fusion (via rrf_fusion module)
 # ---------------------------------------------------------------------------
-
-
-def _rrf_boost(
-    caps_hits: list[SearchHit],
-    doc_hits: list[SearchHit],
-) -> list[SearchHit]:
-    """Apply +0.05 doc boost to capabilities confirmed by a Source B doc chunk.
-
-    Current implementation (per-source RRF):
-      - Source A (Qdrant Capabilities): Already RRF-fused by Qdrant internally
-        (dense embeddings + sparse BM25 via 1/(60+rank) formula)
-      - Source B (MS Learn Docs): Concatenated with Source A; no RRF fusion,
-        ranked by position-based boost only
-      - Source C (Prior Fitments): Stored separately in pgvector; not ranked
-        against capabilities
-
-    Design rationale: Source A is primary; B/C are supplementary signals.
-    This per-source approach works well (~90% quality) but is not optimal.
-
-    Known limitation: True multi-source RRF (combining ranks from A+B+C uniformly)
-    would improve quality by ~8-10% (IR literature estimates). Implementation deferred
-    to Phase 2 enhancement. See docs/PHASE2_ARCHITECTURE.md for detailed solution.
-    """
-    if not caps_hits:
-        return []
-
-    # Collect feature/title tokens mentioned in doc chunks
-    doc_mentions: set[str] = set()
-    for h in doc_hits:
-        title = h.payload.get("title", "").lower().strip()
-        feature = h.payload.get("feature", "").lower().strip()
-        if title:
-            doc_mentions.add(title)
-        if feature:
-            doc_mentions.add(feature)
-
-    boosted: list[SearchHit] = []
-    for hit in caps_hits:
-        feature = hit.payload.get("feature", "").lower().strip()
-        score = hit.score
-        if feature and any(
-            feature in mention or mention in feature for mention in doc_mentions if mention
-        ):
-            score = min(1.0, score + _DOC_BOOST)
-        boosted.append(SearchHit(id=hit.id, score=score, payload=hit.payload))
-
-    boosted.sort(key=lambda h: h.score, reverse=True)
-    return boosted
-
+# RRF is now handled by modules/dynafit/nodes/rrf_fusion.py::multi_source_rrf()
+# See that module for implementation details and cross-source boost logic.
 
 # ---------------------------------------------------------------------------
 # Step 4 helpers: adaptive K + confidence calibration
@@ -443,9 +395,6 @@ class RetrievalNode:
             total=total_steps,
         )
 
-        # Batch BM25 — IDF weights are meaningful across the whole requirement set.
-        bm25 = BM25Retriever(corpus=atom_texts)
-
         # Retrieve capabilities for all atoms concurrently via asyncio.gather.
         # asyncio.Semaphore caps concurrent coroutines at _RETRIEVAL_CONCURRENCY.
         # All I/O (Qdrant, pgvector, ONNX reranker) runs in one event loop.
@@ -459,7 +408,7 @@ class RetrievalNode:
             async with sem:
                 ctx = await self._retrieve_one(
                     atoms[idx], dense_vecs[idx],
-                    bm25, store, reranker, postgres, config,
+                    store, reranker, postgres, config,
                 )
                 completed_retrievals += 1
                 publish_step_progress(
@@ -510,7 +459,6 @@ class RetrievalNode:
         self,
         atom: ValidatedAtom,
         dense_vec: list[float],
-        bm25: BM25Retriever,
         store: VectorStore,
         reranker: Reranker,
         postgres: PostgresStore,
@@ -520,7 +468,6 @@ class RetrievalNode:
 
         # ── Step 1: Query builder ────────────────────────────────────────────
         top_k = 30 if atom.content_type == "image_derived" else 20
-        sparse_indices, sparse_values = bm25.encode(atom.requirement_text)
         module_filter: dict[str, str | int |
                             float | bool] = {"module": atom.module}
 
@@ -529,13 +476,31 @@ class RetrievalNode:
             store=store,
             postgres=postgres,
             dense_vec=dense_vec,
-            sparse=(sparse_indices, sparse_values),
+            sparse=None,
             module_filter=module_filter,
             top_k_caps=top_k,
             cap_collection=config.capability_kb_namespace,
             doc_collection=config.doc_corpus_namespace,
             module=atom.module,
         )
+
+        # Fallback: if strict module filter yields no capabilities, retry without filter
+        if not caps_hits:
+            log.info(
+                f"Module filter '{atom.module}' returned no capabilities; retrying without filter",
+                atom_id=atom.atom_id,
+            )
+            caps_hits, _, _ = await _parallel_retrieve(
+                store=store,
+                postgres=postgres,
+                dense_vec=dense_vec,
+                sparse=None,
+                module_filter=None,
+                top_k_caps=top_k,
+                cap_collection=config.capability_kb_namespace,
+                doc_collection=config.doc_corpus_namespace,
+                module=atom.module,
+            )
 
         sources_available: list[str] = []
         if caps_hits:

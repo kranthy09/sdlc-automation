@@ -6,6 +6,7 @@ import { PhaseStatsCard } from '@/components/progress/PhaseStatsCard'
 import { PhaseGatePanel } from '@/components/progress/PhaseGatePanel'
 import { PhaseLatencyChart } from '@/components/progress/PhaseLatencyChart'
 import { GuardrailStatusCard } from '@/components/progress/GuardrailStatusCard'
+import { ArtifactGallery } from '@/components/ingestion/ArtifactGallery'
 import { LiveClassTable } from '@/components/progress/LiveClassTable'
 import { ReviewBanner } from '@/components/progress/ReviewBanner'
 import { Button } from '@/components/ui/Button'
@@ -160,6 +161,14 @@ export default function ProgressPage() {
         {/* Guardrail status (Phase 1) */}
         {phases[0]?.status === 'complete' && (
           <GuardrailStatusCard phase1={phases[0]} batchId={batchId} />
+        )}
+
+        {/* Artifact gallery (Phase 1 — multimodal) */}
+        {phases[0]?.status === 'complete' && (
+          <div className="rounded-xl border border-bg-border bg-bg-surface p-4">
+            <h3 className="mb-3 text-sm font-medium text-text-secondary">Extracted Artifacts</h3>
+            <ArtifactGallery batchId={batchId!} />
+          </div>
         )}
 
         {/* Phase stat cards */}

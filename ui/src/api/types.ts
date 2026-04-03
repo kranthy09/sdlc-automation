@@ -1,8 +1,22 @@
 // ─── Shared enums ────────────────────────────────────────────────────────────
 
 export type Classification = 'FIT' | 'PARTIAL_FIT' | 'GAP'
+export type ArtifactType = 'TABLE_IMAGE' | 'TABLE_DATAFRAME' | 'FIGURE_IMAGE'
 export type BatchStatus = 'queued' | 'processing' | 'gate_1' | 'gate_2' | 'gate_3' | 'gate_4' | 'review_required' | 'resuming' | 'complete' | 'failed'
 export type ReviewDecision = 'APPROVE' | 'OVERRIDE' | 'FLAG'
+
+// ─── Artifacts ────────────────────────────────────────────────────────────────
+
+export interface ArtifactItem {
+  artifact_id: string
+  artifact_type: ArtifactType
+  filename: string
+  storage_path: string
+}
+
+export interface ArtifactsResponse {
+  artifacts: ArtifactItem[]
+}
 
 // ─── Upload ───────────────────────────────────────────────────────────────────
 
@@ -220,7 +234,7 @@ export interface JourneyIngest {
   entity_hints: string[]
   specificity_score: number
   completeness_score: number
-  content_type: string
+  content_type: 'text_derived' | 'table_derived' | 'image_derived' | string
   source_refs: string[]
 }
 
@@ -439,6 +453,7 @@ export interface Phase1AtomRow {
   specificity_score: number   // 0–1
   pii_detected: boolean       // true if PII entities were found
   pii_entities: PIIEntityInfo[]  // list of detected PII entities
+  source_modality?: 'TEXT' | 'TABLE' | 'IMAGE'  // optional — for multimodal tracking
 }
 
 export interface Phase2ContextRow {

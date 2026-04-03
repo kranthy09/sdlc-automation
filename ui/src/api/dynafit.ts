@@ -1,5 +1,6 @@
 import { apiClient } from './client'
 import type {
+  ArtifactsResponse,
   BatchesQuery,
   BatchesResponse,
   GateAtomsResponse,
@@ -120,4 +121,17 @@ export async function getGateAtoms(
     `/d365_fo/dynafit/${batchId}/gate/${gate}/atoms`,
   )
   return res.data
+}
+
+// ─── 11. Artifacts (Phase E multimodal) ───────────────────────────────────────
+export async function getArtifacts(batchId: string): Promise<ArtifactsResponse> {
+  const res = await apiClient.get<ArtifactsResponse>(
+    `/d365_fo/dynafit/${batchId}/artifacts`,
+  )
+  return res.data
+}
+
+export function getArtifactUrl(batchId: string, artifactId: string): string {
+  const base = apiClient.defaults.baseURL ?? '/api/v1'
+  return `${base}/d365_fo/dynafit/${batchId}/artifacts/${artifactId}`
 }

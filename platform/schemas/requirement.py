@@ -61,6 +61,7 @@ class RawUpload(PlatformModel):
     filename: Annotated[str, Field(min_length=1)]
     file_bytes: bytes
     product_id: str
+    mime_type: str = "application/pdf"
     country: str = ""
     wave: Annotated[int, Field(ge=1)] = 1
     uploaded_at: datetime = Field(default_factory=lambda: datetime.now(UTC))

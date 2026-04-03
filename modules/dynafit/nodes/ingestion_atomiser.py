@@ -52,11 +52,18 @@ _IntentLiteral = Literal["FUNCTIONAL", "NON_FUNCTIONAL", "INTEGRATION", "REPORTI
 
 
 class _ClassifiedAtom(BaseModel):
-    """One atom with intent and module as produced by the LLM."""
+    """One atom with intent and module as produced by the LLM.
+
+    Optional fields populated when atoms are extracted from enriched chunks:
+    - source_modality: modality of the source chunk (TEXT, TABLE, IMAGE)
+    - has_visual_evidence: whether source chunk contained visual content
+    """
 
     text: str
     intent: _IntentLiteral
     module: str  # validated against _MODULE_SET after parsing
+    source_modality: str | None = None  # TEXT, TABLE, or IMAGE
+    has_visual_evidence: bool = False  # True if source was TABLE or IMAGE
 
 
 class _AtomizationResult(BaseModel):
@@ -72,15 +79,20 @@ class _AtomizationResult(BaseModel):
 
 @dataclass
 class _ClassifiedRequirement:
-    """RequirementAtom plus its LLM-assigned intent and module.
+    """RequirementAtom plus its LLM-assigned intent, module, and modality metadata.
 
     Exists only inside the ingestion pipeline.  Converted to
     ValidatedAtom / FlaggedAtom at the final quality-gate step.
+
+    The source_modality and has_visual_evidence fields are populated
+    when atoms are extracted from enriched chunks (Phase E output).
     """
 
     atom: RequirementAtom  # noqa: F821 — forward ref resolved at runtime
     intent: _IntentLiteral
     module: str  # validated D365 module string
+    source_modality: str | None = None  # TEXT, TABLE, or IMAGE
+    has_visual_evidence: bool = False  # True if sourced from TABLE or IMAGE
 
 
 # Resolve forward reference

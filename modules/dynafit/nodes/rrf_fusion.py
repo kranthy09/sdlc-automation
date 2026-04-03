@@ -198,7 +198,7 @@ def multi_source_rrf(
 
     # Source A: Capabilities
     for rank, cap in enumerate(capabilities, start=1):
-        cap_id = str(cap.id)
+        cap_id = f"cap:{str(cap.id)}"
         rrf_score = _rrf_score(rank)
         all_results[cap_id] = RankedResult(
             unified_score=rrf_score,
@@ -209,7 +209,7 @@ def multi_source_rrf(
 
     # Source B: MS Learn Docs
     for rank, doc in enumerate(docs, start=1):
-        doc_id = str(doc.id)
+        doc_id = f"doc:{str(doc.id)}"
         rrf_score = _rrf_score(rank)
         all_results[doc_id] = RankedResult(
             unified_score=rrf_score,
@@ -223,7 +223,7 @@ def multi_source_rrf(
     for rank, prior in enumerate(prior_fitments, start=1):
         prior_score = _prior_fitment_to_score(prior)
         rrf_contribution = _rrf_score(rank) * prior_score
-        prior_id = str(prior.atom_id)  # Use atom_id as key
+        prior_id = f"prior:{str(prior.atom_id)}"  # Use atom_id as key with source prefix
         prior_by_id[prior_id] = prior
 
         all_results[prior_id] = RankedResult(

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { AlertCircle } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Badge } from '@/components/ui/Badge'
+import { ModalityBadge } from '@/components/ingestion/ModalityBadge'
 import { RequirementDetailModal } from './RequirementDetailModal'
 import { Phase1AtomDetailCard } from './Phase1AtomDetailCard'
 import { Phase2AtomDetailCard } from './Phase2AtomDetailCard'
@@ -116,6 +117,7 @@ export function PhaseGatePanel({
             <thead className="bg-bg-raised border-b border-bg-border">
               <tr>
                 <th className="px-4 py-2 text-left font-semibold text-text-primary">Requirement</th>
+                <th className="px-4 py-2 text-left font-semibold text-text-primary">Source</th>
                 <th className="px-4 py-2 text-center font-semibold text-text-primary">PII</th>
                 <th className="px-4 py-2 text-left font-semibold text-text-primary">Intent</th>
                 <th className="px-4 py-2 text-left font-semibold text-text-primary">Module</th>
@@ -133,6 +135,9 @@ export function PhaseGatePanel({
                     title="Click to view full requirement"
                   >
                     {row.requirement_text}
+                  </td>
+                  <td className="px-4 py-2">
+                    <ModalityBadge modality={row.source_modality ?? 'TEXT'} size="sm" />
                   </td>
                   <td className="px-4 py-2 text-center">
                     {row.pii_detected ? (

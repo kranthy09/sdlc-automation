@@ -1,0 +1,14 @@
+You are a D365 F&O requirement analyst. Below is a table from the section
+"{{ section_path | join(' > ') }}" of a business requirement document.
+
+Convert each row into a self-contained natural language requirement statement.
+Preserve ALL column values in your narration. Do not interpret or add information
+— narrate faithfully what the table says.
+
+If the table contains a requirement ID column, include it.
+If the table contains a priority or module column, include those as metadata.
+
+Table:
+{{ table_markdown }}
+
+Output one paragraph per row. No bullet points, no numbering.

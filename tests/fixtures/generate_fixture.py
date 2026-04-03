@@ -1,0 +1,187 @@
+#!/usr/bin/env python3
+"""
+Generate synthetic_multimodal_req.pdf — a 4-page fixture with text, tables, and images.
+
+This script creates a minimal PDF with requirements text, a table (REQ-AP-041 with 3-way matching),
+and placeholder content for images. The PDF is minimal but valid for parsing with pdfplumber/docling.
+
+Run once:
+  cd tests/fixtures && python3 generate_fixture.py
+
+Output: synthetic_multimodal_req.pdf (committed to repo)
+"""
+
+from pathlib import Path
+
+
+def generate_minimal_pdf(output_path: Path) -> None:
+    """Generate a minimal but valid PDF with text and structured content.
+
+    Uses raw PDF commands to avoid external dependencies.
+    """
+    # Minimal PDF structure with 4 pages
+    pdf_content = b"""%PDF-1.4
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+
+2 0 obj
+<< /Type /Pages /Kids [3 0 R 4 0 R 5 0 R 6 0 R] /Count 4 >>
+endobj
+
+3 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 7 0 R /Resources << /Font << /F1 8 0 R >> >> >>
+endobj
+
+4 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 9 0 R /Resources << /Font << /F1 8 0 R >> >> >>
+endobj
+
+5 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 10 0 R /Resources << /Font << /F1 8 0 R >> >> >>
+endobj
+
+6 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 11 0 R /Resources << /Font << /F1 8 0 R >> >> >>
+endobj
+
+8 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+endobj
+
+7 0 obj
+<< /Length 450 >>
+stream
+BT
+/F1 18 Tf
+50 750 Td
+(Accounts Payable Requirements) Tj
+0 -30 Td
+/F1 12 Tf
+(D365 Finance and Operations Implementation Requirements) Tj
+0 -20 Td
+(This document specifies functional and technical requirements for the Accounts Payable module) Tj
+0 -15 Td
+(in a D365 Finance and Operations implementation. All requirements organized by business process.) Tj
+0 -20 Td
+(Key implementation areas: invoice receipt and matching, payment processing, vendor management.) Tj
+ET
+endstream
+endobj
+
+9 0 obj
+<< /Length 800 >>
+stream
+BT
+/F1 16 Tf
+50 750 Td
+(Invoice Processing Requirements) Tj
+0 -30 Td
+/F1 11 Tf
+(REQ-AP-040: The system shall receive purchase orders from vendor portal) Tj
+0 -15 Td
+(Module: AccountsPayable, Priority: High) Tj
+0 -20 Td
+(REQ-AP-041: The system must enforce 3-way matching (PO, Receipt, Invoice) before payment authorization) Tj
+0 -15 Td
+(Module: AccountsPayable, Priority: Critical) Tj
+0 -20 Td
+(REQ-AP-042: The system shall validate invoice amounts within tolerance thresholds) Tj
+0 -15 Td
+(Module: AccountsPayable, Priority: High) Tj
+0 -20 Td
+(REQ-AP-043: The system must provide real-time visibility to outstanding payables) Tj
+0 -15 Td
+(Module: AccountsPayable, Priority: Medium) Tj
+0 -20 Td
+(Table 1: Core invoice processing requirements. REQ-AP-041 is critical for SOX compliance.) Tj
+ET
+endstream
+endobj
+
+10 0 obj
+<< /Length 600 >>
+stream
+BT
+/F1 16 Tf
+50 750 Td
+(Process Flow and Architecture) Tj
+0 -30 Td
+/F1 11 Tf
+(The invoice processing flow follows a standard three-way matching pattern.) Tj
+0 -15 Td
+(Input documents (Purchase Orders, Receipts, Invoices) are reconciled against master data) Tj
+0 -15 Td
+(and validated for consistency. On successful validation, payments are authorized and scheduled.) Tj
+0 -30 Td
+([Image Placeholder: Process diagram showing invoice input to payment output]) Tj
+0 -15 Td
+(Figure 1: High-level process diagram showing data flow in AP module.) Tj
+0 -20 Td
+(This section would include embedded images, tables, and detailed diagrams in production.) Tj
+ET
+endstream
+endobj
+
+11 0 obj
+<< /Length 700 >>
+stream
+BT
+/F1 16 Tf
+50 750 Td
+(Vendor Management and Reporting) Tj
+0 -30 Td
+/F1 11 Tf
+(REQ-AP-050: The system shall maintain a master vendor database with fields for name, tax ID,) Tj
+0 -15 Td
+(payment terms, and withholding rules.) Tj
+0 -20 Td
+(REQ-AP-051: The system must generate monthly aging reports by vendor, invoice date, and due date.) Tj
+0 -15 Td
+(Reports shall support drill-down to individual invoice details.) Tj
+0 -20 Td
+(REQ-AP-052: The system shall provide audit trails for all payment transactions, including) Tj
+0 -15 Td
+(creation date, approval chain, and modification history.) Tj
+0 -30 Td
+/F1 16 Tf
+(Conclusion) Tj
+0 -20 Td
+/F1 11 Tf
+(This specification covers essential functional scope for Accounts Payable in D365 F&O.) Tj
+0 -15 Td
+(All requirements are achievable with standard configuration. The 3-way matching requirement) Tj
+0 -15 Td
+(is foundational and must be completed before payment scheduling and cash management integration.) Tj
+ET
+endstream
+endobj
+
+xref
+0 12
+0000000000 65535 f
+0000000009 00000 n
+0000000058 00000 n
+0000000115 00000 n
+0000000229 00000 n
+0000000347 00000 n
+0000000465 00000 n
+0000000585 00000 n
+0000000684 00000 n
+0000000773 00000 n
+0000001623 00000 n
+0000002273 00000 n
+
+trailer
+<< /Size 12 /Root 1 0 R >>
+startxref
+3033
+%%EOF
+"""
+    output_path.write_bytes(pdf_content)
+    print(f"✓ Generated {output_path} ({output_path.stat().st_size:,} bytes)")
+
+
+if __name__ == "__main__":
+    output_file = Path(__file__).parent / "synthetic_multimodal_req.pdf"
+    generate_minimal_pdf(output_file)

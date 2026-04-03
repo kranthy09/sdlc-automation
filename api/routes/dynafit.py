@@ -51,6 +51,7 @@ from api.models import (
     RunResponse,
     UploadResponse,
 )
+from platform.ingestion import ArtifactStore
 from platform.parsers.format_detector import detect_format
 from platform.schemas.errors import UnsupportedFormatError
 from platform.storage.postgres import PostgresStore, UploadRecord
@@ -1141,6 +1142,192 @@ async def download_report(
         media_type="text/csv",
         filename=f"fdd_report_{batch_id}.csv",
     )
+
+
+# ---------------------------------------------------------------------------
+# 7b. Artifact retrieval (multimodal ingestion output — Phase 1)
+# ---------------------------------------------------------------------------
+
+
+def _get_artifact_store_path_from_redis(batch_id: str) -> str | None:
+    """Load artifact_store_batch_path from Redis batch hash.
+
+    Reads from dedicated field (not nested JSON).
+    Returns the path string or None if not found.
+    """
+    try:
+        from platform.storage.redis_pub import get_redis_client  # noqa: PLC0415
+
+        redis = get_redis_client()
+        raw = redis.hget(f"batch:{batch_id}", "artifact_store_batch_path")
+        if raw:
+            return raw.decode() if isinstance(raw, bytes) else raw
+    except Exception as exc:
+        log.warning(
+            "redis_artifact_path_load_failed",
+            batch_id=batch_id,
+            error=str(exc),
+        )
+    return None
+
+
+@router.get("/d365_fo/dynafit/{batch_id}/artifacts")
+async def list_artifacts(
+    request: Request,
+    batch_id: str,
+) -> JSONResponse:
+    """List all artifacts (tables, images) stored for this batch.
+
+    Returns metadata for all artifacts: artifact_id, artifact_type,
+    storage_path, page_no, section_path.
+
+    Requires artifact_store_batch_path to exist in Redis batch state
+    (populated by Phase 1 ingestion).
+    """
+    # Validate batch exists
+    await _get_batch(request, batch_id, include_journey=False)
+
+    artifact_path = _get_artifact_store_path_from_redis(batch_id)
+    if not artifact_path:
+        raise HTTPException(
+            status_code=404,
+            detail="Artifacts not available for this batch (Phase 1 unified pipeline may not have run)",
+        )
+
+    try:
+        # Reconstruct artifact references from filesystem
+        # For now, return empty list as a safe default
+        # In production, walk the artifact directory and build metadata
+        artifacts = []
+
+        batch_path = Path(artifact_path)
+        if batch_path.exists() and batch_path.is_dir():
+            # Walk artifact types: TABLE_IMAGE, TABLE_DATAFRAME, FIGURE_IMAGE
+            for artifact_type_dir in batch_path.iterdir():
+                if not artifact_type_dir.is_dir():
+                    continue
+                artifact_type = artifact_type_dir.name
+                for artifact_file in artifact_type_dir.iterdir():
+                    if artifact_file.is_file():
+                        artifacts.append({
+                            "artifact_id": artifact_file.stem,
+                            "artifact_type": artifact_type,
+                            "filename": artifact_file.name,
+                            "storage_path": str(artifact_file),
+                        })
+
+        return JSONResponse({"artifacts": artifacts})
+
+    except Exception as exc:
+        log.error(
+            "artifact_list_failed",
+            batch_id=batch_id,
+            error=str(exc),
+        )
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to list artifacts",
+        ) from exc
+
+
+@router.get("/d365_fo/dynafit/{batch_id}/artifacts/{artifact_id}")
+async def retrieve_artifact(
+    request: Request,
+    batch_id: str,
+    artifact_id: str,
+) -> FileResponse:
+    """Retrieve a single artifact file (image or dataframe).
+
+    Returns the file with appropriate Content-Type and cache headers.
+
+    Args:
+        batch_id:     Batch identifier.
+        artifact_id:  Artifact identifier (e.g., hash prefix).
+
+    Returns:
+        FileResponse with Cache-Control: public, max-age=86400.
+    """
+    # Validate batch exists
+    await _get_batch(request, batch_id, include_journey=False)
+
+    artifact_path = _get_artifact_store_path_from_redis(batch_id)
+    if not artifact_path:
+        raise HTTPException(
+            status_code=404,
+            detail="Artifacts not available for this batch",
+        )
+
+    try:
+        # Use ArtifactStore to safely retrieve the artifact
+        # For now, search in the batch directory by artifact_id
+        batch_path = Path(artifact_path)
+
+        if not batch_path.exists():
+            raise HTTPException(
+                status_code=404,
+                detail=f"Batch artifact directory not found: {artifact_path}",
+            )
+
+        # Search for the artifact across all type subdirectories
+        artifact_file: Path | None = None
+        for artifact_type_dir in batch_path.iterdir():
+            if not artifact_type_dir.is_dir():
+                continue
+            candidate = artifact_type_dir / f"{artifact_id}.png"
+            if candidate.exists():
+                artifact_file = candidate
+                break
+            # Also try .parquet for TABLE_DATAFRAME
+            candidate = artifact_type_dir / f"{artifact_id}.parquet"
+            if candidate.exists():
+                artifact_file = candidate
+                break
+
+        if not artifact_file or not artifact_file.exists():
+            raise HTTPException(
+                status_code=404,
+                detail=f"Artifact {artifact_id} not found",
+            )
+
+        # Determine MIME type
+        suffix = artifact_file.suffix.lower()
+        media_type = {
+            ".png": "image/png",
+            ".jpg": "image/jpeg",
+            ".jpeg": "image/jpeg",
+            ".parquet": "application/octet-stream",
+        }.get(suffix, "application/octet-stream")
+
+        log.debug(
+            "artifact_retrieved",
+            batch_id=batch_id,
+            artifact_id=artifact_id,
+            media_type=media_type,
+        )
+
+        # Return with cache headers
+        return FileResponse(
+            path=str(artifact_file),
+            media_type=media_type,
+            filename=artifact_file.name,
+            headers={
+                "Cache-Control": "public, max-age=86400",
+            },
+        )
+
+    except HTTPException:
+        raise
+    except Exception as exc:
+        log.error(
+            "artifact_retrieval_failed",
+            batch_id=batch_id,
+            artifact_id=artifact_id,
+            error=str(exc),
+        )
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to retrieve artifact",
+        ) from exc
 
 
 # ---------------------------------------------------------------------------

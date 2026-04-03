@@ -1,9 +1,11 @@
 import { useState } from 'react'
+import { useParams } from 'react-router-dom'
 import { cn, formatConfidence } from '@/lib/utils'
 import type { Classification, AtomJourney, FitmentEvidence } from '@/api/types'
 import { Badge } from '@/components/ui/Badge'
+import { ModalityBadge } from '@/components/ingestion/ModalityBadge'
+import { getArtifactUrl } from '@/api/dynafit'
 import { SignalRadar } from './SignalRadar'
-import { ImageIcon } from 'lucide-react'
 
 type TabKey = 'output' | 'classify' | 'match' | 'retrieve' | 'ingest'
 
@@ -19,6 +21,14 @@ const CONFIDENCE_COLOR: Record<string, string> = {
   HIGH: 'text-fit-text',
   MEDIUM: 'text-partial-text',
   LOW: 'text-gap-text',
+}
+
+function contentTypeToModality(
+  ct: string,
+): 'TEXT' | 'TABLE' | 'IMAGE' {
+  if (ct === 'image_derived') return 'IMAGE'
+  if (ct === 'table_derived') return 'TABLE'
+  return 'TEXT'
 }
 
 const EFFORT_LABEL: Record<string, string> = { S: 'Small', M: 'Medium', L: 'Large' }
@@ -159,6 +169,7 @@ function FallbackPanel({ rationale, d365Capability, d365Navigation, classificati
 // ─── Tab content renderers ───────────────────────────────────────────────────
 
 function IngestTab({ journey }: { journey: AtomJourney }) {
+  const { batchId } = useParams<{ batchId: string }>()
   const d = journey.ingest
   const getScoreColor = (score: number): string => {
     if (score >= 0.7) return 'text-fit-text'
@@ -171,7 +182,7 @@ function IngestTab({ journey }: { journey: AtomJourney }) {
         <span><span className="text-text-muted">Intent:</span> <span className="text-text-primary font-medium">{d.intent}</span></span>
         <span><span className="text-text-muted">Module:</span> <span className="text-text-primary">{d.module}</span></span>
         <span><span className="text-text-muted">Priority:</span> <span className="text-text-primary">{d.priority}</span></span>
-        <span className="flex items-center gap-1"><span className="text-text-muted">Content:</span> <span className="text-text-primary flex items-center gap-1">{d.content_type === 'image_derived' && <ImageIcon className="h-3.5 w-3.5" />}{d.content_type}</span></span>
+        <span className="flex items-center gap-1"><span className="text-text-muted">Source:</span> <ModalityBadge modality={contentTypeToModality(d.content_type)} size="sm" /></span>
       </div>
       {d.entity_hints.length > 0 && (
         <div>
@@ -194,7 +205,30 @@ function IngestTab({ journey }: { journey: AtomJourney }) {
         </div>
       </div>
       {d.source_refs.length > 0 && (
-        <p className="text-xs text-text-muted">Source: {d.source_refs.join(', ')}</p>
+        <div>
+          <p className="text-xs text-text-muted mb-2">Source references</p>
+          <p className="text-xs text-text-secondary">{d.source_refs.join(', ')}</p>
+        </div>
+      )}
+      {batchId && d.source_refs?.filter((r) => /^[0-9a-f]{16}$/.test(r)).length > 0 && (
+        <div>
+          <p className="text-xs text-text-muted mb-2">Source artifacts</p>
+          <div className="flex flex-wrap gap-2">
+            {d.source_refs
+              .filter((r) => /^[0-9a-f]{16}$/.test(r))
+              .map((artifactId) => (
+                <img
+                  key={artifactId}
+                  src={getArtifactUrl(batchId, artifactId)}
+                  className="w-40 h-24 object-contain bg-bg-raised border border-bg-border rounded"
+                  onError={(e) => {
+                    (e.target as HTMLImageElement).style.display = 'none'
+                  }}
+                  alt="Source artifact"
+                />
+              ))}
+          </div>
+        </div>
       )}
     </div>
   )

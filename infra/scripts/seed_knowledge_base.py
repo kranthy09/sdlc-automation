@@ -60,13 +60,13 @@ def _load_capabilities(product: str, source: str) -> list[dict]:
 
 
 def _load_docs(product: str, source: str) -> list[dict]:
-    """Load MS Learn documentation from docs_corpus_{source}.yaml.
+    """Load MS Learn documentation from docs_{source}.yaml.
 
-    Docs corpus is raw Microsoft Learn documentation (broad scope, semantic search).
+    Docs are Microsoft Learn documentation (broad scope, semantic search).
     Uses dense-only retrieval (no BM25 sparse, no module filter) for cross-module insights.
     Returns empty list if the file does not exist — docs are optional.
     """
-    yaml_path = _REPO_ROOT / "knowledge_bases" / product / f"docs_corpus_{source}.yaml"
+    yaml_path = _REPO_ROOT / "knowledge_bases" / product / f"docs_{source}.yaml"
     if not yaml_path.exists():
         return []
     with yaml_path.open() as f:
@@ -101,7 +101,7 @@ def main() -> None:
     # 1. Load YAMLs (separated files: capabilities + docs_corpus)
     print(
         f"Loading knowledge_bases/{args.product}/"
-        f"(capabilities_{args.source}.yaml + docs_corpus_{args.source}.yaml) ..."
+        f"(capabilities_{args.source}.yaml + docs_{args.source}.yaml) ..."
     )
     caps = _load_capabilities(args.product, args.source)
     cap_descriptions = [c["text"] for c in caps]

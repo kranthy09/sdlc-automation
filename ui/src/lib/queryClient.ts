@@ -1,8 +1,11 @@
-import { MutationCache, QueryCache, QueryClient } from '@tanstack/react-query'
+import { MutationCache, QueryCache, QueryClient, type Query } from '@tanstack/react-query'
 import { ApiError } from '@/api/client'
 import { useUIStore } from '@/stores/uiStore'
 
-function handleError(err: unknown): void {
+function handleError(err: unknown, query?: Query): void {
+  // Skip error toast for queries marked as silent (e.g., optional artifact fetches)
+  if (query?.meta?.silent) return
+
   const msg =
     err instanceof ApiError
       ? err.message
@@ -30,7 +33,7 @@ export const queryClient = new QueryClient({
     },
   },
   queryCache: new QueryCache({
-    onError: handleError,
+    onError: (err, query) => handleError(err, query),
   }),
   mutationCache: new MutationCache({
     onError: handleError,
