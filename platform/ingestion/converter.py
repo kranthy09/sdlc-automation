@@ -86,7 +86,6 @@ class DocumentConverter:
                 else "auto",
             )
             self._standard_pipeline = DoclingConverter(
-                converter_cls=None,  # Auto-detect from file type
                 format_options={},
                 pipeline_options=pipeline_options,
             )
@@ -108,7 +107,7 @@ class DocumentConverter:
                 ocr_mode="ml",  # Use VLM instead of Tesseract
             )
             self._vlm_pipeline = DoclingConverter(
-                converter_cls=None, format_options={}, pipeline_options=pipeline_options
+                format_options={}, pipeline_options=pipeline_options
             )
         return self._vlm_pipeline
 
