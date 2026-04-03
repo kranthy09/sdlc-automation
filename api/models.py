@@ -160,6 +160,8 @@ class ReviewItem(BaseModel):
     dev_effort: str | None = None
     gap_type: str | None = None
     reviewed: bool = False
+    d365_capability: str | None = None
+    caveats: str | None = None
 
 
 class ReviewItemBasic(BaseModel):
@@ -194,6 +196,7 @@ class AutoApprovedItem(BaseModel):
     gap_type: str | None = None
     dev_effort: str | None = None
     evidence: ReviewItemEvidence = Field(default_factory=ReviewItemEvidence)
+    caveats: str | None = None
 
 
 class ReviewQueueResponse(BaseModel):

@@ -399,6 +399,8 @@ def build_hitl_data(
                 ),
                 "dev_effort": c.dev_effort,
                 "gap_type": c.gap_type,
+                "d365_capability": c.d365_capability_ref,
+                "caveats": c.caveats,
                 "evidence": {
                     "capabilities": [
                         {
@@ -485,6 +487,7 @@ def build_hitl_data(
                 "gap_description": c.gap_description,
                 "gap_type": c.gap_type,
                 "dev_effort": c.dev_effort,
+                "caveats": c.caveats,
                 "evidence": {
                     "capabilities": [
                         {
