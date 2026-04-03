@@ -248,6 +248,17 @@ def build_complete_data(
                 }
                 for pf in (ctx.prior_fitments if ctx else [])
             ],
+            "candidates": [
+                {
+                    "name": cap.feature,
+                    "score": cap.composite_score,
+                    "navigation": cap.navigation,
+                }
+                for cap in (mr.ranked_capabilities[:3] if mr else [])
+            ],
+            "route": str(mr.route) if mr else "",
+            "anomaly_flags": mr.anomaly_flags if mr else [],
+            "signal_breakdown": mr.signal_breakdown if mr else {},
         }
 
         d365_navigation = (
@@ -277,6 +288,8 @@ def build_complete_data(
                 "configuration_steps": r.configuration_steps,
                 "dev_effort": r.dev_effort,
                 "gap_type": r.gap_type,
+                "caveats": r.caveats,
+                "route_used": str(r.route_used),
             }
         )
 

@@ -8,7 +8,6 @@ import type { ReviewItem, Classification, ReviewDecision } from '@/api/types'
 
 const REASON_LABEL: Record<ReviewItem['review_reason'], string> = {
   low_confidence: 'Low confidence',
-  conflict: 'Conflicting evidence',
   anomaly: 'Anomaly detected',
   pii_detected: 'PII detected in response',
   gap_review: 'GAP — requires sign-off',
@@ -17,7 +16,6 @@ const REASON_LABEL: Record<ReviewItem['review_reason'], string> = {
 
 const REASON_COLOR: Record<ReviewItem['review_reason'], string> = {
   low_confidence: 'text-partial-text border-partial/30 bg-partial-muted/20',
-  conflict: 'text-gap-text border-gap/30 bg-gap-muted/20',
   anomaly: 'text-accent-glow border-accent/30 bg-accent/5',
   pii_detected: 'text-gap-text border-gap/40 bg-gap-muted/30',
   gap_review: 'text-gap-text border-gap/30 bg-gap-muted/20',
@@ -257,16 +255,26 @@ export function ReviewCard({ item, submitting, selected, onToggleSelect, onDecid
               </div>
             )}
 
-            {/* GAP: show gap details + guidance when no capabilities found */}
+            {/* GAP: show gap details + why this was classified as gap */}
             {item.ai_classification === 'GAP' && (
               <div className="rounded-lg border border-gap/20 bg-gap-muted/10 p-3 space-y-3">
                 <div className="flex items-center gap-1.5 text-xs font-medium text-gap-text">
                   <Code2 className="h-3.5 w-3.5" />
                   Gap Analysis
                 </div>
-                {(item.evidence?.capabilities?.length ?? 0) === 0 && (
-                  <p className="text-xs text-text-muted italic">
-                    No matching D365 capability found in the knowledge base — this requirement needs custom development or a third-party solution.
+                {(item.evidence?.capabilities?.length ?? 0) > 0 ? (
+                  <p className="text-xs text-text-muted">
+                    Phase 3 retrieved <strong>{item.evidence.capabilities.length}</strong> candidate
+                    {item.evidence.capabilities.length !== 1 ? 's' : ''} (top score:{' '}
+                    <strong>{Math.round(item.evidence.capabilities[0].score * 100)}%</strong>). The
+                    LLM evaluated these and classified this requirement as a GAP — D365 does not
+                    natively cover it without custom X++ development. See the rationale above for the
+                    specific reasoning.
+                  </p>
+                ) : (
+                  <p className="text-xs text-text-muted">
+                    Phase 3 found no matching capabilities in the D365 knowledge base. The LLM
+                    confirmed this is a gap requiring custom X++ development or a third-party solution.
                   </p>
                 )}
                 {(item.dev_effort || item.gap_type) && (
@@ -304,7 +312,12 @@ export function ReviewCard({ item, submitting, selected, onToggleSelect, onDecid
               (item.evidence?.capabilities?.length ?? 0) === 0 &&
               (item.evidence?.prior_fitments?.length ?? 0) === 0 &&
               (item.evidence?.anomaly_flags?.length ?? 0) === 0 && (
-              <p className="text-xs text-text-muted italic">No additional evidence available.</p>
+              <p className="text-xs text-text-muted italic">
+                No retrieval evidence was found for this requirement. The LLM classified it as{' '}
+                <strong>{item.ai_classification}</strong> with {Math.round(item.ai_confidence * 100)}%
+                confidence. Review reason: <strong>{REASON_LABEL[item.review_reason]}</strong>. See
+                the rationale above for the LLM's reasoning.
+              </p>
             )}
           </div>
         )}

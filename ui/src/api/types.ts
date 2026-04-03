@@ -62,6 +62,10 @@ export interface FitmentEvidence {
     country: string
     classification: Classification
   }>
+  candidates: Array<{ name: string; score: number; navigation: string }>
+  route: string
+  anomaly_flags: string[]
+  signal_breakdown: Record<string, number>
 }
 
 export interface FitmentResult {
@@ -82,6 +86,8 @@ export interface FitmentResult {
   configuration_steps: string[] | null
   dev_effort: 'S' | 'M' | 'L' | null
   gap_type: string | null
+  caveats: string | null
+  route_used: string
   journey: AtomJourney | null
 }
 
@@ -138,7 +144,7 @@ export interface ReviewItem {
   ai_classification: Classification
   ai_confidence: number
   ai_rationale: string
-  review_reason: 'low_confidence' | 'conflict' | 'anomaly' | 'pii_detected' | 'gap_review' | 'partial_fit_no_config'
+  review_reason: 'low_confidence' | 'anomaly' | 'pii_detected' | 'gap_review' | 'partial_fit_no_config'
   module: string
   evidence: ReviewItemEvidence
   config_steps: string | null
@@ -163,7 +169,7 @@ export interface AutoApprovedItem {
   gap_description: string | null
   gap_type: string | null
   dev_effort: 'S' | 'M' | 'L' | null
-  evidence?: ReviewItemEvidence
+  evidence: ReviewItemEvidence
 }
 
 export interface ReviewResponse {
@@ -397,12 +403,14 @@ export interface WSReviewRequired {
   batch_id: string
   review_items: number
   reasons: {
-    low_confidence: number
-    conflicts?: number
-    anomalies?: number
+    low_confidence?: number
+    anomaly?: number
     pii_detected?: number
+    gap_review?: number
+    partial_fit_no_config?: number
   }
   review_url: string
+  timestamp?: string
 }
 
 export interface WSComplete {

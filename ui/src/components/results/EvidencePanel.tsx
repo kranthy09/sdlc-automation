@@ -83,14 +83,37 @@ function FallbackPanel({ rationale, d365Capability, d365Navigation, classificati
   return (
     <div className="space-y-3 px-4 py-3">
       {evidence && (
-        <div className="flex items-center gap-3">
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-text-muted">Retrieval confidence:</span>
-            <span className={cn('text-xs font-semibold', CONFIDENCE_COLOR[evidence.retrieval_confidence])}>
-              {evidence.retrieval_confidence}
-            </span>
+        <div className="space-y-2">
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-text-muted">Retrieval confidence:</span>
+              <span className={cn('text-xs font-semibold', CONFIDENCE_COLOR[evidence.retrieval_confidence])}>
+                {evidence.retrieval_confidence}
+              </span>
+            </div>
+            <span className="text-xs text-text-muted">Score: <span className="text-text-primary font-medium">{formatConfidence(evidence.top_capability_score)}</span></span>
+            {evidence?.route && (
+              <span className="text-xs text-text-muted">
+                Route: <span className={cn('font-medium', ROUTE_COLOR[evidence.route] ?? 'text-text-secondary')}>{evidence.route}</span>
+              </span>
+            )}
           </div>
-          <span className="text-xs text-text-muted">Score: <span className="text-text-primary font-medium">{formatConfidence(evidence.top_capability_score)}</span></span>
+          {evidence?.candidates && evidence.candidates.length > 0 && (
+            <div className="rounded-lg border border-bg-border/50 bg-bg-raised/50 p-2.5">
+              <p className="text-xs text-text-muted mb-1">
+                {classification === 'GAP'
+                  ? `Top retrieved candidate (LLM classified as GAP despite ${Math.round(evidence.candidates[0].score * 100)}% retrieval match):`
+                  : 'Top D365 capability:'}
+              </p>
+              <p className="text-sm text-text-primary font-medium">{evidence.candidates[0].name}</p>
+              <p className="font-mono text-xs text-accent-glow">{evidence.candidates[0].navigation}</p>
+            </div>
+          )}
+          {evidence?.candidates?.length === 0 && classification === 'GAP' && (
+            <p className="text-xs text-text-muted italic">
+              Phase 3 found no candidates in the knowledge base — confirmed gap.
+            </p>
+          )}
         </div>
       )}
       {evidence?.prior_fitments.length! > 0 && (

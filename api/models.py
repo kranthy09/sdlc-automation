@@ -38,10 +38,20 @@ class PriorFitmentItem(BaseModel):
     classification: str
 
 
+class CandidateCapabilityItem(BaseModel):
+    name: str
+    score: float
+    navigation: str
+
+
 class EvidenceItem(BaseModel):
     top_capability_score: float = 0.0
     retrieval_confidence: str = "LOW"
     prior_fitments: list[PriorFitmentItem] = Field(default_factory=list)
+    candidates: list[CandidateCapabilityItem] = Field(default_factory=list)
+    route: str = ""
+    anomaly_flags: list[str] = Field(default_factory=list)
+    signal_breakdown: dict[str, float] = Field(default_factory=dict)
 
 
 class CapabilityItem(BaseModel):
@@ -120,6 +130,8 @@ class ResultItem(BaseModel):
     configuration_steps: list[str] | None = None
     dev_effort: str | None = None
     gap_type: str | None = None
+    caveats: str | None = None
+    route_used: str = ""
     journey: AtomJourney | None = None
 
 
@@ -181,6 +193,7 @@ class AutoApprovedItem(BaseModel):
     gap_description: str | None = None
     gap_type: str | None = None
     dev_effort: str | None = None
+    evidence: ReviewItemEvidence = Field(default_factory=ReviewItemEvidence)
 
 
 class ReviewQueueResponse(BaseModel):

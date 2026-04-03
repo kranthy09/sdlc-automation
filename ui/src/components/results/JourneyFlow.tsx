@@ -84,7 +84,9 @@ export function JourneyFlow({ journey }: JourneyFlowProps) {
       color: STAGE_COLORS.output,
       metrics: [
         `${journey.output.classification}`,
-        journey.output.dev_effort ? `Effort: ${journey.output.dev_effort}` : 'No effort',
+        journey.output.dev_effort
+          ? `Effort: ${journey.output.dev_effort}`
+          : journey.output.classification === 'GAP' ? 'Effort: TBD' : '',
       ],
     },
   ]

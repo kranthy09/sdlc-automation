@@ -65,12 +65,17 @@ export default function ResultsPage() {
 
   const handleExportCsv = () => {
     if (!data?.results.length) return
-    const headers = ['Req ID', 'Requirement', 'Module', 'Classification', 'Confidence', 'D365 Capability', 'D365 Navigation', 'Rationale', 'Config Steps', 'Gap Description', 'Gap Type', 'Dev Effort']
+    const headers = ['Req ID', 'Requirement', 'Module', 'Classification', 'Confidence', 'Route', 'Retrieval Score', 'Retrieval Confidence', 'Top Candidate', 'D365 Capability', 'D365 Navigation', 'Rationale', 'Caveats', 'Config Steps', 'Gap Description', 'Gap Type', 'Dev Effort']
     const escape = (v: string) => `"${(v ?? '').replace(/"/g, '""')}"`
     const rows = data.results.map((r) => [
       r.atom_id, escape(r.requirement_text), r.module, r.classification,
-      r.confidence, escape(r.d365_capability), escape(r.d365_navigation),
-      escape(r.rationale), escape(r.config_steps ?? ''),
+      r.confidence, r.route_used ?? '',
+      r.evidence.top_capability_score,
+      r.evidence.retrieval_confidence,
+      escape(r.evidence.candidates?.[0]?.name ?? ''),
+      escape(r.d365_capability), escape(r.d365_navigation),
+      escape(r.rationale), escape(r.caveats ?? ''),
+      escape(r.config_steps ?? ''),
       escape(r.gap_description ?? ''), r.gap_type ?? '', r.dev_effort ?? '',
     ].join(','))
     const csv = [headers.join(','), ...rows].join('\n')
