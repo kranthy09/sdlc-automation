@@ -62,6 +62,8 @@ ml = [
     "fastembed>=0.3",
     "tokenizers>=0.21",
     "rank-bm25>=0.2",
+    # RAG retrieval pipeline (dense embeddings via sentence-transformers)
+    "sentence-transformers>=3.0",
     # Deduplication ANN for large batches (a > 300) — CPU-only, ~30 MB
     "faiss-cpu>=1.7",
 ]
@@ -89,14 +91,14 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["platform", "modules", "api"]
+packages = ["platform", "platforms", "agents", "modules", "api"]
 
 # ---------------------------------------------------------------------------
 # pytest
 # ---------------------------------------------------------------------------
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
-testpaths = ["tests", "modules/dynafit/tests"]
+testpaths = ["tests", "modules/dynafit/tests", "agents"]
 pythonpath = ["."]
 markers = [
     "unit: fast, no external deps",
@@ -128,7 +130,7 @@ ignore = [
 ]
 
 [tool.ruff.lint.isort]
-known-first-party = ["platform", "modules", "api"]
+known-first-party = ["platform", "platforms", "agents", "modules", "api"]
 
 # ---------------------------------------------------------------------------
 # mypy
@@ -149,6 +151,7 @@ exclude = [
 module = [
     "qdrant_client.*",
     "fastembed.*",
+    "sentence_transformers.*",
     "rank_bm25.*",
     "magic.*",
     "pdf2image.*",
@@ -174,7 +177,7 @@ ignore_missing_imports = true
 # coverage
 # ---------------------------------------------------------------------------
 [tool.coverage.run]
-source = ["platform", "modules", "api"]
+source = ["platform", "platforms", "agents", "modules", "api"]
 omit = ["*/tests/*", "*/testing/*"]
 
 [tool.coverage.report]
