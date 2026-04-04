@@ -23,7 +23,7 @@ lock:
 # Testing
 # ---------------------------------------------------------------------------
 test:
-	uv run python -m pytest -x --cov=platform --cov=modules -v
+	uv run python -m pytest -x --cov=platform --cov=platforms --cov=agents --cov=modules -v
 
 test-unit:
 	uv run python -m pytest -m unit -v
@@ -43,7 +43,7 @@ test-golden:
 lint:
 	uv run ruff check .
 	uv run ruff format --check .
-	uv run mypy platform/ modules/ api/
+	uv run mypy platform/ platforms/ agents/ modules/ api/
 
 format:
 	uv run ruff check --fix .
