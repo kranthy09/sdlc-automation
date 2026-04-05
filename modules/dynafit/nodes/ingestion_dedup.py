@@ -39,13 +39,40 @@ def _apply_merges(
 
     One model_copy per survivor atom (not one per absorbed atom).
     source_ref built with a single join — avoids O(k²) string growth.
+    artifact_ids and citations are union-merged from absorbed atoms.
     """
     for i, js in merge_targets.items():
         merged_ids = [requirements[j].atom.atom_id for j in js]
-        base_ref = requirements[i].atom.source_ref or requirements[i].atom.atom_id
+        base_ref = (
+            requirements[i].atom.source_ref
+            or requirements[i].atom.atom_id
+        )
         new_ref = ",".join([base_ref] + merged_ids)
+
+        # Union-merge artifact_ids (preserve order, no duplicates)
+        seen: set[str] = set(requirements[i].atom.artifact_ids)
+        merged_art_ids = list(requirements[i].atom.artifact_ids)
+        for j in js:
+            for aid in requirements[j].atom.artifact_ids:
+                if aid not in seen:
+                    seen.add(aid)
+                    merged_art_ids.append(aid)
+
+        # Merge citations from absorbed atoms
+        merged_citations = list(requirements[i].atom.citations)
+        existing_refs = {c.source_ref for c in merged_citations}
+        for j in js:
+            for cit in requirements[j].atom.citations:
+                if cit.source_ref not in existing_refs:
+                    existing_refs.add(cit.source_ref)
+                    merged_citations.append(cit)
+
         requirements[i] = _ClassifiedRequirement(
-            atom=requirements[i].atom.model_copy(update={"source_ref": new_ref}),
+            atom=requirements[i].atom.model_copy(update={
+                "source_ref": new_ref,
+                "artifact_ids": merged_art_ids,
+                "citations": merged_citations,
+            }),
             intent=requirements[i].intent,
             module=requirements[i].module,
         )

@@ -1149,12 +1149,29 @@ async def download_report(
 # ---------------------------------------------------------------------------
 
 
-def _get_artifact_store_path_from_redis(batch_id: str) -> str | None:
-    """Load artifact_store_batch_path from Redis batch hash.
+async def _get_artifact_store_path(
+    request: Request,
+    batch_id: str,
+) -> str | None:
+    """Load artifact_store_batch_path — PostgreSQL first, Redis fallback.
 
-    Reads from dedicated field (not nested JSON).
-    Returns the path string or None if not found.
+    PostgreSQL is the durable source of truth (persisted after Phase 1).
+    Redis is checked as a fallback for batches created before the migration.
     """
+    # 1. PostgreSQL (durable)
+    pg = _get_pg(request)
+    try:
+        db_batch = await pg.get_batch_by_id(batch_id)
+        if db_batch and db_batch.artifact_store_batch_path:
+            return db_batch.artifact_store_batch_path
+    except Exception as exc:
+        log.warning(
+            "postgres_artifact_path_load_failed",
+            batch_id=batch_id,
+            error=str(exc),
+        )
+
+    # 2. Redis fallback (for pre-migration batches)
     try:
         from platform.storage.redis_pub import get_redis_client  # noqa: PLC0415
 
@@ -1181,17 +1198,23 @@ async def list_artifacts(
     Returns metadata for all artifacts: artifact_id, artifact_type,
     storage_path, page_no, section_path.
 
-    Requires artifact_store_batch_path to exist in Redis batch state
-    (populated by Phase 1 ingestion).
+    Reads artifact_store_batch_path from PostgreSQL (durable),
+    falling back to Redis for pre-migration batches.
     """
     # Validate batch exists
     await _get_batch(request, batch_id, include_journey=False)
 
-    artifact_path = _get_artifact_store_path_from_redis(batch_id)
+    artifact_path = await _get_artifact_store_path(
+        request, batch_id,
+    )
     if not artifact_path:
         raise HTTPException(
             status_code=404,
-            detail="Artifacts not available for this batch (Phase 1 unified pipeline may not have run)",
+            detail=(
+                "Artifacts not available for this batch"
+                " (Phase 1 unified pipeline may not"
+                " have run)"
+            ),
         )
 
     try:
@@ -1250,7 +1273,9 @@ async def retrieve_artifact(
     # Validate batch exists
     await _get_batch(request, batch_id, include_journey=False)
 
-    artifact_path = _get_artifact_store_path_from_redis(batch_id)
+    artifact_path = await _get_artifact_store_path(
+        request, batch_id,
+    )
     if not artifact_path:
         raise HTTPException(
             status_code=404,

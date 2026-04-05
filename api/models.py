@@ -318,6 +318,20 @@ class PublicResultsResponse(BaseModel):
 # ---------------------------------------------------------------------------
 
 
+class CitationResponse(BaseModel):
+    """Verbatim source evidence for one requirement atom.
+
+    Serialised from platform.schemas.requirement.CitationRecord.
+    """
+
+    source_ref: str
+    element_type: str = "text"          # "text" | "table" | "image"
+    page_no: int | None = None
+    section_path: list[str] = Field(default_factory=list)
+    excerpt: str = ""
+    artifact_ids: list[str] = Field(default_factory=list)
+
+
 class JourneyIngest(BaseModel):
     atom_id: str
     requirement_text: str
@@ -330,6 +344,10 @@ class JourneyIngest(BaseModel):
     completeness_score: float = 0.0
     content_type: str = "text"
     source_refs: list[str] = Field(default_factory=list)
+    # Artifact fix: explicit list of ArtifactStore hex IDs
+    artifact_ids: list[str] = Field(default_factory=list)
+    # Citations: structured source evidence with excerpt + page
+    citations: list[CitationResponse] = Field(default_factory=list)
 
 
 class JourneyCapability(BaseModel):

@@ -1,6 +1,6 @@
 .PHONY: setup lock test test-unit test-integration test-module test-golden \
         lint format validate-contracts \
-        dev dev-down dev-logs dev-ps db-migrate \
+        dev dev-build dev-down dev-down-v dev-logs dev-ps db-migrate \
         seed-kb seed-kb-lite smoke-test run \
         ui ui-install test-ui test-ui-docker test-ui-coverage type-check-ui ci
 
@@ -56,7 +56,20 @@ validate-contracts:
 # Infrastructure
 # ---------------------------------------------------------------------------
 
+# Start containers — no image rebuild. Source is volume-mounted so code
+# changes are live immediately (uvicorn --reload + Vite HMR).
+# Run make dev-build instead when pyproject.toml / uv.lock / Dockerfile change.
 dev:
+	$(COMPOSE) up -d
+	@echo ""
+	@echo "  UI          → http://localhost:5173"
+	@echo "  API docs    → http://localhost:8000/api/docs"
+	@echo "  API health  → http://localhost:8000/health"
+	@echo "  Qdrant      → http://localhost:6333/dashboard"
+	@echo ""
+
+# Rebuild images then start — use after: uv lock, npm install, Dockerfile edits.
+dev-build:
 	$(COMPOSE) up --build -d
 	@echo ""
 	@echo "  UI          → http://localhost:5173"
@@ -68,6 +81,8 @@ dev:
 dev-down:
 	$(COMPOSE) down
 
+# Destroys ALL named volumes (pg_data, qdrant_data, redis_data, uploads, reports).
+# Use only to reset everything from scratch — you will lose KB data and uploads.
 dev-down-v:
 	$(COMPOSE) down -v
 

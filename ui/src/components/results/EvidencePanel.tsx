@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { cn, formatConfidence } from '@/lib/utils'
-import type { Classification, AtomJourney, FitmentEvidence } from '@/api/types'
+import type { Classification, AtomJourney, FitmentEvidence, Citation } from '@/api/types'
 import { Badge } from '@/components/ui/Badge'
 import { ModalityBadge } from '@/components/ingestion/ModalityBadge'
 import { getArtifactUrl } from '@/api/dynafit'
@@ -189,6 +189,84 @@ function FallbackPanel({ rationale, d365Capability, d365Navigation, classificati
   )
 }
 
+// ─── Citation card ────────────────────────────────────────────────────────────
+
+const ELEMENT_TYPE_STYLE: Record<string, string> = {
+  table: 'bg-amber-500/10 text-amber-400 border-amber-500/30',
+  image: 'bg-purple-500/10 text-purple-400 border-purple-500/30',
+  text:  'bg-blue-500/10  text-blue-400  border-blue-500/30',
+}
+
+function CitationCard({
+  citation,
+  batchId,
+}: {
+  citation: Citation
+  batchId: string | undefined
+}) {
+  const [expanded, setExpanded] = useState(false)
+  const excerpt = citation.excerpt ?? ''
+  const truncated = excerpt.length > 240 && !expanded
+  const displayText = truncated ? excerpt.slice(0, 240) + '…' : excerpt
+  const typeStyle = ELEMENT_TYPE_STYLE[citation.element_type] ?? ELEMENT_TYPE_STYLE.text
+
+  return (
+    <div className="rounded-lg border border-bg-border bg-bg-raised/60 p-2.5 space-y-1.5">
+      {/* Header row: type badge + source_ref + page */}
+      <div className="flex items-center gap-2 flex-wrap">
+        <span className={cn('rounded border px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide', typeStyle)}>
+          {citation.element_type}
+        </span>
+        <span className="font-mono text-[10px] text-text-muted">{citation.source_ref}</span>
+        {citation.page_no != null && (
+          <span className="text-[10px] text-text-muted">· p.{citation.page_no}</span>
+        )}
+      </div>
+
+      {/* Section breadcrumb */}
+      {citation.section_path.length > 0 && (
+        <p className="text-[10px] text-text-muted truncate">
+          {citation.section_path.join(' › ')}
+        </p>
+      )}
+
+      {/* Excerpt */}
+      {excerpt && (
+        <div>
+          <p className="text-xs text-text-secondary leading-relaxed whitespace-pre-wrap break-words">
+            {displayText}
+          </p>
+          {excerpt.length > 240 && (
+            <button
+              onClick={() => setExpanded((v) => !v)}
+              className="text-[10px] text-accent-glow hover:underline mt-0.5"
+            >
+              {expanded ? 'Show less' : 'Show more'}
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Artifact images */}
+      {batchId && citation.artifact_ids.length > 0 && (
+        <div className="flex flex-wrap gap-2 pt-1">
+          {citation.artifact_ids.map((aid) => (
+            <img
+              key={aid}
+              src={getArtifactUrl(batchId, aid)}
+              className="w-40 h-24 object-contain bg-bg-surface border border-bg-border rounded"
+              onError={(e) => {
+                (e.target as HTMLImageElement).style.display = 'none'
+              }}
+              alt={`Source artifact ${aid}`}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ─── Tab content renderers ───────────────────────────────────────────────────
 
 function IngestTab({ journey }: { journey: AtomJourney }) {
@@ -199,6 +277,15 @@ function IngestTab({ journey }: { journey: AtomJourney }) {
     if (score >= 0.4) return 'text-partial-text'
     return 'text-gap-text'
   }
+
+  // Collect any artifact_ids not already covered by a citation
+  const citationArtIds = new Set(
+    (d.citations ?? []).flatMap((c) => c.artifact_ids),
+  )
+  const orphanArtIds = (d.artifact_ids ?? []).filter(
+    (id) => !citationArtIds.has(id),
+  )
+
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap gap-x-6 gap-y-1 text-sm">
@@ -207,6 +294,7 @@ function IngestTab({ journey }: { journey: AtomJourney }) {
         <span><span className="text-text-muted">Priority:</span> <span className="text-text-primary">{d.priority}</span></span>
         <span className="flex items-center gap-1"><span className="text-text-muted">Source:</span> <ModalityBadge modality={contentTypeToModality(d.content_type)} size="sm" /></span>
       </div>
+
       {d.entity_hints.length > 0 && (
         <div>
           <p className="text-xs text-text-muted mb-1">Entity hints</p>
@@ -217,6 +305,7 @@ function IngestTab({ journey }: { journey: AtomJourney }) {
           </div>
         </div>
       )}
+
       <div className="flex gap-6">
         <div>
           <p className="text-xs text-text-muted">Specificity</p>
@@ -227,30 +316,42 @@ function IngestTab({ journey }: { journey: AtomJourney }) {
           <p className={cn('text-sm font-semibold', getScoreColor(d.completeness_score / 100))}>{Math.round(d.completeness_score)}%</p>
         </div>
       </div>
-      {d.source_refs.length > 0 && (
-        <div>
-          <p className="text-xs text-text-muted mb-2">Source references</p>
-          <p className="text-xs text-text-secondary">{d.source_refs.join(', ')}</p>
+
+      {/* Rich citation cards (populated by unified pipeline) */}
+      {d.citations && d.citations.length > 0 && (
+        <div className="space-y-2">
+          <p className="text-xs text-text-muted">Source citations</p>
+          {d.citations.map((cit) => (
+            <CitationCard key={cit.source_ref} citation={cit} batchId={batchId} />
+          ))}
         </div>
       )}
-      {batchId && d.source_refs?.filter((r) => /^[0-9a-f]{16}$/.test(r)).length > 0 && (
+
+      {/* Fallback: orphan artifact images not attached to a citation */}
+      {batchId && orphanArtIds.length > 0 && (
         <div>
           <p className="text-xs text-text-muted mb-2">Source artifacts</p>
           <div className="flex flex-wrap gap-2">
-            {d.source_refs
-              .filter((r) => /^[0-9a-f]{16}$/.test(r))
-              .map((artifactId) => (
-                <img
-                  key={artifactId}
-                  src={getArtifactUrl(batchId, artifactId)}
-                  className="w-40 h-24 object-contain bg-bg-raised border border-bg-border rounded"
-                  onError={(e) => {
-                    (e.target as HTMLImageElement).style.display = 'none'
-                  }}
-                  alt="Source artifact"
-                />
-              ))}
+            {orphanArtIds.map((aid) => (
+              <img
+                key={aid}
+                src={getArtifactUrl(batchId, aid)}
+                className="w-40 h-24 object-contain bg-bg-raised border border-bg-border rounded"
+                onError={(e) => {
+                  (e.target as HTMLImageElement).style.display = 'none'
+                }}
+                alt={`Source artifact ${aid}`}
+              />
+            ))}
           </div>
+        </div>
+      )}
+
+      {/* Fallback: plain source_refs when no citations exist (legacy data) */}
+      {(!d.citations || d.citations.length === 0) && d.source_refs.length > 0 && (
+        <div>
+          <p className="text-xs text-text-muted mb-1">Source references</p>
+          <p className="text-xs text-text-secondary font-mono">{d.source_refs.join(', ')}</p>
         </div>
       )}
     </div>

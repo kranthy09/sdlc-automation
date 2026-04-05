@@ -23,6 +23,32 @@ from pydantic import Field
 from .base import PlatformModel
 from .guardrails import PIIEntity
 
+
+# ---------------------------------------------------------------------------
+# CitationRecord — verbatim source evidence per requirement atom
+# ---------------------------------------------------------------------------
+
+
+class CitationRecord(PlatformModel):
+    """Verbatim source evidence for one RequirementAtom.
+
+    Populated during Phase 1 ingestion from either:
+      - EnrichedChunk (unified multimodal pipeline):
+        has page, section, full text
+      - ProseChunk / table row (legacy DoclingParser fallback):
+        partial metadata only
+
+    Carried forward to ValidatedAtom and serialised into the journey.
+    artifact_ids references ArtifactStore files (TABLE_IMAGE, FIGURE_IMAGE).
+    """
+
+    source_ref: str
+    element_type: Literal["text", "table", "image"] = "text"
+    page_no: int | None = None
+    section_path: list[str] = Field(default_factory=list)
+    excerpt: str = ""          # verbatim source text, max 500 chars
+    artifact_ids: list[str] = Field(default_factory=list)
+
 # ---------------------------------------------------------------------------
 # Constrained vocabulary: D365 F&O module names
 # The LLM Module Tagger forces selection from this list (Phase 1 Step 2C).
@@ -101,6 +127,10 @@ class RequirementAtom(PlatformModel):
     image_components: list[str] = Field(default_factory=list)
     d365_modules_implied: list[str] = Field(default_factory=list)
 
+    # Source evidence — populated from EnrichedChunk / parse_result
+    artifact_ids: list[str] = Field(default_factory=list)
+    citations: list[CitationRecord] = Field(default_factory=list)
+
 
 # ---------------------------------------------------------------------------
 # ValidatedAtom
@@ -150,6 +180,10 @@ class ValidatedAtom(PlatformModel):
 
     # Audit trail: source references (merged from duplicates if deduped)
     source_refs: list[str] = Field(default_factory=list)
+
+    # Source evidence propagated from RequirementAtom
+    artifact_ids: list[str] = Field(default_factory=list)
+    citations: list[CitationRecord] = Field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------

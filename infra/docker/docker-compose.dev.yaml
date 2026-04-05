@@ -1,6 +1,8 @@
 # Dev stack — backing services + API + Worker + UI
-# make dev      → start (builds images)
-# make dev-down → stop
+# make dev       → start containers (no rebuild; live via volume mounts + Vite HMR)
+# make dev-build → rebuild images then start (use after dep/Dockerfile changes)
+# make dev-down  → stop (volumes preserved)
+# make dev-down-v → stop + wipe all volumes (full reset)
 #
 # URLs once running:
 #   UI          http://localhost:5173
@@ -93,6 +95,7 @@ services:
       REDIS_URL: ${REDIS_URL}
       QDRANT_URL: ${QDRANT_URL}
       ORT_LOGGING_LEVEL: "3"
+      INGESTION_ARTIFACT_STORE_ROOT: /app/data/artifacts
     volumes:
       - ../../api:/app/api:ro
       - ../../platform:/app/platform:ro
@@ -101,7 +104,7 @@ services:
       - ../../knowledge_bases:/app/knowledge_bases:ro
       - reports:/app/reports
       - uploads:/tmp/dynafit_uploads
-      - fastembed_cache:/tmp/fastembed_cache
+      - artifacts:/app/data/artifacts
     depends_on:
       postgres:
         condition: service_healthy
@@ -132,13 +135,14 @@ services:
       QDRANT_URL: ${QDRANT_URL}
       PYTHONPATH: /app
       ORT_LOGGING_LEVEL: "3"
+      INGESTION_ARTIFACT_STORE_ROOT: /app/data/artifacts
     volumes:
       - ../../api:/app/api:ro
       - ../../platform:/app/platform:ro
       - ../../modules:/app/modules:ro
       - uploads:/tmp/dynafit_uploads
       - reports:/app/reports
-      - fastembed_cache:/tmp/fastembed_cache
+      - artifacts:/app/data/artifacts
     depends_on:
       api:
         condition: service_healthy
@@ -163,6 +167,15 @@ services:
       # In Docker the UI container must proxy to the api service by name.
       # Override via .env only when running Vite outside Docker (http://localhost:8000).
       VITE_API_TARGET: ${VITE_API_TARGET:-http://api:8000}
+    # Mount source so Vite HMR picks up changes without image rebuild.
+    # node_modules stays in the image — only source files are overlaid.
+    volumes:
+      - ../../ui/src:/app/src:ro
+      - ../../ui/index.html:/app/index.html:ro
+      - ../../ui/public:/app/public:ro
+      - ../../ui/vite.config.ts:/app/vite.config.ts:ro
+      - ../../ui/tailwind.config.ts:/app/tailwind.config.ts:ro
+      - ../../ui/postcss.config.js:/app/postcss.config.js:ro
     depends_on:
       api:
         condition: service_healthy
@@ -179,4 +192,4 @@ volumes:
   qdrant_data:
   reports:
   uploads:
-  fastembed_cache:
+  artifacts:

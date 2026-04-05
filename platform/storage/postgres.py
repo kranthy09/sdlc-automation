@@ -101,6 +101,7 @@ class BatchRecord:
     report_path: str | None = None
     summary: dict[str, Any] | None = None
     upload_filename: str = ""
+    artifact_store_batch_path: str | None = None
 
 
 @dataclass
@@ -309,6 +310,9 @@ _DDL: list[str] = [
     "ALTER TABLE review_items ADD COLUMN IF NOT EXISTS configuration_steps JSONB",
     "ALTER TABLE review_items ADD COLUMN IF NOT EXISTS dev_effort TEXT",
     "ALTER TABLE review_items ADD COLUMN IF NOT EXISTS gap_type TEXT",
+    # V7 migration — persist artifact_store_batch_path on batches for durable
+    # artifact retrieval (was Redis-only, lost on restart).
+    "ALTER TABLE batches ADD COLUMN IF NOT EXISTS artifact_store_batch_path TEXT",
 ]
 
 
@@ -546,12 +550,12 @@ class PostgresStore:
             INSERT INTO batches (
                 batch_id, upload_id, product_id, country,
                 wave, status, created_at, completed_at,
-                report_path, summary
+                report_path, summary, artifact_store_batch_path
             )
             VALUES (
                 :batch_id, :upload_id, :product_id, :country,
                 :wave, :status, :created_at, :completed_at,
-                :report_path, :summary
+                :report_path, :summary, :artifact_store_batch_path
             )
             ON CONFLICT (batch_id) DO NOTHING
             """
@@ -570,6 +574,7 @@ class PostgresStore:
                 json.dumps(record.summary)
                 if record.summary else None
             ),
+            "artifact_store_batch_path": record.artifact_store_batch_path,
         }
         engine = self._get_engine()
         try:
@@ -598,7 +603,7 @@ class PostgresStore:
             """
             SELECT batch_id, upload_id, product_id, country,
                    wave, status, created_at, completed_at,
-                   report_path, summary
+                   report_path, summary, artifact_store_batch_path
             FROM batches
             WHERE batch_id = :batch_id
             """
@@ -700,6 +705,40 @@ class PostgresStore:
                 cause=exc,
             ) from exc
 
+    async def update_batch_artifact_path(
+        self,
+        batch_id: str,
+        artifact_store_batch_path: str,
+    ) -> None:
+        """Persist artifact_store_batch_path so artifact retrieval survives Redis restarts."""
+        from sqlalchemy import text  # noqa: PLC0415
+
+        stmt = text(
+            """
+            UPDATE batches
+            SET artifact_store_batch_path = :path
+            WHERE batch_id = :batch_id
+            """
+        )
+        engine = self._get_engine()
+        try:
+            async with engine.begin() as conn:
+                await conn.execute(
+                    stmt,
+                    {"batch_id": batch_id, "path": artifact_store_batch_path},
+                )
+            log.debug(
+                "postgres_batch_artifact_path_saved",
+                batch_id=batch_id,
+            )
+        except PostgresError:
+            raise
+        except Exception as exc:
+            raise PostgresError(
+                f"update_batch_artifact_path({batch_id!r}) failed",
+                cause=exc,
+            ) from exc
+
     async def list_batches(
         self,
         country: str | None = None,
@@ -733,7 +772,8 @@ class PostgresStore:
         sql = f"""
             SELECT b.batch_id, b.upload_id, b.product_id, b.country,
                    b.wave, b.status, b.created_at, b.completed_at,
-                   b.report_path, b.summary, COALESCE(u.filename, '') AS upload_filename
+                   b.report_path, b.summary, b.artifact_store_batch_path,
+                   COALESCE(u.filename, '') AS upload_filename
             FROM batches b
             LEFT JOIN uploads u ON b.upload_id = u.upload_id
             {where_clause}
@@ -1406,6 +1446,7 @@ def _row_to_batch(row: Any) -> BatchRecord:
         report_path=row["report_path"],
         summary=summary,
         upload_filename=row.get("upload_filename", ""),
+        artifact_store_batch_path=row.get("artifact_store_batch_path"),
     )
 
 

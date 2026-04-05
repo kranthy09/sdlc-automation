@@ -1,0 +1,265 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg id="reqfit-overview" viewBox="0 0 780 920" xmlns="http://www.w3.org/2000/svg" width="100%">
+  <defs>
+    <marker id="ao" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+    </marker>
+  </defs>
+
+  <!-- ═══════════════════════════════════════════════════════════════════ -->
+  <!-- Title                                                              -->
+  <!-- ═══════════════════════════════════════════════════════════════════ -->
+  <text x="390" y="24" text-anchor="middle" dominant-baseline="central" font-family="var(--font-sans,system-ui)" font-size="16" font-weight="600" fill="#2d2d2a">REQFIT — AI Agent Pipeline Architecture</text>
+  <text x="390" y="44" text-anchor="middle" dominant-baseline="central" font-family="var(--font-sans,system-ui)" font-size="12" fill="#73726c">Requirement fitment engine for D365 F&amp;O · RawUpload → ValidatedFitmentBatch</text>
+
+  <!-- ═══════════════════════════════════════════════════════════════════ -->
+  <!-- Phase 1 — Ingestion                                               -->
+  <!-- ═══════════════════════════════════════════════════════════════════ -->
+  <rect x="20" y="64" width="740" height="128" rx="14" fill="#f1efe8" stroke="#5f5e5a" stroke-width="0.5"/>
+  <text x="36" y="84" dominant-baseline="central" font-family="var(--font-sans,system-ui)" font-size="13" font-weight="600" fill="#444441">Phase 1 — Ingestion</text>
+  <text x="330" y="84" dominant-baseline="central" font-family="var(--font-sans,system-ui)" font-size="11" fill="#73726c">RawUpload → ValidatedAtom[] + FlaggedAtom[]</text>
+
+  <!-- Row 1: 4 boxes -->
+  <rect x="36" y="100" width="158" height="36" rx="6" fill="#fee2e2" stroke="#b91c1c" stroke-width="0.5"/>
+  <text x="115" y="118" text-anchor="middle" dominant-baseline="central" font-family="var(--font-sans,system-ui)" font-size="11" font-weight="500" fill="#791f1f">G1 File + G3 Injection</text>
+
+  <line x1="194" y1="118" x2="206" y2="118" marker-end="url(#ao)" stroke="#73726c" stroke-width="1"/>
+
+  <rect x="208" y="100" width="132" height="36" rx="6" fill="#e8f0fe" stroke="#3478f6" stroke-width="0.5"/>
+  <text x="274" y="118" text-anchor="middle" dominant-baseline="central" font-family="var(--font-sans,system-ui)" font-size="11" font-weight="500" fill="#1a56db">Parse + Column Map</text>
+
+  <line x1="340" y1="118" x2="352" y2="118" marker-end="url(#ao)" stroke="#73726c" stroke-width="1"/>
+
+  <rect x="354" y="100" width="132" height="36" rx="6" fill="#fee2e2" stroke="#b91c1c" stroke-width="0.5"/>
+  <text x="420" y="118" text-anchor="middle" dominant-baseline="central" font-family="var(--font-sans,system-ui)" font-size="11" font-weight="500" fill="#791f1f">G2 PII Redaction</text>
+
+  <line x1="486" y1="118" x2="498" y2="118" marker-end="url(#ao)" stroke="#73726c" stroke-width="1"/>
+
+  <rect x="500" y="100" width="244" height="36" rx="6" fill="#eeedfe" stroke="#534ab7" stroke-width="0.5"/>
+  <text x="622" y="118" text-anchor="middle" dominant-baseline="central" font-family="var(--font-sans,system-ui)" font-size="11" font-weight="500" fill="#3c3489">LLM Atomise + D365 Classify</text>
+
+  <!-- Row 2: 3 boxes -->
+  <rect x="36" y="146" width="220" height="36" rx="6" fill="#e8f0fe" stroke="#3478f6" stroke-width="0.5"/>
+  <text x="146" y="164" text-anchor="middle" dominant-baseline="central" font-family="var(--font-sans,system-ui)" font-size="11" font-weight="500" fill="#1a56db">Dedup: cosine > 0.92 merge</text>
+
+  <line x1="256" y1="164" x2="268" y2="164" marker-end="url(#ao)" stroke="#73726c" stroke-width="1"/>
+
+  <rect x="270" y="146" width="250" height="36" rx="6" fill="#fef3e0" stroke="#c27803" stroke-width="0.5"/>
+  <text x="395" y="164" text-anchor="middle" dominant-baseline="central" font-family="var(--font-sans,system-ui)" font-size="11" font-weight="500" fill="#92400e">Quality: specificity + completeness + MoSCoW</text>
+
+  <line x1="520" y1="164" x2="532" y2="164" marker-end="url(#ao)" stroke="#73726c" stroke-width="1"/>
+
+  <rect x="534" y="146" width="210" height="36" rx="6" fill="#e6f4ea" stroke="#1e7e34" stroke-width="0.5"/>
+  <text x="639" y="164" text-anchor="middle" dominant-baseline="central" font-family="var(--font-sans,system-ui)" font-size="11" font-weight="500" fill="#166534">Validated + Flagged atoms out</text>
+
+  <!-- ═══ Phase 1→2 connector ═══ -->
+  <line x1="390" y1="192" x2="390" y2="218" marker-end="url(#ao)" stroke="#73726c" stroke-width="1.5"/>
+
+  <!-- ═══════════════════════════════════════════════════════════════════ -->
+  <!-- Phase 2 — RAG Retrieval                                           -->
+  <!-- ═══════════════════════════════════════════════════════════════════ -->
+  <rect x="20" y="222" width="740" height="128" rx="14" fill="#f1efe8" stroke="#5f5e5a" stroke-width="0.5"/>
+  <text x="36" y="242" dominant-baseline="central" font-family="var(--font-sans,system-ui)" font-size="13" font-weight="600" fill="#444441">Phase 2 — RAG Retrieval</text>
+  <text x="310" y="242" dominant-baseline="central" font-family="var(--font-sans,system-ui)" font-size="11" fill="#73726c">ValidatedAtom[] → AssembledContext[] · async pipeline</text>
+
+  <!-- Row 1: 3 knowledge sources -->
+  <rect x="36" y="258" width="222" height="36" rx="6" fill="#e6f4ea" stroke="#1e7e34" stroke-width="0.5"/>
+  <text x="147" y="276" text-anchor="middle" dominant-baseline="central" font-family="var(--font-sans,system-ui)" font-size="11" font-weight="500" fill="#166534">A: D365 Caps · Qdrant hybrid</text>
+
+  <rect x="278" y="258" width="222" height="36" rx="6" fill="#e6f4ea" stroke="#1e7e34" stroke-width="0.5"/>
+  <text x="389" y="276" text-anchor="middle" dominant-baseline="central" font-family="var(--font-sans,system-ui)" font-size="11" font-weight="500" fill="#166534">B: MS Learn · Qdrant dense</text>
+
+  <rect x="520" y="258" width="224" height="36" rx="6" fill="#e6f4ea" stroke="#1e7e34" stroke-width="0.5"/>
+  <text x="632" y="276" text-anchor="middle" dominant-baseline="central" font-family="var(--font-sans,system-ui)" font-size="11" font-weight="500" fill="#166534">C: Prior Fitments · pgvector</text>
+
+  <!-- Collector lines down from each source -->
+  <line x1="147" y1="294" x2="147" y2="304" stroke="#73726c" stroke-width="1"/>
+  <line x1="389" y1="294" x2="389" y2="304" stroke="#73726c" stroke-width="1"/>
+  <line x1="632" y1="294" x2="632" y2="304" stroke="#73726c" stroke-width="1"/>
+  <!-- Horizontal collector bus -->
+  <line x1="147" y1="304" x2="632" y2="304" stroke="#73726c" stroke-width="1"/>
+  <circle cx="147" cy="304" r="2.5" fill="#73726c"/>
+  <circle cx="389" cy="304" r="2.5" fill="#73726c"/>
+  <circle cx="632" cy="304" r="2.5" fill="#73726c"/>
+  <!-- Bus down to row 2 -->
+  <line x1="389" y1="304" x2="389" y2="312" stroke="#73726c" stroke-width="1"/>
+
+  <!-- Row 2: pipeline steps -->
+  <rect x="36" y="314" width="176" height="28" rx="6" fill="#eeedfe" stroke="#534ab7" stroke-width="0.5"/>
+  <text x="124" y="328" text-anchor="middle" dominant-baseline="central" font-family="var(--font-sans,system-ui)" font-size="10" font-weight="500" fill="#3c3489">Embed bge-small 384d</text>
+
+  <line x1="212" y1="328" x2="224" y2="328" marker-end="url(#ao)" stroke="#73726c" stroke-width="1"/>
+
+  <rect x="226" y="314" width="176" height="28" rx="6" fill="#e8f0fe" stroke="#3478f6" stroke-width="0.5"/>
+  <text x="314" y="328" text-anchor="middle" dominant-baseline="central" font-family="var(--font-sans,system-ui)" font-size="10" font-weight="500" fill="#1a56db">Parallel Retrieve · 5s timeout</text>
+
+  <line x1="402" y1="328" x2="414" y2="328" marker-end="url(#ao)" stroke="#73726c" stroke-width="1"/>
+
+  <rect x="416" y="314" width="170" height="28" rx="6" fill="#eeedfe" stroke="#534ab7" stroke-width="0.5"/>
+  <text x="501" y="328" text-anchor="middle" dominant-baseline="central" font-family="var(--font-sans,system-ui)" font-size="10" font-weight="500" fill="#3c3489">RRF + Rerank · adaptive-K</text>
+
+  <line x1="586" y1="328" x2="598" y2="328" marker-end="url(#ao)" stroke="#73726c" stroke-width="1"/>
+
+  <rect x="600" y="314" width="144" height="28" rx="6" fill="#e6f4ea" stroke="#1e7e34" stroke-width="0.5"/>
+  <text x="672" y="328" text-anchor="middle" dominant-baseline="central" font-family="var(--font-sans,system-ui)" font-size="10" font-weight="500" fill="#166534">Context Assembly</text>
+
+  <!-- ═══ Phase 2→3 connector ═══ -->
+  <line x1="390" y1="350" x2="390" y2="376" marker-end="url(#ao)" stroke="#73726c" stroke-width="1.5"/>
+
+  <!-- ═══════════════════════════════════════════════════════════════════ -->
+  <!-- Phase 3 — Semantic Matching                                       -->
+  <!-- ═══════════════════════════════════════════════════════════════════ -->
+  <rect x="20" y="380" width="740" height="82" rx="14" fill="#f1efe8" stroke="#5f5e5a" stroke-width="0.5"/>
+  <text x="36" y="400" dominant-baseline="central" font-family="var(--font-sans,system-ui)" font-size="13" font-weight="600" fill="#444441">Phase 3 — Semantic Matching</text>
+  <text x="332" y="400" dominant-baseline="central" font-family="var(--font-sans,system-ui)" font-size="11" fill="#73726c">AssembledContext[] → MatchResult[] · no LLM — local only</text>
+
+  <rect x="36" y="414" width="128" height="36" rx="6" fill="#eeedfe" stroke="#534ab7" stroke-width="0.5"/>
+  <text x="100" y="432" text-anchor="middle" dominant-baseline="central" font-family="var(--font-sans,system-ui)" font-size="10" font-weight="500" fill="#3c3489">Batch Embed</text>
+
+  <line x1="164" y1="432" x2="176" y2="432" marker-end="url(#ao)" stroke="#73726c" stroke-width="1"/>
+
+  <rect x="178" y="414" width="160" height="36" rx="6" fill="#eeedfe" stroke="#534ab7" stroke-width="0.5"/>
+  <text x="258" y="426" text-anchor="middle" dominant-baseline="central" font-family="var(--font-sans,system-ui)" font-size="10" font-weight="500" fill="#3c3489">5-Signal Composite</text>
+  <text x="258" y="442" text-anchor="middle" dominant-baseline="central" font-family="var(--font-sans,system-ui)" font-size="9" fill="#534ab7">cosine·entity·token·history·rerank</text>
+
+  <line x1="338" y1="432" x2="350" y2="432" marker-end="url(#ao)" stroke="#73726c" stroke-width="1"/>
+
+  <rect x="352" y="414" width="118" height="36" rx="6" fill="#fef3e0" stroke="#c27803" stroke-width="0.5"/>
+  <text x="411" y="432" text-anchor="middle" dominant-baseline="central" font-family="var(--font-sans,system-ui)" font-size="10" font-weight="500" fill="#92400e">Anomaly Detect</text>
+
+  <line x1="470" y1="432" x2="482" y2="432" marker-end="url(#ao)" stroke="#73726c" stroke-width="1"/>
+
+  <rect x="484" y="414" width="118" height="36" rx="6" fill="#e8f0fe" stroke="#3478f6" stroke-width="0.5"/>
+  <text x="543" y="432" text-anchor="middle" dominant-baseline="central" font-family="var(--font-sans,system-ui)" font-size="10" font-weight="500" fill="#1a56db">Ranker + Dedup</text>
+
+  <line x1="602" y1="432" x2="614" y2="432" marker-end="url(#ao)" stroke="#73726c" stroke-width="1"/>
+
+  <rect x="616" y="414" width="128" height="36" rx="6" fill="#e6f4ea" stroke="#1e7e34" stroke-width="0.5"/>
+  <text x="680" y="426" text-anchor="middle" dominant-baseline="central" font-family="var(--font-sans,system-ui)" font-size="10" font-weight="500" fill="#166534">Route Assign</text>
+  <text x="680" y="442" text-anchor="middle" dominant-baseline="central" font-family="var(--font-sans,system-ui)" font-size="9" fill="#1e7e34">FAST · DEEP · GAP</text>
+
+  <!-- ═══ Phase 3→4 connector ═══ -->
+  <line x1="390" y1="462" x2="390" y2="488" marker-end="url(#ao)" stroke="#73726c" stroke-width="1.5"/>
+
+  <!-- ═══════════════════════════════════════════════════════════════════ -->
+  <!-- Phase 4 — Classification                                          -->
+  <!-- ═══════════════════════════════════════════════════════════════════ -->
+  <rect x="20" y="492" width="740" height="82" rx="14" fill="#f1efe8" stroke="#5f5e5a" stroke-width="0.5"/>
+  <text x="36" y="512" dominant-baseline="central" font-family="var(--font-sans,system-ui)" font-size="13" font-weight="600" fill="#444441">Phase 4 — Classification</text>
+  <text x="288" y="512" dominant-baseline="central" font-family="var(--font-sans,system-ui)" font-size="11" fill="#73726c">MatchResult[] → ClassificationResult[] · LLM reasoning + guardrails</text>
+
+  <rect x="36" y="526" width="100" height="36" rx="6" fill="#e6f4ea" stroke="#1e7e34" stroke-width="0.5"/>
+  <text x="86" y="544" text-anchor="middle" dominant-baseline="central" font-family="var(--font-sans,system-ui)" font-size="10" font-weight="500" fill="#166534">Auto-GAP</text>
+
+  <line x1="136" y1="544" x2="148" y2="544" marker-end="url(#ao)" stroke="#73726c" stroke-width="1"/>
+
+  <rect x="150" y="526" width="118" height="36" rx="6" fill="#fee2e2" stroke="#b91c1c" stroke-width="0.5"/>
+  <text x="209" y="544" text-anchor="middle" dominant-baseline="central" font-family="var(--font-sans,system-ui)" font-size="10" font-weight="500" fill="#791f1f">G8 Prompt Guard</text>
+
+  <line x1="268" y1="544" x2="280" y2="544" marker-end="url(#ao)" stroke="#73726c" stroke-width="1"/>
+
+  <rect x="282" y="526" width="158" height="36" rx="6" fill="#eeedfe" stroke="#534ab7" stroke-width="0.5"/>
+  <text x="361" y="538" text-anchor="middle" dominant-baseline="central" font-family="var(--font-sans,system-ui)" font-size="10" font-weight="500" fill="#3c3489">Route LLM · 10-thread</text>
+  <text x="361" y="554" text-anchor="middle" dominant-baseline="central" font-family="var(--font-sans,system-ui)" font-size="9" fill="#534ab7">FAST 1× · DEEP 3×vote · GAP 1×</text>
+
+  <line x1="440" y1="544" x2="452" y2="544" marker-end="url(#ao)" stroke="#73726c" stroke-width="1"/>
+
+  <rect x="454" y="526" width="100" height="36" rx="6" fill="#fee2e2" stroke="#b91c1c" stroke-width="0.5"/>
+  <text x="504" y="544" text-anchor="middle" dominant-baseline="central" font-family="var(--font-sans,system-ui)" font-size="10" font-weight="500" fill="#791f1f">G9 Schema</text>
+
+  <line x1="554" y1="544" x2="566" y2="544" marker-end="url(#ao)" stroke="#73726c" stroke-width="1"/>
+
+  <rect x="568" y="526" width="82" height="36" rx="6" fill="#fee2e2" stroke="#b91c1c" stroke-width="0.5"/>
+  <text x="609" y="544" text-anchor="middle" dominant-baseline="central" font-family="var(--font-sans,system-ui)" font-size="10" font-weight="500" fill="#791f1f">G11 PII</text>
+
+  <line x1="650" y1="544" x2="662" y2="544" marker-end="url(#ao)" stroke="#73726c" stroke-width="1"/>
+
+  <rect x="664" y="526" width="80" height="36" rx="6" fill="#fef3e0" stroke="#c27803" stroke-width="0.5"/>
+  <text x="704" y="544" text-anchor="middle" dominant-baseline="central" font-family="var(--font-sans,system-ui)" font-size="10" font-weight="500" fill="#92400e">Sanity</text>
+
+  <!-- ═══ Phase 4→5 connector ═══ -->
+  <line x1="390" y1="574" x2="390" y2="600" marker-end="url(#ao)" stroke="#73726c" stroke-width="1.5"/>
+
+  <!-- ═══════════════════════════════════════════════════════════════════ -->
+  <!-- Phase 5 — Validation & Output                                     -->
+  <!-- ═══════════════════════════════════════════════════════════════════ -->
+  <rect x="20" y="604" width="740" height="128" rx="14" fill="#f1efe8" stroke="#5f5e5a" stroke-width="0.5"/>
+  <text x="36" y="624" dominant-baseline="central" font-family="var(--font-sans,system-ui)" font-size="13" font-weight="600" fill="#444441">Phase 5 — Validation &amp; Output</text>
+  <text x="330" y="624" dominant-baseline="central" font-family="var(--font-sans,system-ui)" font-size="11" fill="#73726c">ClassificationResult[] → ValidatedFitmentBatch · HITL mandatory</text>
+
+  <!-- Row 1: Sanity + HITL + Merge -->
+  <rect x="36" y="640" width="194" height="36" rx="6" fill="#fef3e0" stroke="#c27803" stroke-width="0.5"/>
+  <text x="133" y="652" text-anchor="middle" dominant-baseline="central" font-family="var(--font-sans,system-ui)" font-size="10" font-weight="500" fill="#92400e">G10-lite · 8-rule sanity gate</text>
+  <text x="133" y="666" text-anchor="middle" dominant-baseline="central" font-family="var(--font-sans,system-ui)" font-size="9" fill="#c27803">GAP review · PII · anomaly · confidence</text>
+
+  <line x1="230" y1="658" x2="242" y2="658" marker-end="url(#ao)" stroke="#73726c" stroke-width="1"/>
+
+  <rect x="244" y="640" width="214" height="36" rx="6" fill="#e1f5ee" stroke="#0f6e56" stroke-width="0.5"/>
+  <text x="351" y="652" text-anchor="middle" dominant-baseline="central" font-family="var(--font-sans,system-ui)" font-size="10" font-weight="500" fill="#085041">HITL · LangGraph interrupt()</text>
+  <text x="351" y="666" text-anchor="middle" dominant-baseline="central" font-family="var(--font-sans,system-ui)" font-size="9" fill="#0f6e56">PG checkpoint · graph freezes for reviewer</text>
+
+  <line x1="458" y1="658" x2="470" y2="658" marker-end="url(#ao)" stroke="#73726c" stroke-width="1"/>
+
+  <rect x="472" y="640" width="152" height="36" rx="6" fill="#e8f0fe" stroke="#3478f6" stroke-width="0.5"/>
+  <text x="548" y="658" text-anchor="middle" dominant-baseline="central" font-family="var(--font-sans,system-ui)" font-size="10" font-weight="500" fill="#1a56db">Merge overrides</text>
+
+  <line x1="624" y1="658" x2="636" y2="658" marker-end="url(#ao)" stroke="#73726c" stroke-width="1"/>
+
+  <rect x="638" y="640" width="106" height="36" rx="6" fill="#e8f0fe" stroke="#3478f6" stroke-width="0.5"/>
+  <text x="691" y="658" text-anchor="middle" dominant-baseline="central" font-family="var(--font-sans,system-ui)" font-size="10" font-weight="500" fill="#1a56db">Build batch</text>
+
+  <!-- Row 2: CSV + Write-back -->
+  <rect x="36" y="688" width="350" height="36" rx="6" fill="#e6f4ea" stroke="#1e7e34" stroke-width="0.5"/>
+  <text x="211" y="700" text-anchor="middle" dominant-baseline="central" font-family="var(--font-sans,system-ui)" font-size="10" font-weight="500" fill="#166534">FDD CSV Report · fdd_fits + fdd_gaps · PII restore</text>
+  <text x="211" y="716" text-anchor="middle" dominant-baseline="central" font-family="var(--font-sans,system-ui)" font-size="9" fill="#1e7e34">stdlib csv · G2 de-redaction via restore_pii()</text>
+
+  <line x1="386" y1="706" x2="398" y2="706" marker-end="url(#ao)" stroke="#73726c" stroke-width="1"/>
+
+  <rect x="400" y="688" width="344" height="36" rx="6" fill="#e6f4ea" stroke="#1e7e34" stroke-width="0.5"/>
+  <text x="572" y="700" text-anchor="middle" dominant-baseline="central" font-family="var(--font-sans,system-ui)" font-size="10" font-weight="500" fill="#166534">pgvector Write-back · batch embed + save_fitment</text>
+  <text x="572" y="716" text-anchor="middle" dominant-baseline="central" font-family="var(--font-sans,system-ui)" font-size="9" fill="#1e7e34">REVIEW skipped · CompleteEvent → Redis</text>
+
+  <!-- ═══ Phase 5 → Output connector ═══ -->
+  <line x1="390" y1="732" x2="390" y2="758" marker-end="url(#ao)" stroke="#73726c" stroke-width="1.5"/>
+
+  <!-- ═══════════════════════════════════════════════════════════════════ -->
+  <!-- Output                                                             -->
+  <!-- ═══════════════════════════════════════════════════════════════════ -->
+  <rect x="120" y="762" width="540" height="48" rx="10" fill="#e6f4ea" stroke="#1e7e34" stroke-width="1"/>
+  <text x="390" y="780" text-anchor="middle" dominant-baseline="central" font-family="var(--font-sans,system-ui)" font-size="13" font-weight="600" fill="#166534">Fitment Matrix Output</text>
+  <text x="390" y="798" text-anchor="middle" dominant-baseline="central" font-family="var(--font-sans,system-ui)" font-size="11" fill="#1e7e34">FDD FOR FITS · FDD FOR GAPS · feeds downstream FDD pipelines</text>
+
+  <!-- ═══════════════════════════════════════════════════════════════════ -->
+  <!-- Feedback loop (dashed line from Phase 5 back to Phase 1)           -->
+  <!-- ═══════════════════════════════════════════════════════════════════ -->
+  <path d="M760,706 L768,706 L768,80 L760,80" fill="none" stroke="#9c9a92" stroke-width="1" stroke-dasharray="4 3" marker-end="url(#ao)"/>
+  <text x="772" y="400" dominant-baseline="central" font-family="var(--font-sans,system-ui)" font-size="10" fill="#9c9a92" transform="rotate(90,772,400)">Feedback loop</text>
+
+  <!-- ═══════════════════════════════════════════════════════════════════ -->
+  <!-- Legend                                                             -->
+  <!-- ═══════════════════════════════════════════════════════════════════ -->
+  <rect x="20" y="830" width="740" height="70" rx="10" fill="none" stroke="#d4d2ca" stroke-width="0.5"/>
+
+  <!-- Row 1 of legend -->
+  <rect x="40" y="842" width="16" height="12" rx="3" fill="#fee2e2" stroke="#b91c1c" stroke-width="0.5"/>
+  <text x="62" y="848" dominant-baseline="central" font-family="var(--font-sans,system-ui)" font-size="10" fill="#73726c">Guardrail</text>
+
+  <rect x="130" y="842" width="16" height="12" rx="3" fill="#e8f0fe" stroke="#3478f6" stroke-width="0.5"/>
+  <text x="152" y="848" dominant-baseline="central" font-family="var(--font-sans,system-ui)" font-size="10" fill="#73726c">Data processing</text>
+
+  <rect x="250" y="842" width="16" height="12" rx="3" fill="#eeedfe" stroke="#534ab7" stroke-width="0.5"/>
+  <text x="272" y="848" dominant-baseline="central" font-family="var(--font-sans,system-ui)" font-size="10" fill="#73726c">AI / Embedding / LLM</text>
+
+  <rect x="400" y="842" width="16" height="12" rx="3" fill="#fef3e0" stroke="#c27803" stroke-width="0.5"/>
+  <text x="422" y="848" dominant-baseline="central" font-family="var(--font-sans,system-ui)" font-size="10" fill="#73726c">Quality gate</text>
+
+  <rect x="510" y="842" width="16" height="12" rx="3" fill="#e6f4ea" stroke="#1e7e34" stroke-width="0.5"/>
+  <text x="532" y="848" dominant-baseline="central" font-family="var(--font-sans,system-ui)" font-size="10" fill="#73726c">Output / Source</text>
+
+  <rect x="620" y="842" width="16" height="12" rx="3" fill="#e1f5ee" stroke="#0f6e56" stroke-width="0.5"/>
+  <text x="642" y="848" dominant-baseline="central" font-family="var(--font-sans,system-ui)" font-size="10" fill="#73726c">Human review</text>
+
+  <!-- Row 2 of legend -->
+  <text x="40" y="876" dominant-baseline="central" font-family="var(--font-sans,system-ui)" font-size="10" fill="#9c9a92">Guardrails: G1 file validation · G2 PII redaction · G3 injection scan · G8 prompt firewall · G9 output schema · G10-lite sanity gate · G11 response PII</text>
+
+</svg>

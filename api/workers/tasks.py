@@ -691,7 +691,7 @@ def run_dynafit_pipeline(
                 error=str(exc),
             )
             _emit_error(batch_id, exc)
-            return
+        return
 
     # --- Normal first-run path ----------------------
     # Parse typed configuration from API
@@ -778,6 +778,20 @@ def run_dynafit_pipeline(
                 state = await graph.ainvoke(
                     initial, config=thread_config,
                 )
+
+                # Persist artifact path to PostgreSQL (durable) so artifact
+                # retrieval survives Redis restarts.
+                _art_path = state.get("artifact_store_batch_path")
+                if _art_path:
+                    _art_path = str(_art_path)  # ensure str (not pathlib.Path)
+                    try:
+                        await pg.update_batch_artifact_path(batch_id, _art_path)
+                    except Exception as _art_exc:
+                        log.warning(
+                            "artifact_path_postgres_write_failed",
+                            batch_id=batch_id,
+                            error=str(_art_exc),
+                        )
 
                 # Extract and persist gate 1 data
                 phase1_rows = _extract_gate1_rows(state)

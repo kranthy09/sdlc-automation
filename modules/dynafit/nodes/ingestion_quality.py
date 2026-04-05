@@ -492,11 +492,19 @@ def _apply_quality_gates(
                 priority=_infer_moscow_priority(text),
                 intent=req.intent,
                 content_type=req.atom.content_type,
-                entity_hints=_entity_hints_map.get(req.atom.atom_id, []),
+                entity_hints=_entity_hints_map.get(
+                    req.atom.atom_id, []
+                ),
                 specificity_score=specificity,
                 completeness_score=completeness,
                 pii_entities=pii_entities,
-                source_refs=[req.atom.source_ref] if req.atom.source_ref else [],
+                source_refs=(
+                    [req.atom.source_ref]
+                    if req.atom.source_ref
+                    else []
+                ),
+                artifact_ids=req.atom.artifact_ids,
+                citations=req.atom.citations,
             )
         )
 

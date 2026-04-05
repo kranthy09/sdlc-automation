@@ -76,6 +76,11 @@ def build_single_atom_journey(
         ),
         "content_type": atom.content_type if atom else "text",
         "source_refs": atom.source_refs if atom else [],
+        "artifact_ids": atom.artifact_ids if atom else [],
+        "citations": (
+            [c.model_dump() for c in atom.citations]
+            if atom else []
+        ),
     }
 
     retrieve = {

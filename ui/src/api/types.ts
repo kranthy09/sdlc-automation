@@ -233,6 +233,15 @@ export interface BatchesResponse {
 
 // ─── Journey (requirement traceability) ──────────────────────────────────────
 
+export interface Citation {
+  source_ref: string
+  element_type: 'text' | 'table' | 'image'
+  page_no: number | null
+  section_path: string[]
+  excerpt: string
+  artifact_ids: string[]
+}
+
 export interface JourneyIngest {
   atom_id: string
   requirement_text: string
@@ -245,6 +254,8 @@ export interface JourneyIngest {
   completeness_score: number
   content_type: 'text_derived' | 'table_derived' | 'image_derived' | string
   source_refs: string[]
+  artifact_ids: string[]
+  citations: Citation[]
 }
 
 export interface JourneyCapability {

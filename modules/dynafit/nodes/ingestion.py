@@ -47,7 +47,7 @@ from platform.llm.client import LLMClient
 from platform.observability.logger import get_logger
 from platform.parsers.docling_parser import DoclingParser
 from platform.schemas.product import ProductConfig
-from platform.schemas.requirement import RawUpload, RequirementAtom
+from platform.schemas.requirement import CitationRecord, RawUpload, RequirementAtom
 
 
 from ..events import (
@@ -112,25 +112,52 @@ def _make_rejection_result(reason: str) -> dict[str, Any]:
 
 def _collect_requirement_texts(
     parse_result: Any,
-) -> list[tuple[str, str]]:
-    """Extract (requirement_text, source_ref) pairs from a ParseResult.
+) -> list[tuple[str, str, CitationRecord]]:
+    """Extract (requirement_text, source_ref, citation) triples.
 
     Prefers resolved table rows; falls back to prose chunks when no
     requirement_text column is found in any table.
     """
-    texts: list[tuple[str, str]] = []
+    texts: list[tuple[str, str, CitationRecord]] = []
 
     resolved = _map_table_rows_to_canonical(parse_result.tables)
     for i, row in enumerate(resolved):
         text = row.get("requirement_text", "").strip()
         if len(text) >= 10:
-            texts.append((text, f"table_row_{i}"))
+            excerpt = " | ".join(
+                f"{k}: {v}"
+                for k, v in row.items()
+                if v and not k.startswith("_")
+            )[:500]
+            source_ref = f"table_row_{i}"
+            texts.append((
+                text,
+                source_ref,
+                CitationRecord(
+                    source_ref=source_ref,
+                    element_type="table",
+                    excerpt=excerpt,
+                ),
+            ))
 
     if not texts:
         for chunk in parse_result.prose:
             text = chunk.text.strip()
             if len(text) >= 30:
-                texts.append((text, f"page_{chunk.page}_prose"))
+                source_ref = f"page_{chunk.page}_prose"
+                texts.append((
+                    text,
+                    source_ref,
+                    CitationRecord(
+                        source_ref=source_ref,
+                        element_type="text",
+                        page_no=chunk.page,
+                        section_path=(
+                            [chunk.section] if chunk.section else []
+                        ),
+                        excerpt=text[:500],
+                    ),
+                ))
 
     return texts
 
@@ -143,6 +170,7 @@ def _build_classified_requirements(
     *,
     batch_id: str = "",
     enriched_chunks: list[dict] | None = None,
+    legacy_citation_map: dict[str, CitationRecord] | None = None,
 ) -> list[_ClassifiedRequirement]:
     """Run batch atomisation + classification on all raw texts.
 
@@ -152,8 +180,10 @@ def _build_classified_requirements(
     mismatch.
     Returns a flat list of _ClassifiedRequirement, one per atom.
 
-    If enriched_chunks is provided, populates source_modality and
-    has_visual_evidence fields in the returned _ClassifiedRequirement objects.
+    If enriched_chunks is provided, extracts artifact_ids and builds
+    CitationRecord from chunk metadata (unified pipeline path).
+    If legacy_citation_map is provided, uses it for citation data
+    (legacy DoclingParser path).
     """
     texts = [t for t, _ in raw_texts]
     source_refs = [r for _, r in raw_texts]
@@ -173,22 +203,64 @@ def _build_classified_requirements(
         total=4,
     )
 
-    # Build a map from source_ref (e.g., "chunk_0") to chunk metadata
+    # Build maps from source_ref → chunk metadata and citation
     chunk_metadata_map: dict[str, dict] = {}
+    chunk_citation_map: dict[str, CitationRecord] = {}
     if enriched_chunks:
         for i, chunk in enumerate(enriched_chunks):
-            source_ref = f"chunk_{i}"
-            chunk_metadata_map[source_ref] = chunk
+            sr = f"chunk_{i}"
+            chunk_metadata_map[sr] = chunk
+
+            # Extract artifact_ids from the chunk's artifact_refs
+            refs = chunk.get("artifact_refs", [])
+            art_ids = [
+                r["artifact_id"]
+                for r in refs
+                if r.get("artifact_id")
+            ]
+
+            # Determine element_type from dominant modality
+            mod_comp: dict = chunk.get("modality_composition", {})
+            if mod_comp.get("TABLE", 0) > 0:
+                el_type: str = "table"
+            elif mod_comp.get("IMAGE", 0) > 0:
+                el_type = "image"
+            else:
+                el_type = "text"
+
+            meta: dict = chunk.get("chunk_metadata", {})
+            source_pages: list[int] = meta.get("source_pages", [])
+            chunk_citation_map[sr] = CitationRecord(
+                source_ref=sr,
+                element_type=el_type,  # type: ignore[arg-type]
+                page_no=source_pages[0] if source_pages else None,
+                section_path=chunk.get("section_path", []),
+                excerpt=chunk.get("unified_text", "")[:500],
+                artifact_ids=art_ids,
+            )
+
+    # Merge with legacy citations (legacy path may also provide some)
+    citation_map: dict[str, CitationRecord] = {
+        **(legacy_citation_map or {}),
+        **chunk_citation_map,
+    }
 
     results: list[_ClassifiedRequirement] = []
     counter = 0
     id_prefix = upload.upload_id[:8].upper()
 
-    for atom_list, source_ref in zip(all_atom_lists, source_refs, strict=True):
-        # Get modality info from chunk metadata if available
+    for atom_list, source_ref in zip(
+        all_atom_lists, source_refs, strict=True
+    ):
         chunk_meta = chunk_metadata_map.get(source_ref, {})
-        modality_composition: dict = chunk_meta.get("modality_composition", {})
-        has_visual = "TABLE" in modality_composition or "IMAGE" in modality_composition
+        mod_comp = chunk_meta.get("modality_composition", {})
+        has_visual = (
+            "TABLE" in mod_comp or "IMAGE" in mod_comp
+        )
+        citation = citation_map.get(source_ref)
+        chunk_art_ids: list[str] = (
+            citation.artifact_ids if citation else []
+        )
 
         for atom in atom_list:
             if len(atom.text.strip()) < 10:
@@ -202,6 +274,10 @@ def _build_classified_requirements(
                 source_document=upload.filename,
                 raw_module_hint=atom.module,
                 content_type="text",
+                artifact_ids=chunk_art_ids,
+                citations=(
+                    [citation] if citation else []
+                ),
             )
             results.append(
                 _ClassifiedRequirement(
@@ -209,7 +285,9 @@ def _build_classified_requirements(
                     intent=atom.intent,
                     module=atom.module,
                     source_modality=atom.source_modality,
-                    has_visual_evidence=has_visual or atom.has_visual_evidence,
+                    has_visual_evidence=(
+                        has_visual or atom.has_visual_evidence
+                    ),
                 )
             )
             counter += 1
@@ -376,7 +454,10 @@ class IngestionNode:
             upload_metadata={"upload_id": upload.upload_id, "product_id": upload.product_id},
         )
 
-        unified_texts, artifact_path, enriched_chunks_output = self._run_unified_pipeline(raw_doc, batch_id)
+        unified_texts, artifact_path, enriched_chunks_output = (
+            self._run_unified_pipeline(raw_doc, batch_id)
+        )
+        legacy_citation_map: dict[str, CitationRecord] = {}
         if unified_texts:
             raw_texts = unified_texts
             artifact_store_path = artifact_path
@@ -392,8 +473,16 @@ class IngestionNode:
             # 2b. Fall back to legacy parser if unified pipeline fails
             parse_result = self._parse_document(upload, batch_id)
             if parse_result is None:
-                return self._reject(batch_id, f"parse_failed: {upload.filename}", t0)
-            raw_texts = _collect_requirement_texts(parse_result)
+                return self._reject(
+                    batch_id,
+                    f"parse_failed: {upload.filename}",
+                    t0,
+                )
+            triples = _collect_requirement_texts(parse_result)
+            raw_texts = [(t, sr) for t, sr, _ in triples]
+            legacy_citation_map = {
+                sr: cit for _, sr, cit in triples
+            }
 
         if not raw_texts:
             log.warning(
@@ -463,6 +552,7 @@ class IngestionNode:
             config,
             batch_id=batch_id,
             enriched_chunks=enriched_chunks_output,
+            legacy_citation_map=legacy_citation_map,
         )
         if not classified:
             return self._reject(batch_id, "atomisation_produced_no_atoms", t0)
@@ -616,7 +706,7 @@ class IngestionNode:
             # Serialize enriched chunks for state
             chunks_serialized = [c.model_dump() for c in enriched_chunks]
 
-            return requirement_texts, store.batch_path, chunks_serialized
+            return requirement_texts, str(store.batch_path), chunks_serialized
 
         except Exception as exc:
             log.warning(

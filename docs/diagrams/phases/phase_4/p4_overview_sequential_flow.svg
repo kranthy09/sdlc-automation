@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg id="p4" viewBox="0 0 720 246" xmlns="http://www.w3.org/2000/svg" width="100%">
+  <defs>
+    <marker id="a4" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+    </marker>
+  </defs>
+
+  <!-- Background -->
+  <rect x="0" y="0" width="720" height="246" rx="14" fill="#f1efe8" stroke="#5f5e5a" stroke-width="0.5"/>
+
+  <!-- Title -->
+  <text x="16" y="22" dominant-baseline="central" font-family="var(--font-sans,system-ui)" font-size="13" font-weight="500" fill="#444441">Phase 4 — Classification · LLM reasoning with 3 route strategies + guardrails G8/G9/G11</text>
+
+  <!-- ═══ ROW 1 ═══ -->
+
+  <!-- Box 1: Auto-GAP Short-circuit (green — routing) -->
+  <rect x="16" y="42" width="176" height="68" rx="8" fill="#e6f4ea" stroke="#1e7e34" stroke-width="0.5"/>
+  <text x="104" y="62" text-anchor="middle" dominant-baseline="central" font-family="var(--font-sans,system-ui)" font-size="13" font-weight="500" fill="#166534">Auto-GAP Gate</text>
+  <text x="104" y="80" text-anchor="middle" dominant-baseline="central" font-family="var(--font-sans,system-ui)" font-size="10" fill="#1e7e34">No capabilities → instant GAP</text>
+  <text x="104" y="96" text-anchor="middle" dominant-baseline="central" font-family="var(--font-sans,system-ui)" font-size="10" fill="#1e7e34">Zero LLM calls · deterministic</text>
+
+  <!-- Arrow 1→2 -->
+  <line x1="192" y1="76" x2="210" y2="76" marker-end="url(#a4)" stroke="#73726c" stroke-width="1.5"/>
+
+  <!-- Box 2: G8 Prompt Firewall (red — guardrail) -->
+  <rect x="212" y="42" width="204" height="68" rx="8" fill="#fee2e2" stroke="#b91c1c" stroke-width="0.5"/>
+  <text x="314" y="62" text-anchor="middle" dominant-baseline="central" font-family="var(--font-sans,system-ui)" font-size="13" font-weight="500" fill="#791f1f">G8 Prompt Firewall</text>
+  <text x="314" y="80" text-anchor="middle" dominant-baseline="central" font-family="var(--font-sans,system-ui)" font-size="10" fill="#b91c1c">Jinja2 autoescape + StrictUndefined</text>
+  <text x="314" y="96" text-anchor="middle" dominant-baseline="central" font-family="var(--font-sans,system-ui)" font-size="10" fill="#b91c1c">Max 10 caps per prompt · whitelist</text>
+
+  <!-- Arrow 2→3 -->
+  <line x1="416" y1="76" x2="434" y2="76" marker-end="url(#a4)" stroke="#73726c" stroke-width="1.5"/>
+
+  <!-- Box 3: Route-Based LLM (purple — LLM/AI) -->
+  <rect x="436" y="42" width="268" height="68" rx="8" fill="#eeedfe" stroke="#534ab7" stroke-width="0.5"/>
+  <text x="570" y="62" text-anchor="middle" dominant-baseline="central" font-family="var(--font-sans,system-ui)" font-size="13" font-weight="500" fill="#3c3489">Route-Based LLM</text>
+  <text x="570" y="80" text-anchor="middle" dominant-baseline="central" font-family="var(--font-sans,system-ui)" font-size="10" fill="#534ab7">FAST 1× t=0 · GAP 1× t=0 · 10-thread pool</text>
+  <text x="570" y="96" text-anchor="middle" dominant-baseline="central" font-family="var(--font-sans,system-ui)" font-size="10" fill="#534ab7">DEEP 3× majority-vote t=0.3 · disagree→REVIEW</text>
+
+  <!-- ═══ ROW CONNECTOR ═══ -->
+  <path d="M704,76 L712,76 L712,128 L8,128 L8,186 L16,186" fill="none" stroke="#73726c" stroke-width="1.5" marker-end="url(#a4)"/>
+
+  <!-- ═══ ROW 2 ═══ -->
+
+  <!-- Box 4: G9 Output Schema (red — guardrail) -->
+  <rect x="16" y="152" width="218" height="68" rx="8" fill="#fee2e2" stroke="#b91c1c" stroke-width="0.5"/>
+  <text x="125" y="172" text-anchor="middle" dominant-baseline="central" font-family="var(--font-sans,system-ui)" font-size="13" font-weight="500" fill="#791f1f">G9 Output Schema</text>
+  <text x="125" y="190" text-anchor="middle" dominant-baseline="central" font-family="var(--font-sans,system-ui)" font-size="10" fill="#b91c1c">Pydantic tool-use · FIT | PARTIAL | GAP</text>
+  <text x="125" y="206" text-anchor="middle" dominant-baseline="central" font-family="var(--font-sans,system-ui)" font-size="10" fill="#b91c1c">config_steps 3-tier parse · error→REVIEW</text>
+
+  <!-- Arrow 4→5 -->
+  <line x1="234" y1="186" x2="252" y2="186" marker-end="url(#a4)" stroke="#73726c" stroke-width="1.5"/>
+
+  <!-- Box 5: G11 Response PII (red — guardrail) -->
+  <rect x="254" y="152" width="210" height="68" rx="8" fill="#fee2e2" stroke="#b91c1c" stroke-width="0.5"/>
+  <text x="359" y="172" text-anchor="middle" dominant-baseline="central" font-family="var(--font-sans,system-ui)" font-size="13" font-weight="500" fill="#791f1f">G11 Response PII</text>
+  <text x="359" y="190" text-anchor="middle" dominant-baseline="central" font-family="var(--font-sans,system-ui)" font-size="10" fill="#b91c1c">Scan rationale + gap + config text</text>
+  <text x="359" y="206" text-anchor="middle" dominant-baseline="central" font-family="var(--font-sans,system-ui)" font-size="10" fill="#b91c1c">PII found → caveat for HITL review</text>
+
+  <!-- Arrow 5→6 -->
+  <line x1="464" y1="186" x2="482" y2="186" marker-end="url(#a4)" stroke="#73726c" stroke-width="1.5"/>
+
+  <!-- Box 6: Sanity Checks (amber — quality gate) -->
+  <rect x="484" y="152" width="220" height="68" rx="8" fill="#fef3e0" stroke="#c27803" stroke-width="0.5"/>
+  <text x="594" y="172" text-anchor="middle" dominant-baseline="central" font-family="var(--font-sans,system-ui)" font-size="13" font-weight="500" fill="#92400e">Sanity Checks</text>
+  <text x="594" y="190" text-anchor="middle" dominant-baseline="central" font-family="var(--font-sans,system-ui)" font-size="10" fill="#c27803">FIT + composite &lt; 0.50 → PARTIAL_FIT</text>
+  <text x="594" y="206" text-anchor="middle" dominant-baseline="central" font-family="var(--font-sans,system-ui)" font-size="10" fill="#c27803">GAP + composite > threshold → REVIEW</text>
+
+</svg>
